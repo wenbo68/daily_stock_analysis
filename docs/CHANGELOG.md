@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 
+- [文档] 新增分层分析（Tiered Analysis）设计与路线图 `docs/tiered-analysis-design.md`：数值/文本数据层规则、四维实现方案、决策层与仓位设计、v1-v5 路线图
+
 ## [3.24.1] - 2026-06-28
 
 ### 修复
