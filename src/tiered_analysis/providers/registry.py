@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import List
 
 from .base import DimensionProvider, Market
+from .fundamentals_us import FundamentalsUSProvider
 from .technicals import TechnicalsProvider
 
 
@@ -28,10 +29,12 @@ def detect_market(symbol: str) -> Market:
 def get_providers(market: Market) -> List[DimensionProvider]:
     """All dimension providers covering the given market.
 
-    Slice 1 registers technicals only; fundamentals / macro / sentiment
-    join in later slices (see .claude/reviews/tiered-analysis-v1-plan.md).
+    Registered so far: technicals (all markets), fundamentals (US).
+    Macro / sentiment join in later slices
+    (see .claude/reviews/tiered-analysis-v1-plan.md).
     """
     candidates: List[DimensionProvider] = [
         TechnicalsProvider(),
+        FundamentalsUSProvider(),
     ]
     return [provider for provider in candidates if provider.supports(market)]
