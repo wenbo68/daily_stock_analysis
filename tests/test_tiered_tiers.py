@@ -1,0 +1,187 @@
+# -*- coding: utf-8 -*-
+"""Offline tests for the tier pipeline skeleton (slice 2).
+
+Tier 1 delegates to the existing DSA analysis via an injected runner; these
+tests fake that runner — no LLM, no network, no imports of the DSA decision
+path.
+"""
+from __future__ import annotations
+
+import unittest
+from types import SimpleNamespace
+
+from src.tiered_analysis.providers.base import Coverage, Market
+from src.tiered_analysis.schema import (
+    Direction,
+    SizingSlots,
+    SniperLevels,
+    TierReport,
+    coerce_price,
+)
+from src.tiered_analysis.tiers import (
+    Tier1Stage,
+    Tier2Stage,
+    Tier3Stage,
+    TieredPipeline,
+    TierState,
+)
+
+
+def _fake_dsa_result(**overrides):
+    """Object shaped like src/analyzer.py AnalysisResult, minus the LLM."""
+    base = dict(
+        code="AAPL",
+        name="Apple",
+        sentiment_score=72,
+        trend_prediction="看多",
+        operation_advice="买入",
+        decision_type="buy",
+        confidence_level="高",
+        dashboard={
+            "battle_plan": {
+                "sniper_points": {
+                    "ideal_buy": "180.5",
+                    "secondary_buy": 178,
+                    "stop_loss": 172.0,
+                    "take_profit": "195",
+                }
+            }
+        },
+    )
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+class TestCoercePrice(unittest.TestCase):
+    def test_numeric_passthrough(self):
+        self.assertEqual(coerce_price(180.5), 180.5)
+        self.assertEqual(coerce_price(178), 178.0)
+
+    def test_numeric_string(self):
+        self.assertEqual(coerce_price("195"), 195.0)
+
+    def test_na_and_garbage_return_none(self):
+        self.assertIsNone(coerce_price("N/A"))
+        self.assertIsNone(coerce_price(""))
+        self.assertIsNone(coerce_price(None))
+        self.assertIsNone(coerce_price("about 180"))
+
+
+class TestSchema(unittest.TestCase):
+    def test_sizing_slots_default_empty(self):
+        slots = SizingSlots()
+        self.assertIsNone(slots.capital)
+        self.assertIsNone(slots.risk_fraction)
+        self.assertIsNone(slots.shares)
+        self.assertTrue(slots.is_empty)
+
+    def test_direction_from_decision_type(self):
+        self.assertEqual(Direction.from_decision_type("buy"), Direction.BUY)
+        self.assertEqual(Direction.from_decision_type("hold"), Direction.HOLD)
+        self.assertEqual(Direction.from_decision_type("sell"), Direction.SELL)
+        self.assertEqual(Direction.from_decision_type("nonsense"), Direction.UNKNOWN)
+        self.assertEqual(Direction.from_decision_type(None), Direction.UNKNOWN)
+
+    def test_tier_report_sizing_always_present_and_empty_in_v1(self):
+        report = TierReport(
+            tier=1,
+            symbol="AAPL",
+            market=Market.US,
+            coverage=Coverage.FULL,
+            direction=Direction.BUY,
+        )
+        self.assertTrue(report.sizing.is_empty)
+
+
+class TestTier1Stage(unittest.TestCase):
+    def test_delegates_to_runner_and_adapts_result(self):
+        stage = Tier1Stage(analysis_runner=lambda symbol: _fake_dsa_result())
+        state = TierState(symbol="AAPL", market=Market.US)
+        report = stage.run(state)
+
+        self.assertEqual(report.tier, 1)
+        self.assertEqual(report.direction, Direction.BUY)
+        self.assertEqual(report.coverage, Coverage.FULL)
+        self.assertEqual(report.score, 72)
+        self.assertEqual(report.confidence, "高")
+        self.assertEqual(
+            report.levels,
+            SniperLevels(entry=180.5, secondary_entry=178.0,
+                         stop_loss=172.0, take_profit=195.0),
+        )
+        self.assertTrue(report.sizing.is_empty)
+
+    def test_accepts_dict_results_too(self):
+        payload = _fake_dsa_result().__dict__
+        stage = Tier1Stage(analysis_runner=lambda symbol: payload)
+        report = stage.run(TierState(symbol="AAPL", market=Market.US))
+        self.assertEqual(report.direction, Direction.BUY)
+        self.assertEqual(report.levels.stop_loss, 172.0)
+
+    def test_missing_sniper_points_degrades_to_partial(self):
+        stage = Tier1Stage(
+            analysis_runner=lambda symbol: _fake_dsa_result(dashboard=None),
+        )
+        report = stage.run(TierState(symbol="AAPL", market=Market.US))
+        self.assertEqual(report.coverage, Coverage.PARTIAL)
+        self.assertEqual(report.direction, Direction.BUY)
+        self.assertEqual(report.levels, SniperLevels())
+        self.assertTrue(report.warnings)
+
+    def test_unparseable_level_degrades_to_partial_with_warning(self):
+        result = _fake_dsa_result()
+        result.dashboard["battle_plan"]["sniper_points"]["stop_loss"] = "N/A"
+        stage = Tier1Stage(analysis_runner=lambda symbol: result)
+        report = stage.run(TierState(symbol="AAPL", market=Market.US))
+        self.assertEqual(report.coverage, Coverage.PARTIAL)
+        self.assertIsNone(report.levels.stop_loss)
+        self.assertTrue(any("stop_loss" in w for w in report.warnings))
+
+    def test_runner_failure_is_unavailable_result_not_exception(self):
+        def _boom(symbol):
+            raise RuntimeError("LLM quota exhausted")
+
+        stage = Tier1Stage(analysis_runner=_boom)
+        report = stage.run(TierState(symbol="AAPL", market=Market.US))
+        self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
+        self.assertEqual(report.direction, Direction.UNKNOWN)
+        self.assertTrue(any("LLM quota exhausted" in w for w in report.warnings))
+
+
+class TestTier23Stubs(unittest.TestCase):
+    def test_stubs_report_unavailable_not_implemented(self):
+        state = TierState(symbol="AAPL", market=Market.US)
+        for stage, tier in ((Tier2Stage(), 2), (Tier3Stage(), 3)):
+            report = stage.run(state)
+            self.assertEqual(report.tier, tier)
+            self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
+            self.assertEqual(report.direction, Direction.UNKNOWN)
+            self.assertTrue(any("not implemented" in w for w in report.warnings))
+
+
+class TestTieredPipeline(unittest.TestCase):
+    def _pipeline(self):
+        return TieredPipeline(
+            tier1=Tier1Stage(analysis_runner=lambda symbol: _fake_dsa_result()),
+        )
+
+    def test_runs_stages_up_to_requested_tier(self):
+        state = self._pipeline().run("AAPL", market=Market.US, up_to_tier=3)
+        self.assertEqual(sorted(state.reports), [1, 2, 3])
+        self.assertEqual(state.reports[1].coverage, Coverage.FULL)
+        self.assertEqual(state.reports[2].coverage, Coverage.UNAVAILABLE)
+        self.assertEqual(state.reports[3].coverage, Coverage.UNAVAILABLE)
+
+    def test_default_runs_tier1_only(self):
+        state = self._pipeline().run("AAPL", market=Market.US)
+        self.assertEqual(sorted(state.reports), [1])
+
+    def test_rejects_unsupported_tier(self):
+        with self.assertRaises(ValueError):
+            self._pipeline().run("AAPL", market=Market.US, up_to_tier=4)
+        with self.assertRaises(ValueError):
+            self._pipeline().run("AAPL", market=Market.US, up_to_tier=0)
+
+
+if __name__ == "__main__":
+    unittest.main()
