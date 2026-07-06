@@ -4,6 +4,24 @@
 
 如果本文件与仓库中的脚本、工作流、代码现状不一致，以实际可执行内容为准，并在相关改动中顺手修正文档，避免规则继续漂移。
 
+## 0. Personal fork overrides (2026-07-07) — these supersede everything below
+
+This is wenbo68's personal fork. We do NOT send pull requests upstream. The
+upstream contribution ceremony below is therefore disabled:
+
+- **Committing is allowed without asking** (blanket permission granted by the owner
+  on 2026-07-07). Pushing to `origin` (the personal fork) is also fine when asked.
+  Never push to the upstream ZhuLinsen repo.
+- **No CHANGELOG updates required.** Skip `docs/CHANGELOG.md` maintenance.
+- **No bilingual doc sync.** English-only docs are fine; don't maintain zh/en pairs.
+- **No PR ceremony**: PR templates, PR-title rules, review-workflow sections,
+  screenshot requirements, and `python scripts/check_ai_assets.py` are not needed.
+- Still in force (they protect the working software, not the upstream process):
+  directory boundaries (§3), no hardcoded secrets, reuse existing modules over
+  parallel implementations, offline tests for new code (`pytest -m "not network"`
+  scoped to what you touched is enough — the full ci_gate.sh is optional),
+  update `.env.example` when adding config.
+
 ## 1. 硬规则
 
 - 遵循现有目录边界：
