@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 > For user-friendly release highlights, see the [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) page.
 
 ## [Unreleased]
+- [新功能] 新增分层分析基础模块 `src/tiered_analysis/`：provider 接口（NUMERIC/TEXTUAL、显式 coverage 降级、引用）、确定性技术面指标（SMA/EMA/Wilder-RSI/MACD/ATR/BIAS + 0-100 评分）与市场路由（复用 `_market_tag`），含 32 条离线测试；暂未接入现有分析主链路
+- [文档] `docs/tiered-analysis-design.md` 全文由中文转为英文（关键市场术语保留中文），并在第 9 节补充核对说明：原文所称已实现切片当时并不存在于仓库，现已按设计重新实现
 - [改进] GitHub Actions 每日分析工作流补齐 TickFlow 数据源环境变量映射，并收敛 README 数据源稳定性说明到完整指南。
 - [修复] WebUI 启动时显式 `--host` / `--port` 不再被 `.env` 中的 `WEBUI_HOST` / `WEBUI_PORT` 覆盖，未传 CLI 参数时统一使用解析后的运行时配置。
 - [改进] GitHub Actions: 每日分析工作流（`00-daily-analysis.yml`）新增钉钉通知环境变量映射，支持在云端定时任务中直接使用钉钉机器人。
