@@ -148,6 +148,16 @@ class TestBuildSignalPayload:
         # TEXTUAL never feeds sizing; the flag must survive into evidence.
         assert entries[0]["is_actionable"] is False
 
+    def test_urlless_citation_falls_back_to_source_name(self):
+        # Numeric sources (e.g. price bars) cite a source name, not a URL —
+        # evidence must never contain a bare null.
+        citation = Citation(source_name="ohlcv-bars")
+        report = _report(dimensions=[
+            _dimension("technicals", citations=[citation]),
+        ])
+        payload, _ = build_signal_payload(report)
+        assert payload["evidence"]["dimensions"][0]["citations"] == ["ohlcv-bars"]
+
     def test_warnings_are_capped(self):
         report = _report(warnings=[f"warning {i}" for i in range(50)])
         payload, _ = build_signal_payload(report)

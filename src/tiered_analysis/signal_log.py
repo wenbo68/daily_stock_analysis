@@ -134,7 +134,10 @@ def _evidence_entries(report: TierReport) -> List[Dict[str, Any]]:
             "is_actionable": dim.is_actionable,
         }
         if dim.citations:
-            entry["citations"] = [citation.url for citation in dim.citations]
+            entry["citations"] = [
+                citation.url or citation.source_name
+                for citation in dim.citations
+            ]
         entries.append(entry)
     return entries
 

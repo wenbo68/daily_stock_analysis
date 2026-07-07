@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from .providers.base import Coverage, Market
-from .schema import Direction, SniperLevels, TierReport, coerce_price
+from .schema import Direction, SniperLevels, TierReport, extract_price
 
 _SNIPER_FIELDS = (
     ("entry", "ideal_buy"),
@@ -123,7 +123,7 @@ class Tier1Stage(TierStage):
         warnings: List[str] = []
         for target, source in _SNIPER_FIELDS:
             raw = sniper.get(source)
-            price = coerce_price(raw)
+            price = extract_price(raw)
             if raw is not None and price is None:
                 warnings.append(f"unparseable sniper level {source}={raw!r}")
             values[target] = price

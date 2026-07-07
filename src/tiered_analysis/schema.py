@@ -8,6 +8,7 @@ obligation to justify it with a backtest, which v1 does not have.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
@@ -46,6 +47,32 @@ def coerce_price(value: object) -> Optional[float]:
         return float(str(value).strip())
     except ValueError:
         return None
+
+
+#: A price-like number in prose: digits (optionally decimal) not glued to a
+#: letter/digit (rejects indicator names like MA20/RSI14) and not a percent.
+_PRICE_IN_TEXT_RE = re.compile(r"(?<![A-Za-z0-9.])\d+(?:\.\d+)?")
+
+
+def extract_price(value: object) -> Optional[float]:
+    """coerce_price plus a prose fallback (first price-like number).
+
+    The live production run showed DSA sometimes returns sniper levels as
+    full sentences ("理想买入点：303.80元（...）"). The number is still
+    deterministic text — extract the first one that is not an indicator
+    name (MA20) and not a percentage (7%).
+    """
+    strict = coerce_price(value)
+    if strict is not None:
+        return strict
+    if not isinstance(value, str):
+        return None
+    for match in _PRICE_IN_TEXT_RE.finditer(value):
+        end = match.end()
+        if end < len(value) and value[end] == "%":
+            continue
+        return float(match.group())
+    return None
 
 
 @dataclass(frozen=True)

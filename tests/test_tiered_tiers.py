@@ -17,6 +17,7 @@ from src.tiered_analysis.schema import (
     SniperLevels,
     TierReport,
     coerce_price,
+    extract_price,
 )
 from src.tiered_analysis.tiers import (
     Tier1Stage,
@@ -65,6 +66,38 @@ class TestCoercePrice(unittest.TestCase):
         self.assertIsNone(coerce_price(""))
         self.assertIsNone(coerce_price(None))
         self.assertIsNone(coerce_price("about 180"))
+
+
+class TestExtractPrice(unittest.TestCase):
+    """Prose fallback — the live AAPL run returned sniper levels as full
+    Chinese sentences; the price must be extracted deterministically."""
+
+    def test_strict_values_still_work(self):
+        self.assertEqual(extract_price("195"), 195.0)
+        self.assertEqual(extract_price(178), 178.0)
+        self.assertIsNone(extract_price("N/A"))
+        self.assertIsNone(extract_price(None))
+
+    def test_real_live_run_sentences(self):
+        cases = [
+            ("理想买入点：303.80元（缩量回踩MA5获得支撑，且MA10上穿MA20）", 303.80),
+            ("次优买入点：294.70元（回踩MA10获得支撑，且MA10上穿MA20）", 294.70),
+            ("止损位：290.00元（跌破MA20或当前价位下方约7%）", 290.00),
+            ("目标位：325.00元（心理关口，需配合放量突破）", 325.00),
+        ]
+        for text, expected in cases:
+            self.assertEqual(extract_price(text), expected, text)
+
+    def test_indicator_names_are_not_prices(self):
+        # digits glued to letters (MA20, RSI14) must never parse as prices
+        self.assertIsNone(extract_price("跌破MA20后止损"))
+        self.assertIsNone(extract_price("RSI14 oversold"))
+
+    def test_percentages_are_not_prices(self):
+        self.assertIsNone(extract_price("当前价位下方约7%"))
+
+    def test_english_prose(self):
+        self.assertEqual(extract_price("$210.50 support zone"), 210.50)
 
 
 class TestSchema(unittest.TestCase):
@@ -136,6 +169,24 @@ class TestTier1Stage(unittest.TestCase):
         self.assertEqual(report.coverage, Coverage.PARTIAL)
         self.assertIsNone(report.levels.stop_loss)
         self.assertTrue(any("stop_loss" in w for w in report.warnings))
+
+    def test_prose_sniper_levels_parse_without_warnings(self):
+        # Live-run regression: DSA sometimes returns levels as sentences.
+        result = _fake_dsa_result()
+        result.dashboard["battle_plan"]["sniper_points"] = {
+            "ideal_buy": "理想买入点：303.80元（缩量回踩MA5获得支撑）",
+            "secondary_buy": "次优买入点：294.70元（回踩MA10获得支撑）",
+            "stop_loss": "止损位：290.00元（跌破MA20或当前价位下方约7%）",
+            "take_profit": "目标位：325.00元（心理关口，需配合放量突破）",
+        }
+        stage = Tier1Stage(analysis_runner=lambda symbol: result)
+        report = stage.run(TierState(symbol="AAPL", market=Market.US))
+        self.assertEqual(report.coverage, Coverage.FULL)
+        self.assertEqual(report.levels.entry, 303.80)
+        self.assertEqual(report.levels.secondary_entry, 294.70)
+        self.assertEqual(report.levels.stop_loss, 290.00)
+        self.assertEqual(report.levels.take_profit, 325.00)
+        self.assertEqual(report.warnings, [])
 
     def test_runner_failure_is_unavailable_result_not_exception(self):
         def _boom(symbol):
