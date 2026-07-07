@@ -1100,6 +1100,26 @@ class DecisionSignalFeedbackRecord(Base):
     updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
 
 
+class TieredRunRecord(Base):
+    """One tiered-analysis run (src/tiered_analysis): status + full report.
+
+    The web tiered page lists these as its run history; result_json holds
+    the serialized TierReport (dimensions, levels, badges) so revisiting a
+    finished run needs no re-analysis.
+    """
+
+    __tablename__ = 'tiered_runs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False, unique=True, index=True)
+    stock_code = Column(String(16), nullable=False, index=True)
+    status = Column(String(16), nullable=False, default='running', index=True)
+    result_json = Column(Text)
+    error = Column(Text)
+    created_at = Column(DateTime, default=utc_naive_now, index=True)
+    updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
+
+
 class _DatabaseManagerMeta(type):
     """Serialize DatabaseManager construction across __new__ and __init__."""
 

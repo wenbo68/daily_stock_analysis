@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
 """Offline tests for the tiered-analysis API endpoint.
 
-The real run takes minutes (LLM + data fetch), so the endpoint runs it in
-a background thread and the client polls a task id. Tests patch the
-runner with fast fakes.
+The real run takes minutes (LLM + data fetch), so the endpoint runs it
+in a background thread and persists status/result to the tiered_runs
+table; the client polls the run list/detail. Tests patch the runner with
+fast fakes and use the repo-standard isolated sqlite fixture.
 """
 from __future__ import annotations
 
+import os
 import time
-import unittest
 from unittest.mock import patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -28,7 +30,30 @@ from src.tiered_analysis.signal_log import SignalLogResult
 from src.tiered_analysis.tiers import TierState
 
 
-def _client():
+@pytest.fixture()
+def isolated_db(tmp_path):
+    from src.config import Config
+    from src.storage import DatabaseManager
+
+    old_database_path = os.environ.get("DATABASE_PATH")
+    db_path = tmp_path / "tiered_api.db"
+    os.environ["DATABASE_PATH"] = str(db_path)
+    Config.reset_instance()
+    DatabaseManager.reset_instance()
+    db = DatabaseManager.get_instance()
+    try:
+        yield db
+    finally:
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
+        if old_database_path is None:
+            os.environ.pop("DATABASE_PATH", None)
+        else:
+            os.environ["DATABASE_PATH"] = old_database_path
+
+
+@pytest.fixture()
+def client(isolated_db):
     app = FastAPI()
     app.include_router(tiered.router, prefix="/tiered")
     return TestClient(app)
@@ -71,42 +96,38 @@ def _outcome(symbol="AAPL"):
 def _poll_until_done(client, task_id, timeout_s=5.0):
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        response = client.get(f"/tiered/tasks/{task_id}")
+        response = client.get(f"/tiered/runs/{task_id}")
         assert response.status_code == 200
         body = response.json()
         if body["status"] != "running":
             return body
         time.sleep(0.05)
-    raise AssertionError("task never finished")
+    raise AssertionError("run never finished")
 
 
-class TestTieredAnalyzeEndpoint(unittest.TestCase):
-    def test_accepts_and_completes_task(self):
-        client = _client()
+class TestTieredAnalyzeEndpoint:
+    def test_accepts_and_completes_run(self, client):
         with patch.object(tiered, "_run_analysis", lambda code: _outcome(code)):
             accepted = client.post("/tiered/analyze",
                                    json={"stock_code": "AAPL"})
-            self.assertEqual(accepted.status_code, 202)
+            assert accepted.status_code == 202
             task_id = accepted.json()["task_id"]
             body = _poll_until_done(client, task_id)
 
-        self.assertEqual(body["status"], "done")
+        assert body["status"] == "done"
         result = body["result"]
-        self.assertEqual(result["symbol"], "AAPL")
-        self.assertEqual(result["direction"], "hold")
-        self.assertEqual(result["score"], 56)
-        self.assertEqual(result["coverage"], "partial")
-        self.assertEqual(result["levels"]["entry"], 303.8)
-        self.assertEqual(result["signal"]["signal_id"], 7)
+        assert result["symbol"] == "AAPL"
+        assert result["direction"] == "hold"
+        assert result["score"] == 56
+        assert result["coverage"] == "partial"
+        assert result["levels"]["entry"] == 303.8
+        assert result["signal"]["signal_id"] == 7
         dims = {d["dimension"]: d for d in result["dimensions"]}
-        self.assertEqual(dims["fundamentals"]["payload"]["growth"]["revenue_yoy_pct"], 6.4)
-        self.assertEqual(dims["sentiment"]["narrative"], "Sentiment: mixed.")
-        self.assertEqual(dims["sentiment"]["citations"][0]["url"],
-                         "https://reuters.example/x")
+        assert dims["fundamentals"]["payload"]["growth"]["revenue_yoy_pct"] == 6.4
+        assert dims["sentiment"]["narrative"] == "Sentiment: mixed."
+        assert dims["sentiment"]["citations"][0]["url"] == "https://reuters.example/x"
 
-    def test_failed_run_reports_error(self):
-        client = _client()
-
+    def test_failed_run_reports_error(self, client):
         def boom(code):
             raise RuntimeError("upstream exploded")
 
@@ -115,19 +136,28 @@ class TestTieredAnalyzeEndpoint(unittest.TestCase):
                                    json={"stock_code": "AAPL"})
             body = _poll_until_done(client, accepted.json()["task_id"])
 
-        self.assertEqual(body["status"], "failed")
-        self.assertIn("upstream exploded", body["error"])
+        assert body["status"] == "failed"
+        assert "upstream exploded" in body["error"]
 
-    def test_blank_stock_code_rejected(self):
-        client = _client()
+    def test_runs_list_is_history_newest_first(self, client):
+        with patch.object(tiered, "_run_analysis", lambda code: _outcome(code)):
+            first = client.post("/tiered/analyze",
+                                json={"stock_code": "AAPL"}).json()["task_id"]
+            _poll_until_done(client, first)
+            second = client.post("/tiered/analyze",
+                                 json={"stock_code": "NVDA"}).json()["task_id"]
+            _poll_until_done(client, second)
+
+        items = client.get("/tiered/runs").json()["items"]
+        assert [item["stock_code"] for item in items[:2]] == ["NVDA", "AAPL"]
+        assert all(item["status"] == "done" for item in items[:2])
+        # summaries stay light — full reports come from the detail route
+        assert all("result" not in item for item in items)
+
+    def test_blank_stock_code_rejected(self, client):
         response = client.post("/tiered/analyze", json={"stock_code": "   "})
-        self.assertEqual(response.status_code, 422)
+        assert response.status_code == 422
 
-    def test_unknown_task_is_404(self):
-        client = _client()
-        response = client.get("/tiered/tasks/nope")
-        self.assertEqual(response.status_code, 404)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_unknown_run_is_404(self, client):
+        response = client.get("/tiered/runs/nope")
+        assert response.status_code == 404

@@ -2,29 +2,26 @@
 """Tiered-analysis API: run tier 1 for a symbol from the web UI.
 
 A full run takes minutes (data fetch + LLM), so POST /analyze returns a
-task id immediately and the client polls GET /tasks/{id}. Tasks live in
-process memory — good enough for a single-user personal deployment; a
-server restart forgets running tasks (the logged signal still lands in
-the decision-signal system).
+task id immediately; the run executes in a background thread. Runs
+persist in the tiered_runs table (src/tiered_analysis/history.py), so
+GET /runs serves a clickable history that survives page navigation and
+server restarts, and GET /runs/{task_id} returns the stored full report.
 """
 from __future__ import annotations
 
 import logging
 import threading
 import uuid
-from collections import OrderedDict
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
+from src.tiered_analysis import history
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_MAX_TASKS = 50
-_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
-_tasks_lock = threading.Lock()
 
 
 def _run_analysis(stock_code: str):
@@ -50,7 +47,7 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
     report = outcome.report
     dimensions = []
     for dim in report.dimensions:
-        entry: Dict[str, Any] = {
+        dimensions.append({
             "dimension": dim.dimension,
             "kind": dim.kind.value,
             "coverage": dim.coverage.value,
@@ -67,8 +64,7 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
                 }
                 for c in (dim.citations or [])
             ],
-        }
-        dimensions.append(entry)
+        })
 
     signal: Optional[Dict[str, Any]] = None
     if outcome.signal is not None:
@@ -100,43 +96,21 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
     }
 
 
-def _set_task(task_id: str, payload: Dict[str, Any]) -> None:
-    with _tasks_lock:
-        _tasks[task_id] = payload
-        _tasks.move_to_end(task_id)
-        while len(_tasks) > _MAX_TASKS:
-            _tasks.popitem(last=False)
-
-
 def _run_task(task_id: str, stock_code: str) -> None:
     try:
         outcome = _run_analysis(stock_code)
-        _set_task(task_id, {
-            "task_id": task_id,
-            "stock_code": stock_code,
-            "status": "done",
-            "result": _serialize_outcome(outcome),
-        })
+        history.mark_done(task_id, _serialize_outcome(outcome))
     except Exception as exc:
         logger.error("tiered analysis task failed for %s: %s",
                      stock_code, exc, exc_info=True)
-        _set_task(task_id, {
-            "task_id": task_id,
-            "stock_code": stock_code,
-            "status": "failed",
-            "error": str(exc),
-        })
+        history.mark_failed(task_id, str(exc))
 
 
 @router.post("/analyze", status_code=202)
 def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
     """Kick off a tiered run in the background; returns a pollable task."""
     task_id = uuid.uuid4().hex
-    _set_task(task_id, {
-        "task_id": task_id,
-        "stock_code": request.stock_code,
-        "status": "running",
-    })
+    history.create_run(task_id, request.stock_code)
     worker = threading.Thread(
         target=_run_task,
         args=(task_id, request.stock_code),
@@ -148,10 +122,16 @@ def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
             "status": "running"}
 
 
-@router.get("/tasks/{task_id}")
-def get_tiered_task(task_id: str) -> Dict[str, Any]:
-    with _tasks_lock:
-        task = _tasks.get(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="task not found")
-    return task
+@router.get("/runs")
+def list_tiered_runs(limit: int = 50) -> Dict[str, List[Dict[str, Any]]]:
+    """Run history, newest first (summaries only)."""
+    return {"items": history.list_runs(limit=limit)}
+
+
+@router.get("/runs/{task_id}")
+def get_tiered_run(task_id: str) -> Dict[str, Any]:
+    """One run with its stored full report."""
+    run = history.get_run(task_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return run

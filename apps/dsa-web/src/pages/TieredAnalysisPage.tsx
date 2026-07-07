@@ -1,7 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Layers, Search } from 'lucide-react';
-import { tieredApi, type TieredDimension, type TieredResult } from '../api/tiered';
+import { Info, Layers, Search } from 'lucide-react';
+import {
+  tieredApi,
+  type TieredDimension,
+  type TieredResult,
+  type TieredRunStatus,
+  type TieredRunSummary,
+} from '../api/tiered';
 import {
   AppPage,
   Badge,
@@ -13,9 +19,10 @@ import {
   PageHeader,
 } from '../components/common';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
-import type { UiTextKey } from '../i18n/uiText';
+import type { UiLanguage, UiTextKey } from '../i18n/uiText';
+import { cn } from '../utils/cn';
 
-const POLL_INTERVAL_MS = 4000;
+const POLL_INTERVAL_MS = 5000;
 
 const DIRECTION_BADGE: Record<TieredResult['direction'], 'success' | 'warning' | 'danger' | 'default'> = {
   buy: 'success',
@@ -28,6 +35,12 @@ const COVERAGE_BADGE: Record<TieredDimension['coverage'], 'success' | 'warning' 
   full: 'success',
   partial: 'warning',
   unavailable: 'danger',
+};
+
+const STATUS_BADGE: Record<TieredRunStatus, 'info' | 'success' | 'danger'> = {
+  running: 'info',
+  done: 'success',
+  failed: 'danger',
 };
 
 const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
@@ -47,7 +60,27 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-const PayloadTable: React.FC<{ payload: Record<string, unknown> }> = ({ payload }) => (
+function formatTime(value: string | null, language: UiLanguage): string {
+  if (!value) {
+    return '—';
+  }
+  const date = new Date(value.endsWith('Z') ? value : `${value}Z`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+interface PayloadTableProps {
+  payload: Record<string, unknown>;
+}
+
+const PayloadTable = ({ payload }: PayloadTableProps) => (
   <div className="space-y-3">
     {Object.entries(payload).map(([group, values]) => {
       if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
@@ -75,7 +108,11 @@ const PayloadTable: React.FC<{ payload: Record<string, unknown> }> = ({ payload 
   </div>
 );
 
-const DimensionCard: React.FC<{ dimension: TieredDimension }> = ({ dimension }) => {
+interface DimensionCardProps {
+  dimension: TieredDimension;
+}
+
+const DimensionCard = ({ dimension }: DimensionCardProps) => {
   const { t } = useUiLanguage();
   const labelKey = DIMENSION_LABEL_KEYS[dimension.dimension];
 
@@ -133,70 +170,198 @@ const DimensionCard: React.FC<{ dimension: TieredDimension }> = ({ dimension }) 
   );
 };
 
-const LevelTile: React.FC<{ label: string; value: number | null }> = ({ label, value }) => (
+interface LevelTileProps {
+  label: string;
+  value: number | null;
+}
+
+const LevelTile = ({ label, value }: LevelTileProps) => (
   <div className="rounded-xl border border-border/40 bg-elevated/60 px-3 py-2">
     <div className="text-xs text-secondary-text">{label}</div>
     <div className="mt-1 font-mono text-base text-foreground">{value ?? '—'}</div>
   </div>
 );
 
-const TieredAnalysisPage: React.FC = () => {
-  const { t } = useUiLanguage();
-  const [stockCode, setStockCode] = useState('');
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<TieredResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<number | null>(null);
+interface ResultViewProps {
+  result: TieredResult;
+}
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current !== null) {
-      window.clearInterval(pollRef.current);
-      pollRef.current = null;
+const ResultView = ({ result }: ResultViewProps) => {
+  const { t } = useUiLanguage();
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
+          <Badge variant={DIRECTION_BADGE[result.direction]} size="md" glow>
+            {t(`tiered.direction.${result.direction}` as UiTextKey)}
+          </Badge>
+          {result.score !== null ? (
+            <span className="text-sm text-secondary-text">
+              {t('tiered.score')}: <span className="font-mono text-foreground">{result.score}</span>
+            </span>
+          ) : null}
+          <span className="flex items-center gap-1 text-sm text-secondary-text">
+            {t('tiered.coverage')}:
+            <Badge variant={COVERAGE_BADGE[result.coverage]}>
+              {t(`tiered.coverage.${result.coverage}` as UiTextKey)}
+            </Badge>
+          </span>
+        </div>
+
+        {result.narrative ? (
+          <div className="mt-3">
+            <div className="label-uppercase mb-1">{t('tiered.narrative')}</div>
+            <p className="text-sm leading-relaxed text-secondary-text">{result.narrative}</p>
+          </div>
+        ) : null}
+
+        <div className="mt-4">
+          <div className="label-uppercase mb-2">{t('tiered.levels')}</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <LevelTile label={t('tiered.levels.entry')} value={result.levels.entry} />
+            <LevelTile label={t('tiered.levels.secondaryEntry')} value={result.levels.secondary_entry} />
+            <LevelTile label={t('tiered.levels.stopLoss')} value={result.levels.stop_loss} />
+            <LevelTile label={t('tiered.levels.takeProfit')} value={result.levels.take_profit} />
+          </div>
+          <p className="mt-2 text-xs text-secondary-text">{t('tiered.levelsNote')}</p>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+          {result.signal?.logged ? (
+            <>
+              <span className="text-success">
+                {t('tiered.signalSaved', { id: result.signal.signal_id ?? '—' })}
+              </span>
+              <Link to="/decision-signals" className="text-cyan hover:underline">
+                {t('tiered.viewSignals')}
+              </Link>
+            </>
+          ) : result.signal ? (
+            <span className="text-warning">
+              {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}
+            </span>
+          ) : null}
+        </div>
+
+        {result.warnings.length > 0 ? (
+          <ul className="mt-3 space-y-1">
+            {result.warnings.map((warning, index) => (
+              <li key={index} className="text-xs text-warning">
+                {warning}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Card>
+
+      <div>
+        <div className="label-uppercase mb-2">{t('tiered.dimensions')}</div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {result.dimensions.map((dimension) => (
+            <DimensionCard key={dimension.dimension} dimension={dimension} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TieredAnalysisPage = () => {
+  const { t, language } = useUiLanguage();
+  const [stockCode, setStockCode] = useState('');
+  const [runs, setRuns] = useState<TieredRunSummary[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedResult, setSelectedResult] = useState<TieredResult | null>(null);
+  const [selectedError, setSelectedError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const loadedDetailRef = useRef<string | null>(null);
+
+  const anyRunning = useMemo(
+    () => runs.some((run) => run.status === 'running'),
+    [runs],
+  );
+
+  const refreshRuns = useCallback(async () => {
+    try {
+      const items = await tieredApi.listRuns();
+      setRuns(items);
+    } catch {
+      // transient — next poll retries
     }
   }, []);
 
-  useEffect(() => stopPolling, [stopPolling]);
+  useEffect(() => {
+    void refreshRuns();
+  }, [refreshRuns]);
 
   useEffect(() => {
-    if (!taskId || !running) {
+    if (!anyRunning) {
       return;
     }
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const task = await tieredApi.getTask(taskId);
-        if (task.status === 'done' && task.result) {
-          stopPolling();
-          setRunning(false);
-          setResult(task.result);
-        } else if (task.status === 'failed') {
-          stopPolling();
-          setRunning(false);
-          setError(task.error || t('tiered.error.title'));
-        }
-      } catch {
-        // transient poll failure — keep polling; the run continues server-side
-      }
+    const timer = window.setInterval(() => {
+      void refreshRuns();
     }, POLL_INTERVAL_MS);
-    return stopPolling;
-  }, [taskId, running, stopPolling, t]);
+    return () => window.clearInterval(timer);
+  }, [anyRunning, refreshRuns]);
+
+  const selectedRun = useMemo(
+    () => runs.find((run) => run.task_id === selectedTaskId) ?? null,
+    [runs, selectedTaskId],
+  );
+
+  useEffect(() => {
+    if (!selectedTaskId || !selectedRun) {
+      return;
+    }
+    if (selectedRun.status === 'failed') {
+      setSelectedResult(null);
+      setSelectedError(selectedRun.error || t('tiered.error.title'));
+      return;
+    }
+    if (selectedRun.status !== 'done' || loadedDetailRef.current === selectedTaskId) {
+      return;
+    }
+    loadedDetailRef.current = selectedTaskId;
+    void (async () => {
+      try {
+        const run = await tieredApi.getRun(selectedTaskId);
+        setSelectedResult(run.result);
+        setSelectedError(run.result ? null : run.error);
+      } catch (error) {
+        loadedDetailRef.current = null;
+        setSelectedError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+  }, [selectedTaskId, selectedRun, t]);
+
+  const handleSelect = useCallback((taskId: string) => {
+    setSelectedTaskId(taskId);
+    setSelectedResult(null);
+    setSelectedError(null);
+    loadedDetailRef.current = null;
+  }, []);
 
   const handleRun = useCallback(async () => {
     const code = stockCode.trim();
-    if (!code || running) {
+    if (!code || submitting) {
       return;
     }
-    setError(null);
-    setResult(null);
+    setSubmitError(null);
+    setSubmitting(true);
     try {
-      const task = await tieredApi.start(code);
-      setTaskId(task.task_id);
-      setRunning(true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
+      const started = await tieredApi.start(code);
+      setStockCode('');
+      await refreshRuns();
+      handleSelect(started.task_id);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
     }
-  }, [stockCode, running]);
+  }, [stockCode, submitting, refreshRuns, handleSelect]);
 
   return (
     <AppPage>
@@ -219,115 +384,87 @@ const TieredAnalysisPage: React.FC = () => {
               value={stockCode}
               onChange={(event) => setStockCode(event.target.value)}
               placeholder={t('tiered.inputPlaceholder')}
-              disabled={running}
               aria-label={t('tiered.inputPlaceholder')}
             />
           </div>
           <Button
             type="submit"
             variant="primary"
-            isLoading={running}
-            loadingText={t('tiered.run')}
-            disabled={!stockCode.trim() || running}
+            isLoading={submitting}
+            disabled={!stockCode.trim() || submitting}
           >
             <Search className="mr-1 h-4 w-4" />
             {t('tiered.run')}
           </Button>
         </form>
-        {running ? (
+        {anyRunning ? (
           <p className="mt-3 text-sm text-secondary-text">{t('tiered.running')}</p>
         ) : null}
       </Card>
 
-      {error ? (
+      {submitError ? (
         <div className="mt-4">
-          <InlineAlert variant="danger" title={t('tiered.error.title')} message={error} />
+          <InlineAlert variant="danger" title={t('tiered.error.title')} message={submitError} />
         </div>
       ) : null}
 
-      {!result && !running && !error ? (
-        <div className="mt-6">
-          <EmptyState icon={<Layers className="h-8 w-8" />} title={t('tiered.empty')} />
-        </div>
-      ) : null}
-
-      {result ? (
-        <div className="mt-4 space-y-4">
-          <Card className="p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
-              <Badge variant={DIRECTION_BADGE[result.direction]} size="md" glow>
-                {t(`tiered.direction.${result.direction}` as UiTextKey)}
-              </Badge>
-              {result.score !== null ? (
-                <span className="text-sm text-secondary-text">
-                  {t('tiered.score')}: <span className="font-mono text-foreground">{result.score}</span>
-                </span>
-              ) : null}
-              <span className="text-sm text-secondary-text">
-                {t('tiered.coverage')}:{' '}
-                <Badge variant={COVERAGE_BADGE[result.coverage]}>
-                  {t(`tiered.coverage.${result.coverage}` as UiTextKey)}
-                </Badge>
-              </span>
-            </div>
-
-            {result.narrative ? (
-              <div className="mt-3">
-                <div className="label-uppercase mb-1">{t('tiered.narrative')}</div>
-                <p className="text-sm leading-relaxed text-secondary-text">{result.narrative}</p>
-              </div>
-            ) : null}
-
-            <div className="mt-4">
-              <div className="label-uppercase mb-2">{t('tiered.levels')}</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <LevelTile label={t('tiered.levels.entry')} value={result.levels.entry} />
-                <LevelTile label={t('tiered.levels.secondaryEntry')} value={result.levels.secondary_entry} />
-                <LevelTile label={t('tiered.levels.stopLoss')} value={result.levels.stop_loss} />
-                <LevelTile label={t('tiered.levels.takeProfit')} value={result.levels.take_profit} />
-              </div>
-              <p className="mt-2 text-xs text-secondary-text">{t('tiered.levelsNote')}</p>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
-              {result.signal?.logged ? (
-                <>
-                  <span className="text-success">
-                    {t('tiered.signalSaved', { id: result.signal.signal_id ?? '—' })}
-                  </span>
-                  <Link to="/decision-signals" className="text-cyan hover:underline">
-                    {t('tiered.viewSignals')}
-                  </Link>
-                </>
-              ) : result.signal ? (
-                <span className="text-warning">
-                  {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}
-                </span>
-              ) : null}
-            </div>
-
-            {result.warnings.length > 0 ? (
-              <ul className="mt-3 space-y-1">
-                {result.warnings.map((warning, index) => (
-                  <li key={index} className="text-xs text-warning">
-                    {warning}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </Card>
-
-          <div>
-            <div className="label-uppercase mb-2">{t('tiered.dimensions')}</div>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {result.dimensions.map((dimension) => (
-                <DimensionCard key={dimension.dimension} dimension={dimension} />
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+        <Card className="h-fit p-4">
+          <h2 className="text-sm font-semibold text-foreground">{t('tiered.history')}</h2>
+          <p className="mt-1 text-xs text-secondary-text">{t('tiered.historyHint')}</p>
+          {runs.length === 0 ? (
+            <p className="mt-4 text-sm text-secondary-text">{t('tiered.empty')}</p>
+          ) : (
+            <ul className="mt-3 space-y-1">
+              {runs.map((run) => (
+                <li key={run.task_id}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(run.task_id)}
+                    className={cn(
+                      'flex w-full items-center justify-between gap-2 rounded-lg px-2 py-2 text-left transition-colors',
+                      run.task_id === selectedTaskId
+                        ? 'bg-elevated text-foreground'
+                        : 'text-secondary-text hover:bg-elevated/60 hover:text-foreground',
+                    )}
+                  >
+                    <span className="flex items-baseline gap-2">
+                      <span className="font-mono text-sm">{run.stock_code}</span>
+                      <span className="text-xs">{formatTime(run.created_at, language)}</span>
+                    </span>
+                    <Badge variant={STATUS_BADGE[run.status]}>
+                      {t(`tiered.status.${run.status}` as UiTextKey)}
+                    </Badge>
+                  </button>
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          )}
+        </Card>
+
+        <div>
+          {selectedError ? (
+            <InlineAlert variant="danger" title={t('tiered.error.title')} message={selectedError} />
+          ) : null}
+          {selectedResult ? (
+            <ResultView result={selectedResult} />
+          ) : !selectedError ? (
+            <EmptyState
+              icon={<Layers className="h-8 w-8" />}
+              title={
+                selectedRun?.status === 'running' ? t('tiered.running') : t('tiered.empty')
+              }
+            />
+          ) : null}
         </div>
-      ) : null}
+      </div>
+
+      <Card className="mt-4 p-4">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-cyan" />
+          <p className="text-xs leading-relaxed text-secondary-text">{t('tiered.signalsExplainer')}</p>
+        </div>
+      </Card>
     </AppPage>
   );
 };

@@ -829,6 +829,12 @@ const zh = {
   'tiered.signalSkipped': '未记录：{reason}',
   'tiered.viewSignals': '查看 AI 建议列表',
   'tiered.empty': '输入股票代码开始一次分层分析。',
+  'tiered.history': '运行历史',
+  'tiered.historyHint': '每次运行都会保存在这里，点击查看完整报告。',
+  'tiered.status.running': '分析中',
+  'tiered.status.done': '完成',
+  'tiered.status.failed': '失败',
+  'tiered.signalsExplainer': '「AI 建议」页是全产品的建议台账：每日分析、告警和本页的每次运行都会往里记一条，产品之后会用真实价格给这些建议打分。本页的完整四维报告只保存在这里的运行历史中；AI 建议里那条只是摘要。每次运行在 AI 建议里会出现两条：产品自带流程记的一条（来源 analysis）和分层分析记的一条（来源 tiered_analysis，含数据覆盖标签）。',
 } as const;
 
 export type UiTextKey = keyof typeof zh;
@@ -1662,6 +1668,12 @@ const en: Record<UiTextKey, string> = {
   'tiered.signalSkipped': 'Not recorded: {reason}',
   'tiered.viewSignals': 'View AI signals',
   'tiered.empty': 'Enter a ticker to start a tiered analysis.',
+  'tiered.history': 'Run history',
+  'tiered.historyHint': 'Every run is saved here — click one to open its full report.',
+  'tiered.status.running': 'Running',
+  'tiered.status.done': 'Done',
+  'tiered.status.failed': 'Failed',
+  'tiered.signalsExplainer': 'The "AI signals" page is the product-wide ledger of recommendations: daily analyses, alerts, and every run from this page each add an entry there, and the product later scores those entries against real prices. The full four-dimension report lives only here in the run history; the AI-signals entry is a summary. Each run appears there twice: one entry written by the product’s built-in flow (source "analysis") and one written by tiered analysis (source "tiered_analysis", with data-coverage labels).',
 };
 
 export const UI_TEXT: Record<UiLanguage, Record<UiTextKey, string>> = {

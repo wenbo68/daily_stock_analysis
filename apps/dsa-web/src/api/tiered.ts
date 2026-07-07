@@ -45,24 +45,38 @@ export type TieredResult = {
   } | null;
 };
 
-export type TieredTask = {
+export type TieredRunStatus = 'running' | 'done' | 'failed';
+
+export type TieredRunSummary = {
   task_id: string;
   stock_code: string;
-  status: 'running' | 'done' | 'failed';
-  result?: TieredResult;
-  error?: string;
+  status: TieredRunStatus;
+  error: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type TieredRun = TieredRunSummary & {
+  result: TieredResult | null;
 };
 
 export const tieredApi = {
-  start: async (stockCode: string): Promise<TieredTask> => {
-    const response = await apiClient.post<TieredTask>('/api/v1/tiered/analyze', {
+  start: async (stockCode: string): Promise<{ task_id: string }> => {
+    const response = await apiClient.post<{ task_id: string }>('/api/v1/tiered/analyze', {
       stock_code: stockCode,
     });
     return response.data;
   },
 
-  getTask: async (taskId: string): Promise<TieredTask> => {
-    const response = await apiClient.get<TieredTask>(`/api/v1/tiered/tasks/${taskId}`);
+  listRuns: async (limit = 50): Promise<TieredRunSummary[]> => {
+    const response = await apiClient.get<{ items: TieredRunSummary[] }>('/api/v1/tiered/runs', {
+      params: { limit },
+    });
+    return response.data.items;
+  },
+
+  getRun: async (taskId: string): Promise<TieredRun> => {
+    const response = await apiClient.get<TieredRun>(`/api/v1/tiered/runs/${taskId}`);
     return response.data;
   },
 };
