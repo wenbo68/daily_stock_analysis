@@ -74,6 +74,11 @@ class SentimentConfigError(RuntimeError):
 class SearchHit:
     title: str
     url: str
+    #: The search provider's own extract of the page (e.g. Tavily returns
+    #: ~500 chars of real page text). Fallback source text when the site
+    #: blocks our direct page fetch — still tool-fetched, so citation
+    #: verification against it stays honest.
+    snippet: str = ""
 
 
 def _normalize(text: str) -> str:
@@ -92,13 +97,28 @@ def _parse_llm_json(raw: str) -> Optional[dict]:
     return parsed if isinstance(parsed, dict) else None
 
 
-def _default_searcher(query: str) -> List[SearchHit]:
-    from src.search_service import SearchService
+def _default_searcher(symbol: str) -> List[SearchHit]:
+    """Search recent news via DSA's configured SearchService singleton.
 
-    response = SearchService().search(query, max_results=MAX_SOURCES)
+    ``get_search_service()`` wires up whichever providers have keys in the
+    env (Tavily/Brave/...); ``search_stock_news`` is its supported entry
+    point. We let the service build its own query — the live check showed
+    it beats a hand-built one (it knows the market's query conventions).
+    """
+    from src.search_service import get_search_service
+
+    response = get_search_service().search_stock_news(
+        stock_code=symbol,
+        stock_name=symbol,
+        max_results=MAX_SOURCES,
+    )
     results = getattr(response, "results", None) or []
     return [
-        SearchHit(title=str(r.title or r.url), url=str(r.url))
+        SearchHit(
+            title=str(r.title or r.url),
+            url=str(r.url),
+            snippet=str(getattr(r, "snippet", "") or ""),
+        )
         for r in results
         if getattr(r, "url", None)
     ]
@@ -196,7 +216,7 @@ class SentimentProvider(DimensionProvider):
         """Search, then fetch each hit; only really-fetched pages survive."""
         warnings: List[str] = []
         try:
-            hits = self._searcher(f"{symbol} stock latest news and analyst sentiment")
+            hits = self._searcher(symbol)
         except Exception as exc:
             return [], [f"sentiment search failed for {symbol}: {exc}"]
         if not hits:
@@ -208,9 +228,17 @@ class SentimentProvider(DimensionProvider):
                 text = self._fetcher(hit.url) or ""
             except Exception as exc:
                 warnings.append(f"fetch failed for {hit.url}: {exc}")
-                continue
+                text = ""
             if text.strip():
                 sources.append((hit, text.strip()))
+            elif hit.snippet.strip():
+                # Site blocked the direct fetch; the search provider's own
+                # extract is shorter but still real tool-fetched page text.
+                sources.append((hit, hit.snippet.strip()))
+                warnings.append(
+                    f"page fetch blocked for {hit.url}; "
+                    "using shorter search extract instead"
+                )
             else:
                 warnings.append(f"fetch returned no content for {hit.url}")
 

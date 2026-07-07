@@ -140,6 +140,47 @@ class TestFailureModes(unittest.TestCase):
         self.assertEqual(result.coverage, Coverage.UNAVAILABLE)
         self.assertTrue(any("no source pages" in w for w in result.warnings))
 
+    def test_blocked_fetch_falls_back_to_search_extract(self):
+        # News sites often block automated readers; the search provider's
+        # own extract is still tool-fetched text we can verify quotes in.
+        hits = [
+            SearchHit(
+                title="Reuters on Apple",
+                url="https://reuters.example/x",
+                snippet="Apple extended its chip partnership with Broadcom.",
+            )
+        ]
+        summarizer = lambda prompt: _llm_json(  # noqa: E731
+            [{"source": 1, "quote": "chip partnership with Broadcom"}]
+        )
+        result = _provider(
+            searcher=lambda symbol: hits,
+            fetcher=lambda url: "",  # every direct page fetch is blocked
+            summarizer=summarizer,
+        ).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.PARTIAL)
+        self.assertEqual(len(result.citations), 1)
+        self.assertTrue(any("search extract" in w for w in result.warnings))
+
+    def test_fabricated_quote_still_dropped_against_search_extract(self):
+        hits = [
+            SearchHit(
+                title="Reuters on Apple",
+                url="https://reuters.example/x",
+                snippet="Apple extended its chip partnership with Broadcom.",
+            )
+        ]
+        summarizer = lambda prompt: _llm_json(  # noqa: E731
+            [{"source": 1, "quote": "Apple is going bankrupt"}]
+        )
+        result = _provider(
+            searcher=lambda symbol: hits,
+            fetcher=lambda url: "",
+            summarizer=summarizer,
+        ).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.UNAVAILABLE)
+        self.assertEqual(len(result.citations or []), 0)
+
     def test_partial_fetch_failures_degrade_to_partial(self):
         pages = dict(PAGES)
         pages["https://blog.example/b"] = ""  # one page fails to fetch
@@ -183,6 +224,78 @@ class TestPromptContract(unittest.TestCase):
         self.assertIn("news.example/a", captured["prompt"])
         self.assertIn("wire.example/c", captured["prompt"])
         self.assertNotIn("blog.example/b", captured["prompt"])
+
+
+class TestDefaultSearchWiring(unittest.TestCase):
+    """The default searcher must go through DSA's real SearchService API.
+
+    Regression for the live-check failure: SearchService has no ``search``
+    method; the supported entry point is the ``get_search_service()``
+    singleton and its ``search_stock_news`` method.
+    """
+
+    def test_default_searcher_uses_search_stock_news(self):
+        from unittest.mock import patch
+
+        from src.search_service import SearchResponse, SearchResult
+        from src.tiered_analysis.providers.sentiment import _default_searcher
+
+        captured = {}
+
+        class FakeService:
+            def search_stock_news(self, stock_code, stock_name,
+                                  max_results=5, focus_keywords=None):
+                captured["stock_code"] = stock_code
+                captured["max_results"] = max_results
+                captured["focus_keywords"] = focus_keywords
+                return SearchResponse(
+                    query="q",
+                    results=[
+                        SearchResult(
+                            title="Apple beats expectations",
+                            snippet="search-provider extract text",
+                            url="https://news.example/a",
+                            source="news.example",
+                        ),
+                        SearchResult(title="", snippet="s", url="", source="x"),
+                    ],
+                    provider="Tavily",
+                )
+
+        with patch(
+            "src.search_service.get_search_service", return_value=FakeService()
+        ):
+            hits = _default_searcher("AAPL")
+
+        self.assertEqual(captured["stock_code"], "AAPL")
+        self.assertEqual(captured["max_results"], 5)
+        # Live check showed the service's own query beats a hand-built one.
+        self.assertIsNone(captured["focus_keywords"])
+        # Result without a URL is dropped; the good one is kept.
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0].url, "https://news.example/a")
+        self.assertEqual(hits[0].title, "Apple beats expectations")
+        # The search provider's extract rides along for fetch-blocked pages.
+        self.assertEqual(hits[0].snippet, "search-provider extract text")
+
+    def test_default_searcher_failed_response_returns_empty(self):
+        from unittest.mock import patch
+
+        from src.search_service import SearchResponse
+        from src.tiered_analysis.providers.sentiment import _default_searcher
+
+        class FakeService:
+            def search_stock_news(self, stock_code, stock_name,
+                                  max_results=5, focus_keywords=None):
+                return SearchResponse(
+                    query="q", results=[], provider="none",
+                    success=False, error_message="no provider configured",
+                )
+
+        with patch(
+            "src.search_service.get_search_service", return_value=FakeService()
+        ):
+            self.assertEqual(_default_searcher("AAPL"), [])
 
 
 class TestRegistryAndMarkets(unittest.TestCase):
