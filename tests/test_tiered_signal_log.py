@@ -148,6 +148,32 @@ class TestBuildSignalPayload:
         # TEXTUAL never feeds sizing; the flag must survive into evidence.
         assert entries[0]["is_actionable"] is False
 
+    def test_dimension_payloads_and_narrative_land_in_evidence(self):
+        # The web signal detail must show the full four-dimension reports,
+        # not just coverage badges.
+        citation = Citation(
+            source_name="Reuters", url="https://reuters.example/x",
+            title="Reuters", snippet="quote",
+        )
+        report = _report(dimensions=[
+            _dimension("fundamentals", payload={"growth": {"revenue_yoy_pct": 6.4}}),
+            DimensionResult(
+                dimension="sentiment", kind=SourceKind.TEXTUAL,
+                coverage=Coverage.PARTIAL,
+                narrative="Sentiment: mixed. Two-sided news flow.",
+                citations=[citation],
+                warnings=["one page blocked"],
+            ),
+        ])
+        payload, _ = build_signal_payload(report)
+        entries = {e["dimension"]: e for e in payload["evidence"]["dimensions"]}
+        assert entries["fundamentals"]["payload"] == {
+            "growth": {"revenue_yoy_pct": 6.4}
+        }
+        assert "payload" not in entries["sentiment"]  # textual has none
+        assert entries["sentiment"]["narrative"].startswith("Sentiment: mixed")
+        assert entries["sentiment"]["warnings"] == ["one page blocked"]
+
     def test_urlless_citation_falls_back_to_source_name(self):
         # Numeric sources (e.g. price bars) cite a source name, not a URL —
         # evidence must never contain a bare null.

@@ -133,6 +133,12 @@ def _evidence_entries(report: TierReport) -> List[Dict[str, Any]]:
             "coverage": dim.coverage.value,
             "is_actionable": dim.is_actionable,
         }
+        if dim.payload:
+            entry["payload"] = dim.payload
+        if dim.narrative:
+            entry["narrative"] = dim.narrative
+        if dim.warnings:
+            entry["warnings"] = list(dim.warnings)
         if dim.citations:
             entry["citations"] = [
                 citation.url or citation.source_name

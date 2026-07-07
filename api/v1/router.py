@@ -25,6 +25,7 @@ from api.v1.endpoints import (
     portfolio,
     stocks,
     system_config,
+    tiered,
     usage,
 )
 
@@ -72,6 +73,12 @@ router.include_router(
     system_config.router,
     prefix="/system",
     tags=["SystemConfig"]
+)
+
+router.include_router(
+    tiered.router,
+    prefix="/tiered",
+    tags=["TieredAnalysis"]
 )
 
 router.include_router(
