@@ -827,6 +827,16 @@ const zh = {
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
   'tiered.dataNotesHint': '记录数据受限之处以及系统的替代做法——刻意保留，让你了解这份报告的数据有多扎实。',
+  'tiered.help.direction':
+    'AI 对这只股票的总体判断。买入 = 建仓或加仓；持有 = 暂不动作、继续观察；卖出 = 减仓或离场。这里只给方向——买多少股（仓位管理）是 v2 功能。',
+  'tiered.help.score': '分析引擎根据技术指标计算的 0-100 分。分数越高，技术面越强。',
+  'tiered.help.coverage':
+    '底层数据的完整程度。完整 = 全部到位；部分 = 有缺口（见数据说明）；不可用 = 没有可用数据。',
+  'tiered.help.narrative': 'AI 阅读下方四份维度报告后写出的结论。',
+  'tiered.help.entry': '理想买入价——分析认为最合适的进场位，通常靠近支撑位（此前买盘出现过的价位）。',
+  'tiered.help.secondaryEntry': '次优买入价——更低的备用进场位，以防价格先继续下探。',
+  'tiered.help.stopLoss': '止损位——价格跌到这里说明判断错了，在此卖出可控制亏损。',
+  'tiered.help.takeProfit': '目标位——分析建议在此卖出、锁定收益的价位。',
   'tiered.signalSaved': '已记录到 AI 建议（信号 #{id}）',
   'tiered.signalSkipped': '未记录：{reason}',
   'tiered.viewSignals': '查看 AI 建议列表',
@@ -1635,7 +1645,7 @@ const en: Record<UiTextKey, string> = {
   'settings.envExportNote': 'Exports include only currently saved configuration, not unsaved local drafts on the page.',
   'settings.envDockerNote': 'In Docker deployments, --env-file and Compose env_file inject environment variables only at startup. This export/import area uses the backend active .env file. To keep WebUI-saved values across container rebuilds, point ENV_FILE to a writable data-volume file such as /app/data/runtime.env and avoid keeping same-name old values in the startup environment.',
 
-  'layout.nav.tiered': 'Tiered analysis',
+  'layout.nav.tiered': 'Tiered',
   'tiered.title': 'Tiered analysis',
   'tiered.subtitle': 'Four-dimension data collection (technicals / fundamentals / macro / sentiment) plus one AI verdict, recorded to AI signals.',
   'tiered.inputPlaceholder': 'Enter a ticker, e.g. AAPL, 600519, hk00700',
@@ -1669,6 +1679,20 @@ const en: Record<UiTextKey, string> = {
   'tiered.dataNotes': 'Data notes',
   'tiered.dataNotesHint':
     'Where data was limited and what the system did instead — kept visible on purpose so you know how solid this report is.',
+  'tiered.help.direction':
+    'The AI’s overall call for this stock. Buy = start or add to a position; Hold = do nothing new, keep watching; Sell = reduce or exit. Direction only — how many shares (position sizing) is a v2 feature.',
+  'tiered.help.score':
+    'A 0–100 score the analysis engine computes from the technical indicators. Higher = a technically stronger setup.',
+  'tiered.help.coverage':
+    'How complete the underlying data was. Full = everything arrived; Partial = some gaps (see Data notes); Unavailable = nothing usable came back.',
+  'tiered.help.narrative': 'The AI’s written conclusion after reading the four dimension reports below.',
+  'tiered.help.entry':
+    'Ideal buy price — where the analysis sees the best entry, usually near a support level (a price where buyers stepped in before).',
+  'tiered.help.secondaryEntry':
+    'Backup buy price — a second, lower entry in case the price dips further before rebounding.',
+  'tiered.help.stopLoss':
+    'Safety exit — if the price falls to this level the idea is considered wrong; selling here caps the loss.',
+  'tiered.help.takeProfit': 'Profit target — where the analysis suggests selling to lock in gains.',
   'tiered.signalSaved': 'Recorded to AI signals (signal #{id})',
   'tiered.signalSkipped': 'Not recorded: {reason}',
   'tiered.viewSignals': 'View AI signals',

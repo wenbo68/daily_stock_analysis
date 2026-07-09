@@ -78,8 +78,11 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
   const isRail = variant === 'rail';
   const itemBaseClass = cn(
     'group relative flex h-[var(--nav-item-height)] w-full items-center overflow-hidden rounded-2xl border border-transparent text-sm leading-none text-secondary-text transition-all',
+    // Rail items are left-aligned so the icon column stays fixed: centering
+    // made each icon's x-position depend on the label's width, which shifted
+    // the whole column when switching UI language (zh labels are shorter).
     isRail
-      ? 'justify-center gap-2.5 px-2'
+      ? 'gap-2.5 px-3'
       : collapsed
         ? 'justify-center px-0'
         : 'gap-3 px-[var(--nav-item-padding-x)]'
@@ -90,7 +93,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
   );
   const itemActiveClass = 'border-[var(--nav-active-border)] bg-[var(--nav-active-bg)] font-medium text-[hsl(var(--primary))]';
   const itemIconClass = cn(isRail ? 'h-[18px] w-[18px]' : 'h-5 w-5', 'shrink-0');
-  const itemLabelClass = cn('truncate', isRail ? 'text-center' : '');
+  const itemLabelClass = cn('truncate', isRail ? 'min-w-0 flex-1 text-left' : '');
 
   return (
     <div className="flex h-full flex-col">

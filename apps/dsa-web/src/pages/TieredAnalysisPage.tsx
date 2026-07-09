@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Info, Layers, Search } from 'lucide-react';
 import {
@@ -88,6 +88,35 @@ function formatTime(value: string | null, language: UiLanguage): string {
     minute: '2-digit',
   }).format(date);
 }
+
+interface HelpTermProps {
+  label: ReactNode;
+  helpKey: UiTextKey;
+  underline?: boolean;
+}
+
+// A term with its explanation in a popup. Hover shows it; click/tap keeps
+// it open (focus), so it also works on touch screens; clicking elsewhere
+// or Escape closes it.
+const HelpTerm = ({ label, helpKey, underline = true }: HelpTermProps) => {
+  const { t } = useUiLanguage();
+
+  return (
+    <Tooltip
+      focusable
+      content={<span className="block max-w-[16rem] whitespace-normal">{t(helpKey)}</span>}
+    >
+      <span
+        className={cn(
+          'cursor-help',
+          underline ? 'border-b border-dotted border-secondary-text/60' : '',
+        )}
+      >
+        {label}
+      </span>
+    </Tooltip>
+  );
+};
 
 interface MetricTermProps {
   term: string;
@@ -215,9 +244,15 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
         <h3 className="text-sm font-semibold text-foreground">
           {labelKey ? t(labelKey) : dimension.dimension}
         </h3>
-        <Badge variant={COVERAGE_BADGE[dimension.coverage]}>
-          {t(`tiered.coverage.${dimension.coverage}` as UiTextKey)}
-        </Badge>
+        <HelpTerm
+          underline={false}
+          helpKey="tiered.help.coverage"
+          label={
+            <Badge variant={COVERAGE_BADGE[dimension.coverage]}>
+              {t(`tiered.coverage.${dimension.coverage}` as UiTextKey)}
+            </Badge>
+          }
+        />
       </div>
 
       {dimension.narrative ? (
@@ -270,12 +305,15 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
 
 interface LevelTileProps {
   label: string;
+  helpKey: UiTextKey;
   value: number | null;
 }
 
-const LevelTile = ({ label, value }: LevelTileProps) => (
+const LevelTile = ({ label, helpKey, value }: LevelTileProps) => (
   <div className="rounded-xl border border-border/40 bg-elevated/60 px-3 py-2">
-    <div className="text-xs text-secondary-text">{label}</div>
+    <div className="text-xs text-secondary-text">
+      <HelpTerm label={label} helpKey={helpKey} />
+    </div>
     <div className="mt-1 font-mono text-base text-foreground">{value ?? '—'}</div>
   </div>
 );
@@ -292,16 +330,23 @@ const ResultView = ({ result }: ResultViewProps) => {
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
-          <Badge variant={DIRECTION_BADGE[result.direction]} size="md" glow>
-            {t(`tiered.direction.${result.direction}` as UiTextKey)}
-          </Badge>
+          <HelpTerm
+            underline={false}
+            helpKey="tiered.help.direction"
+            label={
+              <Badge variant={DIRECTION_BADGE[result.direction]} size="md" glow>
+                {t(`tiered.direction.${result.direction}` as UiTextKey)}
+              </Badge>
+            }
+          />
           {result.score !== null ? (
             <span className="text-sm text-secondary-text">
-              {t('tiered.score')}: <span className="font-mono text-foreground">{result.score}</span>
+              <HelpTerm label={t('tiered.score')} helpKey="tiered.help.score" />:{' '}
+              <span className="font-mono text-foreground">{result.score}</span>
             </span>
           ) : null}
           <span className="flex items-center gap-1 text-sm text-secondary-text">
-            {t('tiered.coverage')}:
+            <HelpTerm label={t('tiered.coverage')} helpKey="tiered.help.coverage" />:
             <Badge variant={COVERAGE_BADGE[result.coverage]}>
               {t(`tiered.coverage.${result.coverage}` as UiTextKey)}
             </Badge>
@@ -310,7 +355,9 @@ const ResultView = ({ result }: ResultViewProps) => {
 
         {result.narrative ? (
           <div className="mt-3">
-            <div className="label-uppercase mb-1">{t('tiered.narrative')}</div>
+            <div className="label-uppercase mb-1">
+              <HelpTerm label={t('tiered.narrative')} helpKey="tiered.help.narrative" />
+            </div>
             <p className="text-sm leading-relaxed text-secondary-text">{result.narrative}</p>
           </div>
         ) : null}
@@ -318,10 +365,26 @@ const ResultView = ({ result }: ResultViewProps) => {
         <div className="mt-4">
           <div className="label-uppercase mb-2">{t('tiered.levels')}</div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <LevelTile label={t('tiered.levels.entry')} value={result.levels.entry} />
-            <LevelTile label={t('tiered.levels.secondaryEntry')} value={result.levels.secondary_entry} />
-            <LevelTile label={t('tiered.levels.stopLoss')} value={result.levels.stop_loss} />
-            <LevelTile label={t('tiered.levels.takeProfit')} value={result.levels.take_profit} />
+            <LevelTile
+              label={t('tiered.levels.entry')}
+              helpKey="tiered.help.entry"
+              value={result.levels.entry}
+            />
+            <LevelTile
+              label={t('tiered.levels.secondaryEntry')}
+              helpKey="tiered.help.secondaryEntry"
+              value={result.levels.secondary_entry}
+            />
+            <LevelTile
+              label={t('tiered.levels.stopLoss')}
+              helpKey="tiered.help.stopLoss"
+              value={result.levels.stop_loss}
+            />
+            <LevelTile
+              label={t('tiered.levels.takeProfit')}
+              helpKey="tiered.help.takeProfit"
+              value={result.levels.take_profit}
+            />
           </div>
           <p className="mt-2 text-xs text-secondary-text">{t('tiered.levelsNote')}</p>
         </div>
