@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Info, Layers, Search } from 'lucide-react';
 import {
   tieredApi,
+  type TieredCitation,
   type TieredDimension,
   type TieredResult,
   type TieredRunStatus,
@@ -17,9 +18,10 @@ import {
   InlineAlert,
   Input,
   PageHeader,
+  Tooltip,
 } from '../components/common';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
-import { metricLabel } from '../i18n/metricLabels';
+import { metricEntry } from '../i18n/metricLabels';
 import type { UiLanguage, UiTextKey } from '../i18n/uiText';
 import { cn } from '../utils/cn';
 
@@ -87,41 +89,109 @@ function formatTime(value: string | null, language: UiLanguage): string {
   }).format(date);
 }
 
+interface MetricTermProps {
+  term: string;
+}
+
+// Compact vocab (e.g. "SMA 20") with the full plain-language definition in
+// a popup: hover shows it, click/tap keeps it open (focus), clicking
+// elsewhere or Escape closes it. Unknown keys render as-is, no popup.
+const MetricTerm = ({ term }: MetricTermProps) => {
+  const { language } = useUiLanguage();
+  const entry = metricEntry(term, language);
+
+  if (!entry) {
+    return <>{term}</>;
+  }
+  return (
+    <Tooltip
+      focusable
+      content={
+        <span className="block max-w-[16rem] whitespace-normal">
+          <span className="block font-semibold text-foreground">{entry.short}</span>
+          <span className="mt-0.5 block text-secondary-text">{entry.full}</span>
+        </span>
+      }
+    >
+      <span className="cursor-help border-b border-dotted border-secondary-text/60">
+        {entry.short}
+      </span>
+    </Tooltip>
+  );
+};
+
+const CITATION_MARKER_SPLIT_RE = /(\[\d+\])/g;
+const CITATION_MARKER_RE = /^\[(\d+)\]$/;
+
+interface NarrativeWithCitationsProps {
+  text: string;
+  citations: TieredCitation[];
+}
+
+// Renders inline [n] markers as links to the numbered source, so a claim
+// can be checked in one click. Markers without a matching source (old
+// stored runs, missing URL) stay plain text.
+const NarrativeWithCitations = ({ text, citations }: NarrativeWithCitationsProps) => (
+  <p className="mb-3 text-sm leading-relaxed text-secondary-text">
+    {text.split(CITATION_MARKER_SPLIT_RE).map((part, index) => {
+      const match = CITATION_MARKER_RE.exec(part);
+      const citation = match ? citations[Number(match[1]) - 1] : undefined;
+      if (citation?.url) {
+        return (
+          <a
+            key={index}
+            href={citation.url}
+            target="_blank"
+            rel="noreferrer"
+            title={citation.title ?? citation.url}
+            className="text-cyan hover:underline"
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={index}>{part}</span>;
+    })}
+  </p>
+);
+
 interface PayloadTableProps {
   payload: Record<string, unknown>;
 }
 
-const PayloadTable = ({ payload }: PayloadTableProps) => {
-  const { language } = useUiLanguage();
-
-  return (
-    <div className="space-y-3">
-      {Object.entries(payload).map(([group, values]) => {
-        if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
-          return (
-            <div key={group}>
-              <div className="label-uppercase mb-1">{metricLabel(group, language)}</div>
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-                {Object.entries(values as Record<string, unknown>).map(([key, value]) => (
-                  <div key={key} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
-                    <dt className="text-xs text-secondary-text">{metricLabel(key, language)}</dt>
-                    <dd className="font-mono text-xs text-foreground">{formatValue(value)}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          );
-        }
+const PayloadTable = ({ payload }: PayloadTableProps) => (
+  <div className="space-y-3">
+    {Object.entries(payload).map(([group, values]) => {
+      if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
         return (
-          <div key={group} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
-            <dt className="text-xs text-secondary-text">{metricLabel(group, language)}</dt>
-            <dd className="font-mono text-xs text-foreground">{formatValue(values)}</dd>
+          <div key={group}>
+            <div className="label-uppercase mb-1">
+              <MetricTerm term={group} />
+            </div>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+              {Object.entries(values as Record<string, unknown>).map(([key, value]) => (
+                <div key={key} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
+                  <dt className="text-xs text-secondary-text">
+                    <MetricTerm term={key} />
+                  </dt>
+                  <dd className="font-mono text-xs text-foreground">{formatValue(value)}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
         );
-      })}
-    </div>
-  );
-};
+      }
+      return (
+        <div key={group} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
+          <dt className="text-xs text-secondary-text">
+            <MetricTerm term={group} />
+          </dt>
+          <dd className="font-mono text-xs text-foreground">{formatValue(values)}</dd>
+        </div>
+      );
+    })}
+  </div>
+);
 
 interface DimensionCardProps {
   dimension: TieredDimension;
@@ -151,7 +221,7 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
       </div>
 
       {dimension.narrative ? (
-        <p className="mb-3 text-sm leading-relaxed text-secondary-text">{dimension.narrative}</p>
+        <NarrativeWithCitations text={dimension.narrative} citations={uniqueCitations} />
       ) : null}
 
       {dimension.payload ? <PayloadTable payload={dimension.payload} /> : null}
