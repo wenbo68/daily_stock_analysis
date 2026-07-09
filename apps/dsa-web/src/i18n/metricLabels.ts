@@ -1,0 +1,128 @@
+import type { UiLanguage } from './uiText';
+
+// Plain-language labels for the metric names inside tiered-analysis
+// dimension payloads (backend keys stay snake_case on purpose — see
+// api/tiered.ts). Every label defines the jargon inline, e.g.
+// "20-day average price (SMA 20)", so the report is readable without
+// a finance glossary. Unknown keys fall back to the raw key.
+const en: Record<string, string> = {
+  // ---- technicals ----
+  close: 'Latest closing price',
+  bars_count: 'Trading days of history used',
+  sma_20: '20-day average price (SMA 20)',
+  sma_60: '60-day average price (SMA 60)',
+  ema_12: '12-day weighted average price (EMA 12)',
+  ema_26: '26-day weighted average price (EMA 26)',
+  rsi_14: 'Momentum 0-100; >70 overheated, <30 oversold (RSI 14)',
+  macd: 'Trend momentum (MACD)',
+  signal: 'Signal line (average of the MACD line)',
+  histogram: 'Gap between the two (positive = momentum rising)',
+  atr_14: 'Typical daily price swing (ATR 14)',
+  bias_20: '% above/below its 20-day average (bias)',
+  score: 'Overall technical score',
+
+  // ---- fundamentals ----
+  growth: 'Growth vs. a year ago',
+  revenue_yoy_pct: 'Revenue growth, % vs. last year',
+  net_income_yoy_pct: 'Profit growth, % vs. last year',
+  eps_yoy_pct: 'Earnings-per-share growth, % vs. last year',
+  profitability: 'Profitability',
+  gross_margin_pct: '% of revenue kept after production costs (gross margin)',
+  operating_margin_pct: '% kept after running costs (operating margin)',
+  net_margin_pct: '% kept as final profit (net margin)',
+  roe_pct: 'Return on shareholders’ money, % (ROE)',
+  balance_sheet: 'Financial strength',
+  current_ratio: 'Short-term assets ÷ short-term debts (>1 = can pay its bills)',
+  debt_to_equity: 'Total debts ÷ shareholders’ money (lower = safer)',
+  cash: 'Cash on hand, USD',
+  meta: 'Report details',
+  entity_name: 'Company legal name',
+  period_end: 'Financial report date',
+  basis: 'Report type',
+  valuation: 'How expensive the stock is (valuation)',
+  pe_ttm: 'Price ÷ last-12-month earnings (P/E)',
+  pe_forward: 'Price ÷ expected next-year earnings (forward P/E)',
+  ps_ttm: 'Price ÷ sales (P/S)',
+  pb: 'Price ÷ book value (P/B)',
+  market_cap: 'Total market value of the company, USD',
+
+  // ---- macro economy ----
+  region: 'Region',
+  as_of: 'Data gathered on',
+  rates: 'Interest rates',
+  fed_funds_rate_pct: 'US central-bank rate (Fed funds), %',
+  treasury_10y_pct: '10-year government bond yield, %',
+  treasury_2y_pct: '2-year government bond yield, %',
+  curve_10y_2y_pct: '10-yr minus 2-yr yield (negative = classic recession warning)',
+  inflation: 'Inflation',
+  cpi_yoy_pct: 'Consumer prices, % vs. last year (CPI)',
+  labor: 'Jobs',
+  unemployment_rate_pct: 'Unemployment rate, %',
+  markets: 'Market mood',
+  vix: 'Fear index (VIX); higher = investors more nervous',
+  wti_oil_usd: 'Oil price (WTI), USD per barrel',
+  dollar_index_broad: 'US dollar strength index',
+  observation_dates: 'Date of each data point',
+};
+
+const zh: Record<string, string> = {
+  close: '最新收盘价',
+  bars_count: '使用的交易日数',
+  sma_20: '20日均价（SMA 20）',
+  sma_60: '60日均价（SMA 60）',
+  ema_12: '12日加权均价（EMA 12）',
+  ema_26: '26日加权均价（EMA 26）',
+  rsi_14: '动量指标 0-100；>70 过热，<30 超卖（RSI 14）',
+  macd: '趋势动量（MACD）',
+  signal: '信号线（MACD 线的均值）',
+  histogram: '两线差值（为正 = 动量增强）',
+  atr_14: '日常波动幅度（ATR 14）',
+  bias_20: '相对 20 日均价的偏离 %（乖离率）',
+  score: '技术面综合评分',
+
+  growth: '同比增长',
+  revenue_yoy_pct: '营收同比增长 %',
+  net_income_yoy_pct: '净利润同比增长 %',
+  eps_yoy_pct: '每股收益同比增长 %',
+  profitability: '盈利能力',
+  gross_margin_pct: '毛利率（扣除生产成本后留存 %）',
+  operating_margin_pct: '营业利润率（扣除运营成本后留存 %）',
+  net_margin_pct: '净利率（最终利润占比 %）',
+  roe_pct: '净资产收益率 %（ROE）',
+  balance_sheet: '财务稳健度',
+  current_ratio: '流动比率（短期资产÷短期负债，>1 = 能付账）',
+  debt_to_equity: '负债÷股东权益（越低越安全）',
+  cash: '持有现金（美元）',
+  meta: '报表信息',
+  entity_name: '公司注册名称',
+  period_end: '财报日期',
+  basis: '报表类型',
+  valuation: '估值（股价贵不贵）',
+  pe_ttm: '市盈率（股价÷过去12个月盈利，P/E）',
+  pe_forward: '预期市盈率（股价÷下年度预期盈利）',
+  ps_ttm: '市销率（股价÷销售额，P/S）',
+  pb: '市净率（股价÷账面价值，P/B）',
+  market_cap: '公司总市值（美元）',
+
+  region: '地区',
+  as_of: '数据采集日期',
+  rates: '利率',
+  fed_funds_rate_pct: '美联储基准利率 %',
+  treasury_10y_pct: '10年期国债收益率 %',
+  treasury_2y_pct: '2年期国债收益率 %',
+  curve_10y_2y_pct: '10年减2年利差（为负 = 经典衰退警告）',
+  inflation: '通胀',
+  cpi_yoy_pct: '消费者物价同比 %（CPI）',
+  labor: '就业',
+  unemployment_rate_pct: '失业率 %',
+  markets: '市场情绪',
+  vix: '恐慌指数（VIX）；越高 = 投资者越紧张',
+  wti_oil_usd: '油价（WTI，美元/桶）',
+  dollar_index_broad: '美元强弱指数',
+  observation_dates: '各数据点的日期',
+};
+
+export function metricLabel(key: string, language: UiLanguage): string {
+  const table = language === 'en' ? en : zh;
+  return table[key] ?? key;
+}

@@ -19,6 +19,7 @@ import {
   PageHeader,
 } from '../components/common';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
+import { metricLabel } from '../i18n/metricLabels';
 import type { UiLanguage, UiTextKey } from '../i18n/uiText';
 import { cn } from '../utils/cn';
 
@@ -55,6 +56,16 @@ function formatValue(value: unknown): string {
     return '—';
   }
   if (typeof value === 'number') {
+    const abs = Math.abs(value);
+    if (abs >= 1e12) {
+      return `${(value / 1e12).toFixed(2)} trillion`;
+    }
+    if (abs >= 1e9) {
+      return `${(value / 1e9).toFixed(2)} billion`;
+    }
+    if (abs >= 1e6) {
+      return `${(value / 1e6).toFixed(2)} million`;
+    }
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }
   return String(value);
@@ -80,33 +91,37 @@ interface PayloadTableProps {
   payload: Record<string, unknown>;
 }
 
-const PayloadTable = ({ payload }: PayloadTableProps) => (
-  <div className="space-y-3">
-    {Object.entries(payload).map(([group, values]) => {
-      if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
+const PayloadTable = ({ payload }: PayloadTableProps) => {
+  const { language } = useUiLanguage();
+
+  return (
+    <div className="space-y-3">
+      {Object.entries(payload).map(([group, values]) => {
+        if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
+          return (
+            <div key={group}>
+              <div className="label-uppercase mb-1">{metricLabel(group, language)}</div>
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                {Object.entries(values as Record<string, unknown>).map(([key, value]) => (
+                  <div key={key} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
+                    <dt className="text-xs text-secondary-text">{metricLabel(key, language)}</dt>
+                    <dd className="font-mono text-xs text-foreground">{formatValue(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          );
+        }
         return (
-          <div key={group}>
-            <div className="label-uppercase mb-1">{group}</div>
-            <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-              {Object.entries(values as Record<string, unknown>).map(([key, value]) => (
-                <div key={key} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
-                  <dt className="text-xs text-secondary-text">{key}</dt>
-                  <dd className="font-mono text-xs text-foreground">{formatValue(value)}</dd>
-                </div>
-              ))}
-            </dl>
+          <div key={group} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
+            <dt className="text-xs text-secondary-text">{metricLabel(group, language)}</dt>
+            <dd className="font-mono text-xs text-foreground">{formatValue(values)}</dd>
           </div>
         );
-      }
-      return (
-        <div key={group} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
-          <dt className="text-xs text-secondary-text">{group}</dt>
-          <dd className="font-mono text-xs text-foreground">{formatValue(values)}</dd>
-        </div>
-      );
-    })}
-  </div>
-);
+      })}
+    </div>
+  );
+};
 
 interface DimensionCardProps {
   dimension: TieredDimension;
@@ -115,6 +130,14 @@ interface DimensionCardProps {
 const DimensionCard = ({ dimension }: DimensionCardProps) => {
   const { t } = useUiLanguage();
   const labelKey = DIMENSION_LABEL_KEYS[dimension.dimension];
+  // Old stored runs may hold one citation per quote (several per source);
+  // collapse to one entry per source so numbering matches inline [n] marks.
+  const uniqueCitations = dimension.citations.filter(
+    (citation, index, all) =>
+      all.findIndex(
+        (other) => (other.url || other.source_name) === (citation.url || citation.source_name),
+      ) === index,
+  );
 
   return (
     <Card className="p-4">
@@ -133,23 +156,24 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
 
       {dimension.payload ? <PayloadTable payload={dimension.payload} /> : null}
 
-      {dimension.citations.length > 0 ? (
+      {uniqueCitations.length > 0 ? (
         <div className="mt-3">
           <div className="label-uppercase mb-1">{t('tiered.citations')}</div>
           <ul className="space-y-1">
-            {dimension.citations.map((citation, index) => (
-              <li key={index} className="truncate text-xs">
+            {uniqueCitations.map((citation, index) => (
+              <li key={index} className="flex gap-2 text-xs">
+                <span className="shrink-0 font-mono text-secondary-text">[{index + 1}]</span>
                 {citation.url ? (
                   <a
                     href={citation.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-cyan hover:underline"
+                    className="truncate text-cyan hover:underline"
                   >
                     {citation.title || citation.url}
                   </a>
                 ) : (
-                  <span className="text-secondary-text">{citation.source_name}</span>
+                  <span className="truncate text-secondary-text">{citation.source_name}</span>
                 )}
               </li>
             ))}
@@ -158,13 +182,17 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
       ) : null}
 
       {dimension.warnings.length > 0 ? (
-        <ul className="mt-3 space-y-1">
-          {dimension.warnings.map((warning, index) => (
-            <li key={index} className="text-xs text-warning">
-              {warning}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3">
+          <div className="label-uppercase mb-1">{t('tiered.dataNotes')}</div>
+          <p className="mb-1 text-xs text-secondary-text">{t('tiered.dataNotesHint')}</p>
+          <ul className="space-y-1">
+            {dimension.warnings.map((warning, index) => (
+              <li key={index} className="text-xs text-warning">
+                {warning}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </Card>
   );
@@ -246,13 +274,17 @@ const ResultView = ({ result }: ResultViewProps) => {
         </div>
 
         {result.warnings.length > 0 ? (
-          <ul className="mt-3 space-y-1">
-            {result.warnings.map((warning, index) => (
-              <li key={index} className="text-xs text-warning">
-                {warning}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3">
+            <div className="label-uppercase mb-1">{t('tiered.dataNotes')}</div>
+            <p className="mb-1 text-xs text-secondary-text">{t('tiered.dataNotesHint')}</p>
+            <ul className="space-y-1">
+              {result.warnings.map((warning, index) => (
+                <li key={index} className="text-xs text-warning">
+                  {warning}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </Card>
 

@@ -208,6 +208,75 @@ class TestFailureModes(unittest.TestCase):
         self.assertTrue(any("LLM quota exhausted" in w for w in result.warnings))
 
 
+class TestInlineCitationsAndDedup(unittest.TestCase):
+    """The narrative carries inline [n] markers and the reference list is
+    deduplicated: one entry per source, numbered in order of first use, so
+    the web page can show MLA-style inline citations without repeats."""
+
+    def test_markers_renumbered_to_deduped_source_order(self):
+        # LLM cites source 2 first, then source 1; the final reference list
+        # follows that order, and the inline markers are rewritten to match.
+        summarizer = lambda prompt: _llm_json(  # noqa: E731
+            [
+                {"source": 2, "quote": "iPhone demand is cooling in Asia"},
+                {"source": 1, "quote": "revenue above analyst expectations"},
+            ],
+            narrative="Demand is cooling [2]. Revenue beat expectations [1].",
+        )
+        result = _provider(summarizer=summarizer).collect("AAPL")
+        self.assertIn("cooling [1].", result.narrative)
+        self.assertIn("expectations [2].", result.narrative)
+        self.assertEqual(len(result.citations), 2)
+        self.assertEqual(result.citations[0].url, "https://blog.example/b")
+        self.assertEqual(result.citations[1].url, "https://news.example/a")
+
+    def test_same_source_cited_twice_yields_one_reference(self):
+        summarizer = lambda prompt: _llm_json(  # noqa: E731
+            [
+                {"source": 1, "quote": "strong services growth"},
+                {"source": 1, "quote": "revenue above analyst expectations"},
+            ],
+            narrative="Services grew [1]. Revenue also beat [1].",
+        )
+        result = _provider(summarizer=summarizer).collect("AAPL")
+        self.assertEqual(len(result.citations), 1)
+        self.assertEqual(result.citations[0].url, "https://news.example/a")
+        self.assertIn("grew [1].", result.narrative)
+        self.assertIn("beat [1].", result.narrative)
+
+    def test_marker_for_dropped_citation_is_removed(self):
+        summarizer = lambda prompt: _llm_json(  # noqa: E731
+            [
+                {"source": 1, "quote": "strong services growth"},
+                {"source": 2, "quote": "Apple is going bankrupt"},  # fabricated
+            ],
+            narrative="Services grew [1]. Apple is going bankrupt [2].",
+        )
+        result = _provider(summarizer=summarizer).collect("AAPL")
+        self.assertIn("[1]", result.narrative)
+        self.assertNotIn("[2]", result.narrative)
+        self.assertIn("bankrupt.", result.narrative)
+
+    def test_marker_pointing_nowhere_is_removed(self):
+        summarizer = lambda prompt: _llm_json(  # noqa: E731
+            [{"source": 1, "quote": "strong services growth"}],
+            narrative="Services grew [1]. Something big is coming [7].",
+        )
+        result = _provider(summarizer=summarizer).collect("AAPL")
+        self.assertNotIn("[7]", result.narrative)
+        self.assertIn("coming.", result.narrative)
+
+    def test_prompt_asks_for_inline_markers(self):
+        captured = {}
+
+        def spy_summarizer(prompt):
+            captured["prompt"] = prompt
+            return _llm_json([{"source": 1, "quote": "strong services growth"}])
+
+        _provider(summarizer=spy_summarizer).collect("AAPL")
+        self.assertIn("marker", captured["prompt"].lower())
+
+
 class TestPromptContract(unittest.TestCase):
     def test_prompt_contains_only_fetched_sources(self):
         captured = {}

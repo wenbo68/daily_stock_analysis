@@ -58,6 +58,8 @@ Respond with STRICT JSON only, no other text:
 
 Rules:
 - Every claim in the narrative must be supported by at least one citation.
+- Inside the narrative, put an inline marker like [1] or [2] right after each
+  claim, using the same source numbers as your citations list.
 - Quotes must be copied verbatim from the excerpts; do not paraphrase inside quotes.
 - Cite only source numbers that exist above.
 
@@ -83,6 +85,28 @@ class SearchHit:
 
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
+
+
+#: Inline citation marker as the LLM writes it, e.g. " [2]". The optional
+#: leading whitespace is captured so a removed marker doesn't leave a
+#: dangling space before the following period.
+_MARKER_RE = re.compile(r"\s*\[(\d+)\]")
+
+
+def _rewrite_markers(narrative: str, index_map: dict) -> str:
+    """Renumber inline [n] markers to the deduplicated reference list.
+
+    Markers whose source didn't survive citation verification (or never
+    existed) are removed — an inline pointer to nothing would be worse
+    than no pointer.
+    """
+
+    def _replace(match: "re.Match[str]") -> str:
+        new_index = index_map.get(int(match.group(1)))
+        return f" [{new_index}]" if new_index else ""
+
+    rewritten = _MARKER_RE.sub(_replace, narrative)
+    return re.sub(r"\s{2,}", " ", rewritten).strip()
 
 
 def _parse_llm_json(raw: str) -> Optional[dict]:
@@ -185,13 +209,14 @@ class SentimentProvider(DimensionProvider):
             warnings.append("LLM sentiment output unparseable or empty")
             return self._unavailable(warnings)
 
-        citations = self._verify_citations(parsed, sources, warnings)
+        citations, index_map = self._verify_citations(parsed, sources, warnings)
         if not citations:
             warnings.append("no verifiable citations survive — discarding narrative")
             return self._unavailable(warnings)
 
         label = str(parsed.get("sentiment_label") or "unlabeled").strip()
-        narrative = f"Sentiment: {label}. {str(parsed['narrative']).strip()}"
+        body = _rewrite_markers(str(parsed["narrative"]).strip(), index_map)
+        narrative = f"Sentiment: {label}. {body}"
         coverage = Coverage.FULL if not warnings else Coverage.PARTIAL
         return DimensionResult(
             dimension=self.dimension,
@@ -270,12 +295,19 @@ class SentimentProvider(DimensionProvider):
         parsed: dict,
         sources: List[Tuple[SearchHit, str]],
         warnings: List[str],
-    ) -> List[Citation]:
-        citations: List[Citation] = []
+    ) -> Tuple[List[Citation], dict]:
+        """Verify quotes, then collapse to one reference per source.
+
+        Returns the deduplicated citations (numbered in order of first
+        verified use) plus a map from the LLM's source numbers to the final
+        reference numbers, so inline [n] markers can be rewritten to match.
+        """
         raw_citations = parsed.get("citations")
         if not isinstance(raw_citations, list):
-            return citations
+            return [], {}
 
+        first_quote: dict = {}  # source index -> first verified quote
+        order: List[int] = []
         for entry in raw_citations:
             if not isinstance(entry, dict):
                 continue
@@ -290,12 +322,21 @@ class SentimentProvider(DimensionProvider):
                     f"citation dropped: quote not found in {hit.url}: {quote[:80]!r}"
                 )
                 continue
+            if index not in first_quote:
+                first_quote[index] = quote
+                order.append(index)
+
+        citations: List[Citation] = []
+        index_map: dict = {}
+        for new_index, source_index in enumerate(order, start=1):
+            hit, _ = sources[source_index - 1]
+            index_map[source_index] = new_index
             citations.append(
                 Citation(
                     source_name=hit.title,
                     url=hit.url,
                     title=hit.title,
-                    snippet=quote,
+                    snippet=first_quote[source_index],
                 )
             )
-        return citations
+        return citations, index_map
