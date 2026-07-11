@@ -7,6 +7,12 @@
 >
 > This document is the complete record of our discussion conclusions. It is written in
 > English, with key market terms kept in Chinese where they are domain-specific.
+>
+> Companion documents:
+> - `docs/tiered-analysis-formulas.md` — every deterministic formula (indicators,
+>   price levels, adjustment guardrails, position sizing) with plain-English
+>   explanations and the constants table.
+> - `docs/tiered-analysis-v2-plan.md` — the v2 implementation plan (slices + status).
 
 ---
 

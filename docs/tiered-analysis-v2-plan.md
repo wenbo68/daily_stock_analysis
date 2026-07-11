@@ -1,9 +1,11 @@
 # Tiered Analysis v2 — Implementation Plan (Slices)
 
 > Companion to `docs/tiered-analysis-design.md` (§8 "v2 — Quantities + Tier 2/3").
-> Written 2026-07-11, before any v2 code. This file is committed to the repo so the
-> plan survives; per-slice working notes may accumulate in `.claude/reviews/`
-> (local-only, not tracked by git).
+> Every formula referenced by these slices is defined and explained in
+> `docs/tiered-analysis-formulas.md` — keep the two in sync when a slice adds or
+> changes a formula. Written 2026-07-11, before any v2 code. This file is committed
+> to the repo so the plan survives; per-slice working notes may accumulate in
+> `.claude/reviews/` (local-only, not tracked by git).
 
 ## What v2 delivers, in plain language
 
