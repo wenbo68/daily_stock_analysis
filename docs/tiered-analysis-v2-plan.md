@@ -52,6 +52,10 @@ deterministic code computes every number** (shares, stops, multipliers applied).
   - lot-size rounding (A-shares trade in lots of 100; US in single shares);
   - direction is `hold`/`sell` → no size (nothing to open);
   - required inputs missing or non-positive → refuse with reason.
+- Trading costs (added 2026-07-11 after user question): optional `fee_fraction` —
+  round-trip commission/duty as a fraction of traded value, folded into loss per
+  share (`(entry − stop) + entry × fee_fraction`). Default 0 because costs are
+  broker- and market-specific; spread/slippage stay out of scope (unknowable here).
 - Output: a `SizingResult` (shares, position_value, risk_amount, applied caps,
   refusal reason if any) that fills the `SizingSlots` reserved in `schema.py` since v1.
 - **Acceptance**: table-driven offline tests covering the formula, every refusal
@@ -163,7 +167,7 @@ scoped offline tests, commit; live verification at slices 3, 5, and 6.
 
 | Slice | Status |
 | --- | --- |
-| 1. Sizing engine | not started |
+| 1. Sizing engine | **done** (2026-07-11) — `src/tiered_analysis/sizing.py`, 19 offline tests in `tests/test_tiered_sizing.py` |
 | 2. ATR stops | not started |
 | 3. Tier 2 debate | not started |
 | 4. Tier 3 risk stress | not started |
