@@ -331,7 +331,9 @@ shares = (account_capital × risk_fraction) / (entry_price − stop_loss)
 
 ### v1 — Foundation + Tier 1 (direction, no quantity)
 
-- **[this slice]** Provider interface + the numeric/textual rule encoded + the
+> **Status: DONE (2026-07-10).** All items below shipped; see §9 for the as-built summary.
+
+- Provider interface + the numeric/textual rule encoded + the
   **technicals provider** (with ATR) + market routing + offline tests.
 - Tier pipeline skeleton (Tier 1/2/3 stages + shared state; Tier 1 delegates to the
   existing DSA analysis).
@@ -375,28 +377,36 @@ shares = (account_capital × risk_fraction) / (entry_price − stop_loss)
 
 ---
 
-## 9. Implemented so far (this slice)
+## 9. Implemented so far — v1 complete (2026-07-10)
 
-> **Verification note (2026-07-06, updated 2026-07-07)**: the originally claimed
-> implementation was never committed — this section described code that did not exist. The
-> slice was **re-implemented on 2026-07-07** (32 offline tests); the list below now reflects
-> the actual code. Composite-score tests assert ordering and bounds rather than the exact
-> values (72/66/30) quoted from the lost implementation.
+> **History note (2026-07-06/07)**: an earlier version of this section described code that
+> was never committed. The work was re-implemented from scratch starting 2026-07-07 and
+> completed through 2026-07-10; the list below reflects the actual code.
 
-- `src/tiered_analysis/providers/base.py`: `Market` / `SourceKind` (NUMERIC|TEXTUAL) /
-  `Coverage` (full|partial|unavailable) / `Citation` / `DimensionResult` /
-  `DimensionProvider`.
-- `src/tiered_analysis/providers/technicals.py`: pure-Python deterministic indicators
-  (SMA / EMA / Wilder-RSI / MACD / **ATR** / BIAS + 0–100 score), with the yfinance fetch
-  dependency isolated.
-- `src/tiered_analysis/providers/registry.py`: `detect_market` + provider routing;
-  market detection delegates (lazily) to `data_provider/base.py:_market_tag` as the
-  single source of truth.
-- `tests/test_tiered_technicals.py` + `tests/test_tiered_registry.py`: 32 offline
-  deterministic tests (no numpy/pandas/network). Verified: RSI hits the Wilder textbook
-  value 70.46; ATR includes gaps in true range; the score stays within 0–100 and ranks
-  healthy pullback > overbought straight-line > downtrend; degraded data surfaces as
-  explicit `unavailable`/`partial` coverage with warnings, never silent blanks.
+v1 shipped in full on branch `claude/trading-repos-verification-analysis-pe4qts`
+(153 offline tests, `pytest -m "not network"`; live-verified end to end on AAPL):
+
+- **Provider layer** (`src/tiered_analysis/providers/`): base contracts
+  (`Market` / `SourceKind` NUMERIC|TEXTUAL / `Coverage` full|partial|unavailable /
+  `Citation` / `DimensionResult` / `is_actionable`); technicals — pure-Python
+  deterministic SMA/EMA/Wilder-RSI/MACD/**ATR**/BIAS + 0–100 score; fundamentals —
+  US via SEC EDGAR filings + Yahoo valuation; macro — FRED, cached per region;
+  sentiment — search + LLM under the anti-fabrication citation contract (verbatim-quote
+  verification, one deduped reference per source, inline `[n]` markers renumbered to the
+  deduped list and stripped when their citation is dropped); registry with market routing
+  delegating to `data_provider/base.py:_market_tag`.
+- **Tier 1 synthesis + integration** (`src/tiered_analysis/integration.py`,
+  `scripts/run_tiered_analysis.py`): four-dimension collection → one LLM synthesis →
+  direction + price levels. Sizing slots reserved and left empty by design (v2).
+- **Recommendation log**: thin adapter `src/tiered_analysis/signal_log.py` into DSA's
+  existing `decision_signals` ledger (`source_agent="tiered_analysis"`; coverage maps to
+  the data-quality tag so thin-data calls can be discounted when scored later).
+- **Web surface** (`apps/dsa-web`): `/tiered` page — ticker input, background run via
+  `POST /api/v1/tiered/analyze`, persistent run history (`tiered_runs` table +
+  `/api/v1/tiered/runs` endpoints), dimension cards with coverage badges, price-level
+  tiles, inline-citation hyperlinks with a deduped numbered source list, warnings shown
+  as "Data notes", and plain-language tap-friendly popups (en/zh) for every metric
+  (`i18n/metricLabels.ts`) and every verdict-card term (`tiered.help.*` keys).
 
 ## 10. Boundaries & governance
 
@@ -405,6 +415,7 @@ shares = (account_capital × risk_fraction) / (entry_price − stop_loss)
 - Technicals conceptually overlap with `stock_analyzer.py` and **should converge long-term**
   (the latter is A-share-leaning and lacks ATR); until convergence the two coexist, but they
   must **not** compute duplicates on the decision chain.
-- Per `AGENTS.md`: commit/push requires **explicit confirmation**; user-visible changes must
-  be synced to `docs/CHANGELOG.md` `[Unreleased]` (flat format `- [type] description`) and
-  `.env.example` (when adding config).
+- Per `AGENTS.md` §0 (personal-fork overrides, 2026-07-07): committing is allowed without
+  asking; push only to the origin fork and only when asked — **never** to the upstream
+  ZhuLinsen repo; CHANGELOG maintenance is disabled; `.env.example` must still be updated
+  when adding config.
