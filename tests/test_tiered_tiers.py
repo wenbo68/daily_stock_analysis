@@ -200,22 +200,21 @@ class TestTier1Stage(unittest.TestCase):
 
 
 class TestTier23Stubs(unittest.TestCase):
-    def test_tier3_stub_reports_unavailable_not_implemented(self):
-        state = TierState(symbol="AAPL", market=Market.US)
-        report = Tier3Stage().run(state)
-        self.assertEqual(report.tier, 3)
-        self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
-        self.assertEqual(report.direction, Direction.UNKNOWN)
-        self.assertTrue(any("not implemented" in w for w in report.warnings))
-
     def test_tier2_without_tier1_report_is_unavailable(self):
-        # Tier 2 is real since v2 slice 4; without a tier-1 report it
-        # degrades explicitly instead of pretending.
+        # Tiers 2/3 are real since v2 slices 4/5; without their input
+        # report they degrade explicitly instead of pretending.
         report = Tier2Stage().run(TierState(symbol="AAPL", market=Market.US))
         self.assertEqual(report.tier, 2)
         self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
         self.assertEqual(report.direction, Direction.UNKNOWN)
         self.assertTrue(any("tier-1" in w for w in report.warnings))
+
+    def test_tier3_without_tier2_report_is_unavailable(self):
+        report = Tier3Stage().run(TierState(symbol="AAPL", market=Market.US))
+        self.assertEqual(report.tier, 3)
+        self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
+        self.assertEqual(report.direction, Direction.UNKNOWN)
+        self.assertTrue(any("tier-2" in w for w in report.warnings))
 
 
 class TestTieredPipeline(unittest.TestCase):

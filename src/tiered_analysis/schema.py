@@ -120,3 +120,6 @@ class TierReport:
     #: v2 slice 4 audit trail (tier-2 reports only): debate turns + judge
     #: verdict with anchored reasons. JSON-ready dict; None elsewhere.
     debate_detail: Optional[Dict[str, Any]] = None
+    #: v2 slice 5 audit trail (tier-3 reports only): persona takes + risk
+    #: judge verdict (size multiplier, stop advice). JSON-ready dict.
+    risk_detail: Optional[Dict[str, Any]] = None

@@ -10,8 +10,9 @@ injected ``analysis_runner`` callable so this package never imports the DSA
 decision path (boundary rule, design doc §10); production wiring passes a
 thin closure over the existing pipeline, tests pass fakes.
 
-Tier 2 (bull/bear debate) shipped with v2 slice 4; Tier 3 (risk stress
-test) remains an explicit not-implemented stub until slice 5.
+Tier 2 (bull/bear debate, v2 slice 4) and Tier 3 (risk stress test,
+v2 slice 5) run the tiered package's own LLM engines and degrade to the
+previous tier's direction on any failure.
 """
 from __future__ import annotations
 
@@ -134,22 +135,6 @@ class Tier1Stage(TierStage):
         return SniperLevels(**values), warnings
 
 
-class _NotImplementedStage(TierStage):
-    """Explicit stub: reports UNAVAILABLE instead of pretending or raising."""
-
-    label: str
-
-    def run(self, state: TierState) -> TierReport:
-        return TierReport(
-            tier=self.tier,
-            symbol=state.symbol,
-            market=state.market,
-            coverage=Coverage.UNAVAILABLE,
-            direction=Direction.UNKNOWN,
-            warnings=[f"tier {self.tier} ({self.label}) not implemented until v2"],
-        )
-
-
 class Tier2Stage(TierStage):
     """Bull/bear debate over the tier-1 evidence (v2 slice 4).
 
@@ -230,9 +215,93 @@ class Tier2Stage(TierStage):
         )
 
 
-class Tier3Stage(_NotImplementedStage):
+class Tier3Stage(TierStage):
+    """Risk stress test of the tier-2 verdict (v2 slice 5).
+
+    Same degradation contract as Tier2Stage: no tier-2 report, no
+    evidence, or no usable risk verdict → UNAVAILABLE, direction falls
+    back to tier 2. A code-validated tightened stop is the only level a
+    risk verdict may change; the size multiplier is applied by code in
+    the sizing flow (slice 6), never here.
+    """
+
     tier = 3
-    label = "risk stress test"
+
+    def __init__(self, engine: Optional[Any] = None) -> None:
+        self._engine = engine
+
+    def run(self, state: TierState) -> TierReport:
+        tier2 = state.reports.get(2)
+        if tier2 is None:
+            return TierReport(
+                tier=self.tier,
+                symbol=state.symbol,
+                market=state.market,
+                coverage=Coverage.UNAVAILABLE,
+                direction=Direction.UNKNOWN,
+                warnings=["tier 3 requires a tier-2 report"],
+            )
+
+        tier1 = state.reports.get(1)
+        dimensions = state.dimensions or (tier1.dimensions if tier1 else [])
+        if not dimensions:
+            return TierReport(
+                tier=self.tier,
+                symbol=state.symbol,
+                market=state.market,
+                coverage=Coverage.UNAVAILABLE,
+                direction=tier2.direction,
+                levels=tier2.levels,
+                warnings=[
+                    "no collected evidence for the risk stress test — tier 3 "
+                    "skipped, direction falls back to tier 2"
+                ],
+            )
+
+        engine = self._engine
+        if engine is None:
+            from .risk import RiskEngine
+
+            engine = RiskEngine()
+        result = engine.run(state.symbol, tier2, dimensions)
+
+        if result.verdict is None:
+            return TierReport(
+                tier=self.tier,
+                symbol=state.symbol,
+                market=state.market,
+                coverage=Coverage.UNAVAILABLE,
+                direction=tier2.direction,
+                score=tier2.score,
+                levels=tier2.levels,
+                warnings=list(result.warnings)
+                + ["risk stress produced no verdict — direction falls back to tier 2"],
+                risk_detail=result.to_detail(),
+            )
+
+        verdict = result.verdict
+        levels = tier2.levels
+        if verdict.tightened_stop is not None:
+            # Already code-validated (strictly between current stop and entry).
+            levels = SniperLevels(
+                entry=levels.entry,
+                secondary_entry=levels.secondary_entry,
+                stop_loss=verdict.tightened_stop,
+                take_profit=levels.take_profit,
+            )
+        return TierReport(
+            tier=self.tier,
+            symbol=state.symbol,
+            market=state.market,
+            coverage=Coverage.FULL,
+            direction=verdict.stance,
+            confidence=tier2.confidence,
+            score=tier2.score,
+            levels=levels,
+            narrative=verdict.summary or None,
+            warnings=list(result.warnings),
+            risk_detail=result.to_detail(),
+        )
 
 
 class TieredPipeline:
