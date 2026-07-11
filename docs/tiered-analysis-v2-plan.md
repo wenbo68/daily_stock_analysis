@@ -98,9 +98,11 @@ evidence-cited editor of those bases instead of the author of the numbers.
   - target — reward-to-risk multiple: entry + R_MULTIPLE × (entry − stop), default 2.
   - Each base records its formula name and input values so the UI can render
     "formula + plugged-in numbers".
-- **Adjustment contract** (extends the existing Tier 1 synthesis call — no new LLM
-  call): for each level the AI may return an adjusted value, a reason, and evidence
-  references. Hard rules enforced by code, echoing the sentiment anti-fabrication
+- **Adjustment contract** (`src/tiered_analysis/adjustments.py` — a small
+  tiered-package-owned LLM call; the original "extend the Tier 1 synthesis call" idea
+  was wrong: Tier 1's synthesis happens inside DSA's protected decision path, which we
+  never modify): for each level the AI may return an adjusted value, a reason, and
+  evidence references. Hard rules enforced by code, echoing the sentiment anti-fabrication
   contract:
   - band: an adjustment may move a level at most ±1 ATR from its base; outside the
     band → rejected, base used, warning shown;
@@ -225,7 +227,7 @@ offline tests, commit; live verification at slices 3, 4, 6, and 7.
 | --- | --- |
 | 1. Sizing engine | **done** (2026-07-11) — `src/tiered_analysis/sizing.py`, 19 offline tests in `tests/test_tiered_sizing.py` |
 | 2. ATR stops | **done** (2026-07-11) — `src/tiered_analysis/stops.py`, 13 offline tests in `tests/test_tiered_stops.py`; report/pipeline wiring lands with slice 5 |
-| 3. Base levels + AI adjustment | not started |
+| 3. Base levels + AI adjustment | **done** (2026-07-11) — `levels.py` + `adjustments.py` + `swing_low_20` payload metric, wired into `run_tiered_analysis`; 39 offline tests; live AAPL run verified (stop/target adjustments accepted in band with cited evidence, entry adjustment rejected by the reward-to-risk floor) |
 | 4. Tier 2 debate | not started |
 | 5. Tier 3 risk stress | not started |
 | 6. Pipeline/API integration | not started |

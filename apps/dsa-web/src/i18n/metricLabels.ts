@@ -56,6 +56,10 @@ const en: Record<string, MetricEntry> = {
     short: 'ATR 14',
     full: 'Average True Range over 14 days — the typical daily price swing in dollars. A volatility measure often used to place stop-loss levels.',
   },
+  swing_low_20: {
+    short: 'Swing low 20',
+    full: 'The lowest price actually traded during the last 20 trading days — a floor the market has already defended once. Used as a support anchor for the entry levels.',
+  },
   bias_20: {
     short: 'Bias 20',
     full: 'How far the price sits above or below its own 20-day average, in %. Stretched values tend to snap back.',
@@ -249,6 +253,10 @@ const zh: Record<string, MetricEntry> = {
   atr_14: {
     short: 'ATR 14',
     full: '14日平均真实波幅——日常价格波动的典型幅度（以货币计），常用来设置止损距离。',
+  },
+  swing_low_20: {
+    short: '20日低点',
+    full: '最近20个交易日的最低成交价——市场已经防守过一次的价格底部，用作买入价位的支撑锚点。',
   },
   bias_20: { short: '乖离率 20', full: '价格偏离自身20日均线的百分比。偏离过大往往会回归。' },
   score: { short: '技术评分', full: '由上述指标综合计算出的技术面总分。' },

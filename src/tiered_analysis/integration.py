@@ -25,6 +25,13 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any, Callable, List, Optional, Sequence
 
+from .adjustments import LevelAdjuster
+from .levels import (
+    apply_adjustments,
+    bases_from_dimensions,
+    decisions_to_detail,
+    decisions_to_sniper,
+)
 from .providers.base import (
     Coverage,
     DimensionProvider,
@@ -130,6 +137,14 @@ def _collect_dimensions(
     return results
 
 
+def _technicals_atr(dimensions: Sequence[DimensionResult]) -> Optional[float]:
+    for dim in dimensions:
+        if dim.dimension == "technicals" and dim.payload:
+            value = dim.payload.get("atr_14")
+            return float(value) if isinstance(value, (int, float)) else None
+    return None
+
+
 def run_tiered_analysis(
     symbol: str,
     market: Optional[Market] = None,
@@ -138,13 +153,16 @@ def run_tiered_analysis(
     signal_logger: Callable[..., Any] = log_tier_report,
     log_signal: bool = True,
     trace_id: Optional[str] = None,
+    level_adjuster: Optional[Any] = None,
 ) -> TieredRunOutcome:
     """Run tier 1 for one symbol with full production wiring.
 
-    Collects the four dimensions, runs the tier pipeline, attaches the
-    dimension results (with merged coverage) to the tier-1 report, and —
-    unless ``log_signal`` is False — records the recommendation in the
-    existing decision-signal system.
+    Collects the four dimensions, runs the tier pipeline, replaces the
+    LLM-prose price levels with deterministic bases + validated AI
+    adjustments (v2 slice 3, anchor-and-adjust), attaches the dimension
+    results (with merged coverage) to the tier-1 report, and — unless
+    ``log_signal`` is False — records the recommendation in the existing
+    decision-signal system.
     """
     if market is None:
         market = detect_market(symbol)
@@ -152,17 +170,33 @@ def run_tiered_analysis(
         providers = get_providers(market, bars_loader=dsa_bars_loader)
     if analysis_runner is None:
         analysis_runner = dsa_analysis_runner
+    if level_adjuster is None:
+        level_adjuster = LevelAdjuster()
 
     dimensions = _collect_dimensions(providers, symbol)
 
     pipeline = TieredPipeline(tier1=Tier1Stage(analysis_runner=analysis_runner))
     state = pipeline.run(symbol, market, up_to_tier=1)
 
+    # Anchor-and-adjust levels: formula bases from the technicals payload,
+    # bounded evidence-cited LLM adjustments, code re-validation. This
+    # intentionally replaces the DSA sniper levels (LLM prose) as the
+    # report's tradeable numbers; the audit trail lands in levels_detail.
+    bases = bases_from_dimensions(dimensions)
+    proposals, adjuster_warnings = level_adjuster.propose(symbol, bases, dimensions)
+    decisions, adjust_warnings = apply_adjustments(
+        bases, proposals, atr=_technicals_atr(dimensions)
+    )
+    level_warnings = list(bases.warnings) + adjuster_warnings + adjust_warnings
+
     tier1 = state.reports[1]
     report = replace(
         tier1,
         dimensions=dimensions,
         coverage=_merge_coverage(tier1.coverage, dimensions),
+        levels=decisions_to_sniper(decisions),
+        levels_detail=decisions_to_detail(decisions, level_warnings),
+        warnings=list(tier1.warnings) + level_warnings,
     )
     state.reports[1] = report
 

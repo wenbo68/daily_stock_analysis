@@ -153,6 +153,17 @@ def compute_atr(bars: List[Bar], period: int = ATR_PERIOD) -> Optional[float]:
     return atr
 
 
+SWING_LOOKBACK = 20
+
+
+def compute_swing_low(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optional[float]:
+    """Lowest traded low of the last ``lookback`` bars — a floor the market
+    has already defended once; a support anchor for the level formulas."""
+    if not bars or lookback <= 0:
+        return None
+    return min(bar.low for bar in bars[-lookback:])
+
+
 def compute_bias(closes: List[float], period: int = BIAS_PERIOD) -> Optional[float]:
     """BIAS: percentage deviation of the latest close from its SMA."""
     sma = compute_sma(closes, period)
@@ -267,6 +278,7 @@ class TechnicalsProvider(DimensionProvider):
             "rsi_14": compute_wilder_rsi(closes),
             "macd": compute_macd(closes),
             "atr_14": compute_atr(bars),
+            "swing_low_20": compute_swing_low(bars),
             "bias_20": compute_bias(closes),
             "score": compute_score(bars),
         }

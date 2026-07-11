@@ -89,6 +89,7 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
             "stop_loss": report.levels.stop_loss,
             "take_profit": report.levels.take_profit,
         },
+        "levels_detail": report.levels_detail,
         "narrative": report.narrative,
         "warnings": list(report.warnings),
         "dimensions": dimensions,

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from .providers.base import Coverage, DimensionResult, Market
 
@@ -114,3 +114,6 @@ class TierReport:
     dimensions: List[DimensionResult] = field(default_factory=list)
     sizing: SizingSlots = field(default_factory=SizingSlots)
     warnings: List[str] = field(default_factory=list)
+    #: v2 slice 3 audit trail: per-level base/formula/inputs + AI adjustment
+    #: (reason, evidence, rejection). JSON-ready dict; None on pre-v2 reports.
+    levels_detail: Optional[Dict[str, Any]] = None
