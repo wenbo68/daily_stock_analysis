@@ -168,7 +168,7 @@ scoped offline tests, commit; live verification at slices 3, 5, and 6.
 | Slice | Status |
 | --- | --- |
 | 1. Sizing engine | **done** (2026-07-11) — `src/tiered_analysis/sizing.py`, 19 offline tests in `tests/test_tiered_sizing.py` |
-| 2. ATR stops | not started |
+| 2. ATR stops | **done** (2026-07-11) — `src/tiered_analysis/stops.py`, 13 offline tests in `tests/test_tiered_stops.py`; report/pipeline wiring lands with slice 5 |
 | 3. Tier 2 debate | not started |
 | 4. Tier 3 risk stress | not started |
 | 5. Pipeline/API integration | not started |
