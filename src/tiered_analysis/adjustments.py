@@ -14,13 +14,16 @@ happens inside DSA's decision path, which we never modify.
 from __future__ import annotations
 
 import json
-import re
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 from .levels import LEVEL_KEYS, AdjustmentProposal, BaseLevels
+from .llm_support import (
+    default_summarizer,
+    evidence_block,
+    parse_llm_json,
+    validate_evidence,
+)
 from .providers.base import DimensionResult
-
-_CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 _PROMPT_TEMPLATE = """You are reviewing formula-computed trade levels for {symbol}.
 
@@ -46,81 +49,6 @@ Reply with JSON only:
 """
 
 
-class AdjusterConfigError(RuntimeError):
-    """LLM configuration missing — surfaced as a warning, never a crash."""
-
-
-def _default_summarizer(prompt: str) -> str:
-    import os
-
-    model = (os.getenv("LITELLM_MODEL") or "").strip()
-    if not model:
-        raise AdjusterConfigError(
-            "LITELLM_MODEL is not set; the level adjuster needs the repo's "
-            "standard LLM configuration"
-        )
-    import litellm
-
-    response = litellm.completion(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-    )
-    return response.choices[0].message.content or ""
-
-
-def _parse_llm_json(raw: str) -> Optional[dict]:
-    text = raw.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL)
-    if fence:
-        text = fence.group(1).strip()
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _resolve_payload_ref(ref: str, dimensions: Sequence[DimensionResult]) -> bool:
-    """True when ``dimension.key[.subkey…]`` points at real payload data."""
-    parts = ref.split(".")
-    if len(parts) < 2:
-        return False
-    dimension_name, path = parts[0], parts[1:]
-    for dim in dimensions:
-        if dim.dimension != dimension_name or not dim.payload:
-            continue
-        node: Any = dim.payload
-        for segment in path:
-            if not isinstance(node, dict) or segment not in node:
-                node = None
-                break
-            node = node[segment]
-        if node is not None:
-            return True
-    return False
-
-
-def _validate_evidence(
-    refs: Sequence[Any], dimensions: Sequence[DimensionResult]
-) -> List[str]:
-    citation_count = max(
-        (len(dim.citations or []) for dim in dimensions if dim.dimension == "sentiment"),
-        default=0,
-    )
-    valid: List[str] = []
-    for raw in refs:
-        ref = str(raw).strip()
-        citation = _CITATION_REF_RE.match(ref)
-        if citation:
-            if 1 <= int(citation.group(1)) <= citation_count:
-                valid.append(ref)
-            continue
-        if _resolve_payload_ref(ref, dimensions):
-            valid.append(ref)
-    return valid
-
-
 def _bases_json(bases: BaseLevels) -> str:
     body = {}
     for key in LEVEL_KEYS:
@@ -134,28 +62,11 @@ def _bases_json(bases: BaseLevels) -> str:
     return json.dumps(body, ensure_ascii=False, indent=1)
 
 
-def _evidence_block(dimensions: Sequence[DimensionResult]) -> str:
-    blocks: List[str] = []
-    for dim in dimensions:
-        if dim.payload:
-            blocks.append(
-                f"[{dim.dimension} payload — cite as \"{dim.dimension}.<key>\"]\n"
-                + json.dumps(dim.payload, ensure_ascii=False, default=str)
-            )
-        if dim.dimension == "sentiment" and dim.narrative:
-            lines = [f"[sentiment narrative]\n{dim.narrative}"]
-            for index, citation in enumerate(dim.citations or [], start=1):
-                title = citation.title or citation.source_name
-                lines.append(f"citation:{index} = {title} ({citation.url})")
-            blocks.append("\n".join(lines))
-    return "\n\n".join(blocks) if blocks else "(no evidence collected)"
-
-
 class LevelAdjuster:
     """Asks the LLM for bounded, evidence-cited level adjustments."""
 
     def __init__(self, summarizer: Optional[Callable[[str], str]] = None):
-        self._summarize = summarizer or _default_summarizer
+        self._summarize = summarizer or default_summarizer
 
     def propose(
         self,
@@ -169,14 +80,14 @@ class LevelAdjuster:
         prompt = _PROMPT_TEMPLATE.format(
             symbol=symbol,
             bases_json=_bases_json(bases),
-            evidence_block=_evidence_block(dimensions),
+            evidence_block=evidence_block(dimensions),
         )
         try:
             raw = self._summarize(prompt)
         except Exception as exc:  # fail-loud as warnings, never crash the run
             return [], [f"level adjuster unavailable: {exc}"]
 
-        parsed = _parse_llm_json(raw)
+        parsed = parse_llm_json(raw)
         if parsed is None or not isinstance(parsed.get("adjustments"), list):
             return [], ["level adjuster returned unparseable output — bases kept"]
 
@@ -198,7 +109,7 @@ class LevelAdjuster:
             if not reason:
                 warnings.append(f"adjustment for {level} gives no reason — dropped")
                 continue
-            evidence = _validate_evidence(item.get("evidence") or [], dimensions)
+            evidence = validate_evidence(item.get("evidence") or [], dimensions)
             if not evidence:
                 warnings.append(
                     f"adjustment for {level} cites no verifiable evidence — dropped"

@@ -10,8 +10,8 @@ injected ``analysis_runner`` callable so this package never imports the DSA
 decision path (boundary rule, design doc §10); production wiring passes a
 thin closure over the existing pipeline, tests pass fakes.
 
-Tier 2 (bull/bear debate) and Tier 3 (risk stress test) are v2 scope and
-ship here as explicit not-implemented stubs.
+Tier 2 (bull/bear debate) shipped with v2 slice 4; Tier 3 (risk stress
+test) remains an explicit not-implemented stub until slice 5.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from .providers.base import Coverage, Market
+from .providers.base import Coverage, DimensionResult, Market
 from .schema import Direction, SniperLevels, TierReport, extract_price
 
 _SNIPER_FIELDS = (
@@ -37,6 +37,10 @@ class TierState:
     symbol: str
     market: Market
     reports: Dict[int, TierReport] = field(default_factory=dict)
+    #: Collected dimension results, set by the orchestration layer so
+    #: higher tiers can debate over the evidence (falls back to the
+    #: dimensions attached to the tier-1 report when unset).
+    dimensions: List[DimensionResult] = field(default_factory=list)
 
 
 class TierStage(ABC):
@@ -146,9 +150,84 @@ class _NotImplementedStage(TierStage):
         )
 
 
-class Tier2Stage(_NotImplementedStage):
+class Tier2Stage(TierStage):
+    """Bull/bear debate over the tier-1 evidence (v2 slice 4).
+
+    The engine is injected for tests; the default is a lazy DebateEngine
+    (the tiered package's own LLM call). Any failure — no tier-1 report,
+    no evidence, LLM down, unparseable judge — degrades to an UNAVAILABLE
+    report whose direction falls back to tier 1, never an exception.
+    """
+
     tier = 2
-    label = "bull/bear debate"
+
+    def __init__(self, engine: Optional[Any] = None) -> None:
+        self._engine = engine
+
+    def run(self, state: TierState) -> TierReport:
+        tier1 = state.reports.get(1)
+        if tier1 is None:
+            return TierReport(
+                tier=self.tier,
+                symbol=state.symbol,
+                market=state.market,
+                coverage=Coverage.UNAVAILABLE,
+                direction=Direction.UNKNOWN,
+                warnings=["tier 2 requires a tier-1 report"],
+            )
+
+        dimensions = state.dimensions or tier1.dimensions
+        if not dimensions:
+            return TierReport(
+                tier=self.tier,
+                symbol=state.symbol,
+                market=state.market,
+                coverage=Coverage.UNAVAILABLE,
+                direction=tier1.direction,
+                levels=tier1.levels,
+                warnings=[
+                    "no collected evidence to debate — tier 2 skipped, "
+                    "direction falls back to tier 1"
+                ],
+            )
+
+        engine = self._engine
+        if engine is None:
+            from .debate import DebateEngine
+
+            engine = DebateEngine()
+        result = engine.run(state.symbol, tier1, dimensions)
+
+        if result.verdict is None:
+            return TierReport(
+                tier=self.tier,
+                symbol=state.symbol,
+                market=state.market,
+                coverage=Coverage.UNAVAILABLE,
+                direction=tier1.direction,
+                score=tier1.score,
+                levels=tier1.levels,
+                warnings=list(result.warnings)
+                + ["debate produced no verdict — direction falls back to tier 1"],
+                debate_detail=result.to_detail(),
+            )
+
+        verdict = result.verdict
+        return TierReport(
+            tier=self.tier,
+            symbol=state.symbol,
+            market=state.market,
+            coverage=Coverage.FULL,
+            direction=verdict.direction,
+            confidence=(
+                f"{verdict.confidence:.2f}" if verdict.confidence is not None else None
+            ),
+            score=tier1.score,
+            levels=tier1.levels,
+            narrative=verdict.summary or None,
+            warnings=list(result.warnings),
+            debate_detail=result.to_detail(),
+        )
 
 
 class Tier3Stage(_NotImplementedStage):

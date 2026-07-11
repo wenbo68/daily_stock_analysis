@@ -117,3 +117,6 @@ class TierReport:
     #: v2 slice 3 audit trail: per-level base/formula/inputs + AI adjustment
     #: (reason, evidence, rejection). JSON-ready dict; None on pre-v2 reports.
     levels_detail: Optional[Dict[str, Any]] = None
+    #: v2 slice 4 audit trail (tier-2 reports only): debate turns + judge
+    #: verdict with anchored reasons. JSON-ready dict; None elsewhere.
+    debate_detail: Optional[Dict[str, Any]] = None

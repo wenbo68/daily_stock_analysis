@@ -230,7 +230,7 @@ offline tests, commit; live verification at slices 3, 4, 6, and 7.
 | 1. Sizing engine | **done** (2026-07-11) — `src/tiered_analysis/sizing.py`, 19 offline tests in `tests/test_tiered_sizing.py` |
 | 2. ATR stops | **done** (2026-07-11) — `src/tiered_analysis/stops.py`, 13 offline tests in `tests/test_tiered_stops.py`; report/pipeline wiring lands with slice 5 |
 | 3. Base levels + AI adjustment | **done** (2026-07-11) — `levels.py` + `adjustments.py` + `swing_low_20` payload metric, wired into `run_tiered_analysis`; 39 offline tests; live AAPL run verified (stop/target adjustments accepted in band with cited evidence, entry adjustment rejected by the reward-to-risk floor) |
-| 4. Tier 2 debate | not started |
+| 4. Tier 2 debate | **done** (2026-07-12) — `debate.py` + real `Tier2Stage` in `tiers.py` (falls back to tier-1 direction on any failure), shared LLM helpers extracted to `llm_support.py`, `debate_detail` audit trail on TierReport; 16 offline tests (240 tiered total); live AAPL smoke: judge ruled hold @ 0.65 with all reasons evidence-anchored, zero warnings. Pipeline `depth` wiring lands with slice 6 |
 | 5. Tier 3 risk stress | not started |
 | 6. Pipeline/API integration | not started |
 | 7. Web surface (incl. level modals) | not started |
