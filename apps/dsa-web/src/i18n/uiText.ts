@@ -856,6 +856,7 @@ const zh = {
   'tiered.final.title': '最终结论',
   'tiered.help.finalVerdict': '经过所选最深一层复核后的方向，也是记入 AI 建议台账的那条结论。',
   'tiered.final.decidedBy': '由第 {tier} 层复核得出',
+  'tiered.final.decidedBy1': '仅第 1 层分析——未运行更深复核',
   'tiered.final.trail': '结论演变',
   'tiered.help.finalTrail':
     '各层依次给出的方向：第 1 层先分析数据下结论，第 2 层辩论复核，第 3 层做风险压力测试。最深一层的方向就是最终结论。',
@@ -953,6 +954,13 @@ const zh = {
   'tiered.sizing.reason.stop_not_below_entry': '止损价不低于入场价，价位自相矛盾，拒绝计算。',
   'tiered.sizing.reason.invalid_input': '输入数值无效（本金、风险比例或价格超出合理范围）。',
   'tiered.sizing.reason.too_small': '按风险预算算出的股数不足一股（或一手）——资金或风险比例太小，买不了这只股票。',
+  'tiered.sizing.notComputed': '这次运行早于「建议下单量」功能，没有股数记录。重新运行即可得到。',
+  'layout.nav.tieredAlt': '分层分析 Alt',
+  'tiered.alt.title': '分层分析（Alt 版）',
+  'tiered.alt.subtitle': '同一份数据、另一种界面——对照后留下你更喜欢的那个。',
+  'tiered.alt.levelStory': '基准 {base} → {adjusted}',
+  'tiered.alt.levelStoryNoChange': '基准 {base} · 无调整',
+  'tiered.alt.levelStoryRejected': '基准 {base} · 调整被拒',
 } as const;
 
 export type UiTextKey = keyof typeof zh;
@@ -1819,6 +1827,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.help.finalVerdict':
     'The direction after the deepest review you selected — this is the call recorded in the AI-signals ledger.',
   'tiered.final.decidedBy': 'issued by the tier-{tier} review',
+  'tiered.final.decidedBy1': 'from the tier-1 analysis — no deeper review was run',
   'tiered.final.trail': 'How the verdict evolved',
   'tiered.help.finalTrail':
     'Each tier’s direction in order: tier 1 analyzes the data and makes the first call, tier 2 re-checks it through a debate, tier 3 stress-tests it for risk. The deepest tier’s direction is the final verdict.',
@@ -1938,6 +1947,14 @@ const en: Record<UiTextKey, string> = {
     'An input was invalid (capital, risk fraction, or a price outside the sane range).',
   'tiered.sizing.reason.too_small':
     'The computed size rounds down to zero shares (or zero lots) — the risk budget is too small for this stock’s price.',
+  'tiered.sizing.notComputed':
+    'This run predates the “suggested order size” feature, so no share count was recorded. Re-run the stock to get one.',
+  'layout.nav.tieredAlt': 'Tiered (Alt)',
+  'tiered.alt.title': 'Tiered analysis (Alt)',
+  'tiered.alt.subtitle': 'The same data in an alternate skin — compare and keep the one you prefer.',
+  'tiered.alt.levelStory': 'base {base} → {adjusted}',
+  'tiered.alt.levelStoryNoChange': 'base {base} · no change',
+  'tiered.alt.levelStoryRejected': 'base {base} · adjustment rejected',
 };
 
 export const UI_TEXT: Record<UiLanguage, Record<UiTextKey, string>> = {

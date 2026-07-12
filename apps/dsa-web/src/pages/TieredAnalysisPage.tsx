@@ -229,36 +229,41 @@ interface ResultViewProps {
 const ResultView = ({ result }: ResultViewProps) => {
   const { t } = useUiLanguage();
   const citations = sentimentCitations(result.dimensions);
-  const final = result.final ?? null;
-  const deeperRan = final !== null && final.tier > 1;
+  // Old stored runs predate the final block — for them the run ended at
+  // tier 1, so the final verdict IS the tier-1 verdict.
+  const final = result.final ?? {
+    tier: 1,
+    direction: result.direction,
+    coverage: result.coverage,
+    confidence: null,
+    levels: result.levels,
+  };
   const usage = result.llm_usage ?? null;
 
+  // Every depth renders the same skeleton, in the same order:
+  // final verdict → order size → tier 1 → tier 2 → tier 3 → dimensions.
   return (
     <div className="space-y-4">
-      {deeperRan ? (
-        <FinalVerdictCard
-          symbol={result.symbol}
-          final={final}
-          tier1Direction={result.direction}
-          tier2={result.tier2 ?? null}
-          tier3={result.tier3 ?? null}
-        />
-      ) : null}
+      <FinalVerdictCard
+        symbol={result.symbol}
+        final={final}
+        tier1Direction={result.direction}
+        tier2={result.tier2 ?? null}
+        tier3={result.tier3 ?? null}
+      />
+
+      {result.sizing ? <SizingCard sizing={result.sizing} /> : null}
 
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-3">
-          {deeperRan ? (
-            <h3 className="text-sm font-semibold text-foreground">
-              <HelpTerm label={t('tiered.tier1.title')} helpKey="tiered.help.tier1" />
-            </h3>
-          ) : (
-            <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
-          )}
+          <h3 className="text-sm font-semibold text-foreground">
+            <HelpTerm label={t('tiered.tier1.title')} helpKey="tiered.help.tier1" />
+          </h3>
           <HelpTerm
             underline={false}
             helpKey="tiered.help.direction"
             label={
-              <Badge variant={DIRECTION_BADGE[result.direction]} size={deeperRan ? 'sm' : 'md'} glow={!deeperRan}>
+              <Badge variant={DIRECTION_BADGE[result.direction]}>
                 {t(`tiered.direction.${result.direction}` as UiTextKey)}
               </Badge>
             }
@@ -341,7 +346,6 @@ const ResultView = ({ result }: ResultViewProps) => {
 
       {result.tier2 ? <DebateCard section={result.tier2} citations={citations} /> : null}
       {result.tier3 ? <RiskCard section={result.tier3} citations={citations} /> : null}
-      {result.sizing ? <SizingCard sizing={result.sizing} /> : null}
 
       <div>
         <div className="label-uppercase mb-2">{t('tiered.dimensions')}</div>

@@ -24,6 +24,7 @@ const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 const TokenUsagePage = lazy(() => import('./pages/TokenUsagePage'));
 const StockScreeningPage = lazy(() => import('./pages/StockScreeningPage'));
 const TieredAnalysisPage = lazy(() => import('./pages/TieredAnalysisPage'));
+const TieredAltPage = lazy(() => import('./pages/TieredAltPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -85,6 +86,7 @@ const AppContent: React.FC = () => {
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/decision-signals" element={<DecisionSignalsPage />} />
         <Route path="/tiered" element={<TieredAnalysisPage />} />
+        <Route path="/tiered-alt" element={<TieredAltPage />} />
         <Route path="/screening" element={<StockScreeningPage />} />
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/alerts" element={<AlertsPage />} />

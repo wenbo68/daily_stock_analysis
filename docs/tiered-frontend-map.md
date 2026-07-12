@@ -68,6 +68,22 @@ in (called *props*) and returns the HTML for one piece of screen.
 > components *or* plain functions, not both. `terms.tsx` holds the components,
 > `termHelpers.ts` the functions.
 
+## 2b. The alternate skin — `/tiered-alt`
+
+A second, parallel version of the page in a flat dark style (modeled on showplayer.net)
+so the two looks can be compared side by side. Same API, same data, same wording file.
+
+| File | What it is |
+|---|---|
+| `pages/TieredAltPage.tsx` | The alt page: form, history strip, result — all on a gray-900 canvas. |
+| `components/tiered-alt/altStyles.ts` | The alt design tokens: badge recipes (`bg-*-500/20 text-*-300 ring-*-500/30`), link color. |
+| `components/tiered-alt/AltUi.tsx` | Alt primitives: card, tag, modal, narrative-with-citations, evidence links. |
+| `components/tiered-alt/AltResult.tsx` | The result skeleton — identical at every depth: final verdict hero → order size → tier 1 → tier 2 → tier 3 → dimensions. |
+| `components/tiered-alt/AltLevels.tsx` | Price levels: one big final number per level, the base→adjusted story in a single modal. |
+| `components/tiered-alt/AltDimensions.tsx` | The four data cards, alt-styled. |
+
+Once one version wins, delete the loser (page + its components folder + its nav entry).
+
 ## 3. Where the words live
 
 ### `i18n/uiText.ts`

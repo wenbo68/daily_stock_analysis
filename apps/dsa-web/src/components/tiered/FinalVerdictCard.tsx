@@ -15,8 +15,9 @@ interface FinalVerdictCardProps {
 }
 
 // The one call the run ends on, in its own card — separate from the tier-1
-// analysis below it. The trail shows how each tier's review moved (or kept)
-// the direction, so "final" is never confused with "tier 1".
+// analysis below it, and shown for every depth so the result always has the
+// same shape. The trail shows how each tier's review moved (or kept) the
+// direction, so "final" is never confused with "tier 1".
 export const FinalVerdictCard = ({
   symbol,
   final,
@@ -49,7 +50,9 @@ export const FinalVerdictCard = ({
           {t(`tiered.direction.${final.direction}` as UiTextKey)}
         </Badge>
         <span className="text-xs text-secondary-text">
-          {t('tiered.final.decidedBy', { tier: final.tier })}
+          {final.tier === 1
+            ? t('tiered.final.decidedBy1')
+            : t('tiered.final.decidedBy', { tier: final.tier })}
         </span>
       </div>
 
