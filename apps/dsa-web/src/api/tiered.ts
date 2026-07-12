@@ -77,6 +77,15 @@ export type TieredRiskDetail = {
   warnings: string[];
 };
 
+// The deepest tier's verdict in summary form — what the run ends on.
+export type TieredFinal = {
+  tier: number;
+  direction: 'buy' | 'hold' | 'sell' | 'unknown';
+  coverage: 'full' | 'partial' | 'unavailable';
+  confidence: string | null;
+  levels: TieredLevels;
+};
+
 export type TieredTierSection = {
   tier: number;
   coverage: 'full' | 'partial' | 'unavailable';
@@ -141,13 +150,7 @@ export type TieredResult = {
   } | null;
   // v2 slice 6 additions — absent on old stored runs, so all optional.
   depth?: number;
-  final?: {
-    tier: number;
-    direction: 'buy' | 'hold' | 'sell' | 'unknown';
-    coverage: 'full' | 'partial' | 'unavailable';
-    confidence: string | null;
-    levels: TieredLevels;
-  } | null;
+  final?: TieredFinal | null;
   tier2?: TieredTierSection | null;
   tier3?: TieredTierSection | null;
   sizing?: TieredSizing | null;

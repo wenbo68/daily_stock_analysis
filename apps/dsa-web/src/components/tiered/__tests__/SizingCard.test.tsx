@@ -85,6 +85,8 @@ describe('SizingCard', () => {
     expect(refused).toBeInTheDocument();
     // the raw backend sentence stays visible as secondary detail
     expect(refused.textContent).toContain("direction is 'hold', not 'buy'");
+    // the share-count slot stays visible so the number's home is always obvious
+    expect(screen.getByTestId('sizing-shares-hero').textContent).toContain('—');
   });
 
   it('explains an applied risk multiplier including the zero case', () => {

@@ -22,6 +22,7 @@ import {
 } from '../components/common';
 import { DebateCard } from '../components/tiered/DebateCard';
 import { DepthSelector } from '../components/tiered/DepthSelector';
+import { FinalVerdictCard } from '../components/tiered/FinalVerdictCard';
 import { LevelTiles } from '../components/tiered/LevelTiles';
 import { RiskCard } from '../components/tiered/RiskCard';
 import { SizingCard } from '../components/tiered/SizingCard';
@@ -234,30 +235,24 @@ const ResultView = ({ result }: ResultViewProps) => {
 
   return (
     <div className="space-y-4">
-      <Card className="p-4">
-        {deeperRan ? (
-          <div className="mb-2 flex flex-wrap items-center gap-3">
-            <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
-            <HelpTerm
-              underline={false}
-              helpKey="tiered.help.finalVerdict"
-              label={
-                <Badge variant={DIRECTION_BADGE[final.direction]} size="md" glow>
-                  {t(`tiered.direction.${final.direction}` as UiTextKey)}
-                </Badge>
-              }
-            />
-            <span className="text-xs text-secondary-text">
-              {t('tiered.finalVerdict', { tier: final.tier })}
-            </span>
-          </div>
-        ) : null}
+      {deeperRan ? (
+        <FinalVerdictCard
+          symbol={result.symbol}
+          final={final}
+          tier1Direction={result.direction}
+          tier2={result.tier2 ?? null}
+          tier3={result.tier3 ?? null}
+        />
+      ) : null}
 
+      <Card className="p-4">
         <div className="flex flex-wrap items-center gap-3">
-          {!deeperRan ? (
-            <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
+          {deeperRan ? (
+            <h3 className="text-sm font-semibold text-foreground">
+              <HelpTerm label={t('tiered.tier1.title')} helpKey="tiered.help.tier1" />
+            </h3>
           ) : (
-            <span className="text-xs text-secondary-text">{t('tiered.tier1Label')}</span>
+            <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
           )}
           <HelpTerm
             underline={false}
@@ -344,9 +339,9 @@ const ResultView = ({ result }: ResultViewProps) => {
         ) : null}
       </Card>
 
-      {result.sizing ? <SizingCard sizing={result.sizing} /> : null}
       {result.tier2 ? <DebateCard section={result.tier2} citations={citations} /> : null}
       {result.tier3 ? <RiskCard section={result.tier3} citations={citations} /> : null}
+      {result.sizing ? <SizingCard sizing={result.sizing} /> : null}
 
       <div>
         <div className="label-uppercase mb-2">{t('tiered.dimensions')}</div>

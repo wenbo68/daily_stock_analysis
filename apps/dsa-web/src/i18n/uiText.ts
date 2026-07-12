@@ -853,17 +853,26 @@ const zh = {
   'tiered.depth.3': '+ 风险压力测试',
   'tiered.help.depth':
     '标准 = 四维数据 + 一次 AI 结论。「+ 多空辩论」再让两个 AI 分别唱多、唱空，由裁判 AI 复核结论。「+ 风险压力测试」再加三个风险审查 AI 给出仓位倍数。越深 = AI 调用越多 = 更慢也更花钱（每次深度运行约几分钱）。',
-  'tiered.finalVerdict': '最终结论（第 {tier} 层复核后）',
+  'tiered.final.title': '最终结论',
   'tiered.help.finalVerdict': '经过所选最深一层复核后的方向，也是记入 AI 建议台账的那条结论。',
-  'tiered.tier1Label': '第 1 层（基础分析）',
+  'tiered.final.decidedBy': '由第 {tier} 层复核得出',
+  'tiered.final.trail': '结论演变',
+  'tiered.help.finalTrail':
+    '各层依次给出的方向：第 1 层先分析数据下结论，第 2 层辩论复核，第 3 层做风险压力测试。最深一层的方向就是最终结论。',
+  'tiered.trail.1': '第 1 层 基础分析',
+  'tiered.trail.2': '第 2 层 辩论',
+  'tiered.trail.3': '第 3 层 风险测试',
+  'tiered.tier1.title': '第 1 层 · 基础分析',
+  'tiered.help.tier1':
+    '四个维度的数据（技术面 / 基本面 / 宏观 / 新闻情绪）加一次 AI 综合结论；价格参考位由公式计算、AI 只能有限调整。',
   'tiered.llmUsage': '本次运行 AI 调用 {calls} 次（约 {tokens} tokens）',
   'tiered.help.llmUsage':
     '本次运行中分层分析自身发起的 AI 调用次数与 token（计费单位，约等于词的碎片）总量。第 1 层的综合结论由产品内置流程完成，不计入此数。',
-  'tiered.sizingForm.title': '仓位计算（可选）',
+  'tiered.sizingForm.title': '你的本金与风险（输入，可选）',
   'tiered.sizingForm.capital': '本金，如 100000',
   'tiered.sizingForm.riskPct': '单笔风险 %，如 1',
   'tiered.help.sizingForm':
-    '填了这两项，报告会用公式算出建议买多少股：本金 = 你用来交易的总资金；单笔风险 % = 一笔交易你最多接受亏掉本金的百分之几（常见 1-2%）。留空 = 不计算仓位。本页输入只对之后的运行生效，也可在 .env 里用 TIERED_SIZING_* 永久设置。',
+    '这两项是你提供的输入：本金 = 你用来交易的总资金；单笔风险 % = 一笔交易你最多接受亏掉本金的百分之几（常见 1-2%）。填了之后，结果页会多一张「建议下单量」卡片（输出），用公式算出建议买多少股。留空 = 不计算。本页输入只对之后的运行生效，也可在 .env 里用 TIERED_SIZING_* 永久设置。',
   'tiered.levels.base': '公式基准',
   'tiered.levels.adjusted': 'AI 调整',
   'tiered.levels.noAdjustment': '无调整',
@@ -917,9 +926,11 @@ const zh = {
   'tiered.risk.persona.conservative': '保守方',
   'tiered.risk.persona.aggressive': '激进方',
   'tiered.risk.persona.neutral': '中立方',
-  'tiered.sizing.title': '仓位建议',
+  'tiered.sizing.title': '建议下单量（计算结果）',
   'tiered.help.sizing':
     '由固定公式计算：可亏金额（本金 × 单笔风险%）÷ 每股潜在亏损（入场价 − 止损价，含手续费），再套用单一持仓上限（默认本金的 25%）。全程无 AI 参与。',
+  'tiered.sizing.subtitle':
+    '这张卡是输出，不是你的输入：程序拿你在运行区填的本金和单笔风险，结合本次的止损价算出股数；深度 3 时还会乘以风险裁判的仓位倍数。',
   'tiered.sizing.offExplainer': '仓位计算未开启：还没有填写本金和单笔风险比例，所以本次报告不给出股数。',
   'tiered.sizing.offHint':
     '在上方运行区填写「本金」和「单笔风险 %」后再运行即可开启；也可以在 .env 中设置 TIERED_SIZING_CAPITAL 和 TIERED_SIZING_RISK_FRACTION 永久开启。',
@@ -1804,18 +1815,27 @@ const en: Record<UiTextKey, string> = {
   'tiered.depth.3': '+ Risk stress test',
   'tiered.help.depth':
     'Standard = four-dimension data + one AI verdict. "+ Debate" adds two AIs arguing the bull and bear case with a judge re-checking the verdict. "+ Risk stress test" adds three AI risk reviewers and a position-size multiplier. Deeper = more AI calls = slower and slightly costlier (a deep run costs a few cents).',
-  'tiered.finalVerdict': 'Final verdict (after tier {tier} review)',
+  'tiered.final.title': 'Final verdict',
   'tiered.help.finalVerdict':
     'The direction after the deepest review you selected — this is the call recorded in the AI-signals ledger.',
-  'tiered.tier1Label': 'Tier 1 (base analysis)',
+  'tiered.final.decidedBy': 'issued by the tier-{tier} review',
+  'tiered.final.trail': 'How the verdict evolved',
+  'tiered.help.finalTrail':
+    'Each tier’s direction in order: tier 1 analyzes the data and makes the first call, tier 2 re-checks it through a debate, tier 3 stress-tests it for risk. The deepest tier’s direction is the final verdict.',
+  'tiered.trail.1': 'Tier 1 base analysis',
+  'tiered.trail.2': 'Tier 2 debate',
+  'tiered.trail.3': 'Tier 3 risk test',
+  'tiered.tier1.title': 'Tier 1 · Base analysis',
+  'tiered.help.tier1':
+    'The four data dimensions (technicals / fundamentals / macro / news sentiment) plus one AI synthesis; price levels come from formulas, with only bounded AI adjustment.',
   'tiered.llmUsage': 'This run used {calls} AI calls (~{tokens} tokens)',
   'tiered.help.llmUsage':
     'AI calls made by tiered analysis itself during this run, with the total tokens (the billing unit — roughly word fragments). The tier-1 synthesis runs inside the product’s built-in flow and is not counted here.',
-  'tiered.sizingForm.title': 'Position sizing (optional)',
+  'tiered.sizingForm.title': 'Your capital & risk (input, optional)',
   'tiered.sizingForm.capital': 'Capital, e.g. 100000',
   'tiered.sizingForm.riskPct': 'Risk per trade %, e.g. 1',
   'tiered.help.sizingForm':
-    'Fill these in and the report computes how many shares to buy: capital = the money you trade with; risk per trade % = the most you accept losing on one trade, as a percent of capital (1–2% is common). Leave blank = no share counts. These inputs apply to runs you start here; set TIERED_SIZING_* in .env to make them permanent.',
+    'These two are inputs you provide: capital = the money you trade with; risk per trade % = the most you accept losing on one trade, as a percent of capital (1–2% is common). Fill them in and the result gains a “Suggested order size” card (the output) with a formula-computed share count. Leave blank = no share counts. These inputs apply to runs you start here; set TIERED_SIZING_* in .env to make them permanent.',
   'tiered.levels.base': 'Formula base',
   'tiered.levels.adjusted': 'AI adjusted',
   'tiered.levels.noAdjustment': 'no change',
@@ -1877,14 +1897,16 @@ const en: Record<UiTextKey, string> = {
   'tiered.risk.persona.conservative': 'Conservative',
   'tiered.risk.persona.aggressive': 'Aggressive',
   'tiered.risk.persona.neutral': 'Neutral',
-  'tiered.sizing.title': 'Position sizing',
+  'tiered.sizing.title': 'Suggested order size (computed result)',
   'tiered.help.sizing':
     'Computed by a fixed formula, never by AI: the money you accept losing (capital × risk per trade) divided by the loss per share if the stop is hit (entry − stop, fees included), then capped so one stock never exceeds a set share of your capital (default 25%).',
+  'tiered.sizing.subtitle':
+    'This card is output, not your input: code takes the capital and risk you entered in the run form, combines them with this run’s stop-loss to compute a share count, and on depth-3 runs multiplies by the risk judge’s size multiplier.',
   'tiered.sizing.offExplainer':
     'Sizing is off: capital and risk per trade have not been provided, so this report prints no share count.',
   'tiered.sizing.offHint':
     'Enter “capital” and “risk per trade %” in the run form above and run again to turn it on — or set TIERED_SIZING_CAPITAL and TIERED_SIZING_RISK_FRACTION in .env to make it permanent.',
-  'tiered.sizing.shares': 'Shares',
+  'tiered.sizing.shares': 'Shares to buy',
   'tiered.help.shares':
     'The computed number of shares to buy (rounded to 100-share lots for China A-shares; the risk multiplier, if any, is already applied).',
   'tiered.sizing.positionValue': 'Position value',

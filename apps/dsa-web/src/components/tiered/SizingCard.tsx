@@ -50,10 +50,22 @@ export const SizingCard = ({ sizing }: SizingCardProps) => {
 
   return (
     <Card className="p-4" data-testid="sizing-card">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-3">
         <h3 className="text-sm font-semibold text-foreground">
           <HelpTerm label={t('tiered.sizing.title')} helpKey="tiered.help.sizing" />
         </h3>
+        <p className="mt-1 text-xs leading-relaxed text-secondary-text">
+          {t('tiered.sizing.subtitle')}
+        </p>
+      </div>
+
+      <div className="mb-3 flex items-baseline gap-2" data-testid="sizing-shares-hero">
+        <span className="font-mono text-3xl font-semibold text-foreground">
+          {isSized ? sizing.shares : '—'}
+        </span>
+        <span className="text-xs text-secondary-text">
+          <HelpTerm label={t('tiered.sizing.shares')} helpKey="tiered.help.shares" />
+        </span>
       </div>
 
       {isOff ? (
@@ -63,12 +75,7 @@ export const SizingCard = ({ sizing }: SizingCardProps) => {
         </div>
       ) : isSized ? (
         <div data-testid="sizing-result">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Stat
-              labelKey="tiered.sizing.shares"
-              helpKey="tiered.help.shares"
-              value={String(sizing.shares)}
-            />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Stat
               labelKey="tiered.sizing.positionValue"
               helpKey="tiered.help.positionValue"
