@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Info, Layers, Search } from 'lucide-react';
 import {
   tieredApi,
-  type TieredCitation,
+  type TieredDepth,
   type TieredDimension,
   type TieredResult,
   type TieredRunStatus,
   type TieredRunSummary,
+  type TieredSizingRequest,
 } from '../api/tiered';
 import {
   AppPage,
@@ -18,27 +19,30 @@ import {
   InlineAlert,
   Input,
   PageHeader,
-  Tooltip,
 } from '../components/common';
+import { DebateCard } from '../components/tiered/DebateCard';
+import { DepthSelector } from '../components/tiered/DepthSelector';
+import { LevelTiles } from '../components/tiered/LevelTiles';
+import { RiskCard } from '../components/tiered/RiskCard';
+import { SizingCard } from '../components/tiered/SizingCard';
+import {
+  COVERAGE_BADGE,
+  DIRECTION_BADGE,
+  dedupeCitations,
+  formatValue,
+  metricAnchorId,
+  sentimentCitations,
+} from '../components/tiered/termHelpers';
+import {
+  HelpTerm,
+  MetricTerm,
+  NarrativeWithCitations,
+} from '../components/tiered/terms';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
-import { metricEntry } from '../i18n/metricLabels';
 import type { UiLanguage, UiTextKey } from '../i18n/uiText';
 import { cn } from '../utils/cn';
 
 const POLL_INTERVAL_MS = 5000;
-
-const DIRECTION_BADGE: Record<TieredResult['direction'], 'success' | 'warning' | 'danger' | 'default'> = {
-  buy: 'success',
-  hold: 'warning',
-  sell: 'danger',
-  unknown: 'default',
-};
-
-const COVERAGE_BADGE: Record<TieredDimension['coverage'], 'success' | 'warning' | 'danger'> = {
-  full: 'success',
-  partial: 'warning',
-  unavailable: 'danger',
-};
 
 const STATUS_BADGE: Record<TieredRunStatus, 'info' | 'success' | 'danger'> = {
   running: 'info',
@@ -53,25 +57,8 @@ const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
   sentiment: 'tiered.dimension.sentiment',
 };
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '—';
-  }
-  if (typeof value === 'number') {
-    const abs = Math.abs(value);
-    if (abs >= 1e12) {
-      return `${(value / 1e12).toFixed(2)} trillion`;
-    }
-    if (abs >= 1e9) {
-      return `${(value / 1e9).toFixed(2)} billion`;
-    }
-    if (abs >= 1e6) {
-      return `${(value / 1e6).toFixed(2)} million`;
-    }
-    return Number.isInteger(value) ? String(value) : value.toFixed(2);
-  }
-  return String(value);
-}
+const SIZING_CAPITAL_STORAGE_KEY = 'tiered.sizing.capital';
+const SIZING_RISK_PCT_STORAGE_KEY = 'tiered.sizing.riskPct';
 
 function formatTime(value: string | null, language: UiLanguage): string {
   if (!value) {
@@ -89,106 +76,34 @@ function formatTime(value: string | null, language: UiLanguage): string {
   }).format(date);
 }
 
-interface HelpTermProps {
-  label: ReactNode;
-  helpKey: UiTextKey;
-  underline?: boolean;
-}
-
-// A term with its explanation in a popup. Hover shows it; click/tap keeps
-// it open (focus), so it also works on touch screens; clicking elsewhere
-// or Escape closes it.
-const HelpTerm = ({ label, helpKey, underline = true }: HelpTermProps) => {
-  const { t } = useUiLanguage();
-
-  return (
-    <Tooltip
-      focusable
-      content={<span className="block max-w-[16rem] whitespace-normal">{t(helpKey)}</span>}
-    >
-      <span
-        className={cn(
-          'cursor-help',
-          underline ? 'border-b border-dotted border-secondary-text/60' : '',
-        )}
-      >
-        {label}
-      </span>
-    </Tooltip>
-  );
-};
-
-interface MetricTermProps {
-  term: string;
-}
-
-// Compact vocab (e.g. "SMA 20") with the full plain-language definition in
-// a popup: hover shows it, click/tap keeps it open (focus), clicking
-// elsewhere or Escape closes it. Unknown keys render as-is, no popup.
-const MetricTerm = ({ term }: MetricTermProps) => {
-  const { language } = useUiLanguage();
-  const entry = metricEntry(term, language);
-
-  if (!entry) {
-    return <>{term}</>;
+function readStoredNumber(key: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
   }
-  return (
-    <Tooltip
-      focusable
-      content={
-        <span className="block max-w-[16rem] whitespace-normal">
-          <span className="block font-semibold text-foreground">{entry.short}</span>
-          <span className="mt-0.5 block text-secondary-text">{entry.full}</span>
-        </span>
-      }
-    >
-      <span className="cursor-help border-b border-dotted border-secondary-text/60">
-        {entry.short}
-      </span>
-    </Tooltip>
-  );
-};
-
-const CITATION_MARKER_SPLIT_RE = /(\[\d+\])/g;
-const CITATION_MARKER_RE = /^\[(\d+)\]$/;
-
-interface NarrativeWithCitationsProps {
-  text: string;
-  citations: TieredCitation[];
 }
 
-// Renders inline [n] markers as links to the numbered source, so a claim
-// can be checked in one click. Markers without a matching source (old
-// stored runs, missing URL) stay plain text.
-const NarrativeWithCitations = ({ text, citations }: NarrativeWithCitationsProps) => (
-  <p className="mb-3 text-sm leading-relaxed text-secondary-text">
-    {text.split(CITATION_MARKER_SPLIT_RE).map((part, index) => {
-      const match = CITATION_MARKER_RE.exec(part);
-      const citation = match ? citations[Number(match[1]) - 1] : undefined;
-      if (citation?.url) {
-        return (
-          <a
-            key={index}
-            href={citation.url}
-            target="_blank"
-            rel="noreferrer"
-            title={citation.title ?? citation.url}
-            className="text-cyan hover:underline"
-          >
-            {part}
-          </a>
-        );
-      }
-      return <span key={index}>{part}</span>;
-    })}
-  </p>
-);
+function storeNumber(key: string, value: string): void {
+  try {
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // storage unavailable (private mode) — the run still works
+  }
+}
 
 interface PayloadTableProps {
+  dimension: string;
   payload: Record<string, unknown>;
 }
 
-const PayloadTable = ({ payload }: PayloadTableProps) => (
+// Metric rows carry anchor ids (metricAnchorId) so evidence references and
+// formula inputs elsewhere on the page can scroll straight to their source.
+const PayloadTable = ({ dimension, payload }: PayloadTableProps) => (
   <div className="space-y-3">
     {Object.entries(payload).map(([group, values]) => {
       if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
@@ -199,7 +114,11 @@ const PayloadTable = ({ payload }: PayloadTableProps) => (
             </div>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
               {Object.entries(values as Record<string, unknown>).map(([key, value]) => (
-                <div key={key} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
+                <div
+                  key={key}
+                  id={metricAnchorId(`${dimension}.${group}.${key}`)}
+                  className="flex scroll-mt-24 items-baseline justify-between gap-3 border-b border-border/30 py-1"
+                >
                   <dt className="text-xs text-secondary-text">
                     <MetricTerm term={key} />
                   </dt>
@@ -211,7 +130,11 @@ const PayloadTable = ({ payload }: PayloadTableProps) => (
         );
       }
       return (
-        <div key={group} className="flex items-baseline justify-between gap-3 border-b border-border/30 py-1">
+        <div
+          key={group}
+          id={metricAnchorId(`${dimension}.${group}`)}
+          className="flex scroll-mt-24 items-baseline justify-between gap-3 border-b border-border/30 py-1"
+        >
           <dt className="text-xs text-secondary-text">
             <MetricTerm term={group} />
           </dt>
@@ -229,14 +152,7 @@ interface DimensionCardProps {
 const DimensionCard = ({ dimension }: DimensionCardProps) => {
   const { t } = useUiLanguage();
   const labelKey = DIMENSION_LABEL_KEYS[dimension.dimension];
-  // Old stored runs may hold one citation per quote (several per source);
-  // collapse to one entry per source so numbering matches inline [n] marks.
-  const uniqueCitations = dimension.citations.filter(
-    (citation, index, all) =>
-      all.findIndex(
-        (other) => (other.url || other.source_name) === (citation.url || citation.source_name),
-      ) === index,
-  );
+  const uniqueCitations = dedupeCitations(dimension.citations);
 
   return (
     <Card className="p-4">
@@ -259,7 +175,9 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
         <NarrativeWithCitations text={dimension.narrative} citations={uniqueCitations} />
       ) : null}
 
-      {dimension.payload ? <PayloadTable payload={dimension.payload} /> : null}
+      {dimension.payload ? (
+        <PayloadTable dimension={dimension.dimension} payload={dimension.payload} />
+      ) : null}
 
       {uniqueCitations.length > 0 ? (
         <div className="mt-3">
@@ -303,38 +221,49 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
   );
 };
 
-interface LevelTileProps {
-  label: string;
-  helpKey: UiTextKey;
-  value: number | null;
-}
-
-const LevelTile = ({ label, helpKey, value }: LevelTileProps) => (
-  <div className="rounded-xl border border-border/40 bg-elevated/60 px-3 py-2">
-    <div className="text-xs text-secondary-text">
-      <HelpTerm label={label} helpKey={helpKey} />
-    </div>
-    <div className="mt-1 font-mono text-base text-foreground">{value ?? '—'}</div>
-  </div>
-);
-
 interface ResultViewProps {
   result: TieredResult;
 }
 
 const ResultView = ({ result }: ResultViewProps) => {
   const { t } = useUiLanguage();
+  const citations = sentimentCitations(result.dimensions);
+  const final = result.final ?? null;
+  const deeperRan = final !== null && final.tier > 1;
+  const usage = result.llm_usage ?? null;
 
   return (
     <div className="space-y-4">
       <Card className="p-4">
+        {deeperRan ? (
+          <div className="mb-2 flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
+            <HelpTerm
+              underline={false}
+              helpKey="tiered.help.finalVerdict"
+              label={
+                <Badge variant={DIRECTION_BADGE[final.direction]} size="md" glow>
+                  {t(`tiered.direction.${final.direction}` as UiTextKey)}
+                </Badge>
+              }
+            />
+            <span className="text-xs text-secondary-text">
+              {t('tiered.finalVerdict', { tier: final.tier })}
+            </span>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
+          {!deeperRan ? (
+            <h2 className="text-lg font-semibold text-foreground">{result.symbol}</h2>
+          ) : (
+            <span className="text-xs text-secondary-text">{t('tiered.tier1Label')}</span>
+          )}
           <HelpTerm
             underline={false}
             helpKey="tiered.help.direction"
             label={
-              <Badge variant={DIRECTION_BADGE[result.direction]} size="md" glow>
+              <Badge variant={DIRECTION_BADGE[result.direction]} size={deeperRan ? 'sm' : 'md'} glow={!deeperRan}>
                 {t(`tiered.direction.${result.direction}` as UiTextKey)}
               </Badge>
             }
@@ -364,28 +293,11 @@ const ResultView = ({ result }: ResultViewProps) => {
 
         <div className="mt-4">
           <div className="label-uppercase mb-2">{t('tiered.levels')}</div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <LevelTile
-              label={t('tiered.levels.entry')}
-              helpKey="tiered.help.entry"
-              value={result.levels.entry}
-            />
-            <LevelTile
-              label={t('tiered.levels.secondaryEntry')}
-              helpKey="tiered.help.secondaryEntry"
-              value={result.levels.secondary_entry}
-            />
-            <LevelTile
-              label={t('tiered.levels.stopLoss')}
-              helpKey="tiered.help.stopLoss"
-              value={result.levels.stop_loss}
-            />
-            <LevelTile
-              label={t('tiered.levels.takeProfit')}
-              helpKey="tiered.help.takeProfit"
-              value={result.levels.take_profit}
-            />
-          </div>
+          <LevelTiles
+            levels={result.levels}
+            levelsDetail={result.levels_detail}
+            citations={citations}
+          />
           <p className="mt-2 text-xs text-secondary-text">{t('tiered.levelsNote')}</p>
         </div>
 
@@ -402,6 +314,17 @@ const ResultView = ({ result }: ResultViewProps) => {
           ) : result.signal ? (
             <span className="text-warning">
               {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}
+            </span>
+          ) : null}
+          {usage && usage.total.calls > 0 ? (
+            <span className="text-xs text-secondary-text">
+              <HelpTerm
+                label={t('tiered.llmUsage', {
+                  calls: usage.total.calls,
+                  tokens: usage.total.prompt_tokens + usage.total.completion_tokens,
+                })}
+                helpKey="tiered.help.llmUsage"
+              />
             </span>
           ) : null}
         </div>
@@ -421,6 +344,10 @@ const ResultView = ({ result }: ResultViewProps) => {
         ) : null}
       </Card>
 
+      {result.sizing ? <SizingCard sizing={result.sizing} /> : null}
+      {result.tier2 ? <DebateCard section={result.tier2} citations={citations} /> : null}
+      {result.tier3 ? <RiskCard section={result.tier3} citations={citations} /> : null}
+
       <div>
         <div className="label-uppercase mb-2">{t('tiered.dimensions')}</div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -436,6 +363,13 @@ const ResultView = ({ result }: ResultViewProps) => {
 const TieredAnalysisPage = () => {
   const { t, language } = useUiLanguage();
   const [stockCode, setStockCode] = useState('');
+  const [depth, setDepth] = useState<TieredDepth>(1);
+  const [capitalInput, setCapitalInput] = useState(() =>
+    readStoredNumber(SIZING_CAPITAL_STORAGE_KEY),
+  );
+  const [riskPctInput, setRiskPctInput] = useState(() =>
+    readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY),
+  );
   const [runs, setRuns] = useState<TieredRunSummary[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedResult, setSelectedResult] = useState<TieredResult | null>(null);
@@ -509,6 +443,19 @@ const TieredAnalysisPage = () => {
     loadedDetailRef.current = null;
   }, []);
 
+  const sizingRequest = useMemo((): TieredSizingRequest | undefined => {
+    const capital = Number(capitalInput);
+    const riskPct = Number(riskPctInput);
+    const request: TieredSizingRequest = {};
+    if (capitalInput.trim() && Number.isFinite(capital) && capital > 0) {
+      request.capital = capital;
+    }
+    if (riskPctInput.trim() && Number.isFinite(riskPct) && riskPct > 0 && riskPct < 100) {
+      request.risk_fraction = riskPct / 100;
+    }
+    return Object.keys(request).length > 0 ? request : undefined;
+  }, [capitalInput, riskPctInput]);
+
   const handleRun = useCallback(async () => {
     const code = stockCode.trim();
     if (!code || submitting) {
@@ -517,7 +464,9 @@ const TieredAnalysisPage = () => {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const started = await tieredApi.start(code);
+      const started = await tieredApi.start(code, depth, sizingRequest);
+      storeNumber(SIZING_CAPITAL_STORAGE_KEY, capitalInput.trim());
+      storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPctInput.trim());
       setStockCode('');
       await refreshRuns();
       handleSelect(started.task_id);
@@ -526,41 +475,77 @@ const TieredAnalysisPage = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [stockCode, submitting, refreshRuns, handleSelect]);
+  }, [
+    stockCode,
+    submitting,
+    depth,
+    sizingRequest,
+    capitalInput,
+    riskPctInput,
+    refreshRuns,
+    handleSelect,
+  ]);
 
   return (
     <AppPage>
       <PageHeader
-        eyebrow="v1"
+        eyebrow="v2"
         title={t('tiered.title')}
         description={t('tiered.subtitle')}
       />
 
       <Card className="mt-4 p-4">
         <form
-          className="flex flex-col gap-3 sm:flex-row sm:items-center"
+          className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             void handleRun();
           }}
         >
-          <div className="flex-1">
-            <Input
-              value={stockCode}
-              onChange={(event) => setStockCode(event.target.value)}
-              placeholder={t('tiered.inputPlaceholder')}
-              aria-label={t('tiered.inputPlaceholder')}
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex-1">
+              <Input
+                value={stockCode}
+                onChange={(event) => setStockCode(event.target.value)}
+                placeholder={t('tiered.inputPlaceholder')}
+                aria-label={t('tiered.inputPlaceholder')}
+              />
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={submitting}
+              disabled={!stockCode.trim() || submitting}
+            >
+              <Search className="mr-1 h-4 w-4" />
+              {t('tiered.run')}
+            </Button>
           </div>
-          <Button
-            type="submit"
-            variant="primary"
-            isLoading={submitting}
-            disabled={!stockCode.trim() || submitting}
-          >
-            <Search className="mr-1 h-4 w-4" />
-            {t('tiered.run')}
-          </Button>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <DepthSelector value={depth} onChange={setDepth} disabled={submitting} />
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-secondary-text">
+                <HelpTerm label={t('tiered.sizingForm.title')} helpKey="tiered.help.sizingForm" />
+              </span>
+              <Input
+                value={capitalInput}
+                onChange={(event) => setCapitalInput(event.target.value)}
+                placeholder={t('tiered.sizingForm.capital')}
+                aria-label={t('tiered.sizingForm.capital')}
+                inputMode="decimal"
+                className="w-40"
+              />
+              <Input
+                value={riskPctInput}
+                onChange={(event) => setRiskPctInput(event.target.value)}
+                placeholder={t('tiered.sizingForm.riskPct')}
+                aria-label={t('tiered.sizingForm.riskPct')}
+                inputMode="decimal"
+                className="w-40"
+              />
+            </div>
+          </div>
         </form>
         {anyRunning ? (
           <p className="mt-3 text-sm text-secondary-text">{t('tiered.running')}</p>

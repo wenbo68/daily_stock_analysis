@@ -847,6 +847,101 @@ const zh = {
   'tiered.status.done': '完成',
   'tiered.status.failed': '失败',
   'tiered.signalsExplainer': '「AI 建议」页是全产品的建议台账：每日分析、告警和本页的每次运行都会往里记一条，产品之后会用真实价格给这些建议打分。本页的完整四维报告只保存在这里的运行历史中；AI 建议里那条只是摘要。每次运行在 AI 建议里会出现两条：产品自带流程记的一条（来源 analysis）和分层分析记的一条（来源 tiered_analysis，含数据覆盖标签）。',
+  'tiered.depth.label': '分析深度',
+  'tiered.depth.1': '标准',
+  'tiered.depth.2': '+ 多空辩论',
+  'tiered.depth.3': '+ 风险压力测试',
+  'tiered.help.depth':
+    '标准 = 四维数据 + 一次 AI 结论。「+ 多空辩论」再让两个 AI 分别唱多、唱空，由裁判 AI 复核结论。「+ 风险压力测试」再加三个风险审查 AI 给出仓位倍数。越深 = AI 调用越多 = 更慢也更花钱（每次深度运行约几分钱）。',
+  'tiered.finalVerdict': '最终结论（第 {tier} 层复核后）',
+  'tiered.help.finalVerdict': '经过所选最深一层复核后的方向，也是记入 AI 建议台账的那条结论。',
+  'tiered.tier1Label': '第 1 层（基础分析）',
+  'tiered.llmUsage': '本次运行 AI 调用 {calls} 次（约 {tokens} tokens）',
+  'tiered.help.llmUsage':
+    '本次运行中分层分析自身发起的 AI 调用次数与 token（计费单位，约等于词的碎片）总量。第 1 层的综合结论由产品内置流程完成，不计入此数。',
+  'tiered.sizingForm.title': '仓位计算（可选）',
+  'tiered.sizingForm.capital': '本金，如 100000',
+  'tiered.sizingForm.riskPct': '单笔风险 %，如 1',
+  'tiered.help.sizingForm':
+    '填了这两项，报告会用公式算出建议买多少股：本金 = 你用来交易的总资金；单笔风险 % = 一笔交易你最多接受亏掉本金的百分之几（常见 1-2%）。留空 = 不计算仓位。本页输入只对之后的运行生效，也可在 .env 里用 TIERED_SIZING_* 永久设置。',
+  'tiered.levels.base': '公式基准',
+  'tiered.levels.adjusted': 'AI 调整',
+  'tiered.levels.noAdjustment': '无调整',
+  'tiered.levels.adjustmentRejected': '调整被拒',
+  'tiered.help.levelBase': '由固定公式从技术指标算出的基准价，点击可查看公式和代入的数字。',
+  'tiered.help.levelAdjusted':
+    'AI 在基准价附近（最多一个 ATR，即平均日波幅）微调后的价位，必须给出有依据的理由；点击查看理由和依据。未通过校验的调整会被拒绝，仍使用基准价。',
+  'tiered.levelModal.formulaTitle': '{level} — 公式基准',
+  'tiered.levelModal.formula': '公式',
+  'tiered.levelModal.withNumbers': '代入本次数据',
+  'tiered.levelModal.inputs': '输入项',
+  'tiered.levelModal.inputsHint': '带下划线的数字可点击，跳转到技术面卡片中该指标所在行（即数据来源）。',
+  'tiered.levelModal.noBase': '本次运行缺少计算该价位所需的数据，没有公式基准。',
+  'tiered.levelModal.adjustTitle': '{level} — AI 调整说明',
+  'tiered.levelModal.reason': 'AI 调整理由',
+  'tiered.levelModal.references': '参考依据',
+  'tiered.levelModal.referencesHint':
+    '形如 technicals.sma_20 的依据指向下方维度卡片中的具体指标行（点击跳转）；citation:N 指向新闻情绪的第 N 条来源（点击打开原文）。',
+  'tiered.levelModal.rejectedNote': '该调整未通过程序校验，已被拒绝——实际使用公式基准价。',
+  'tiered.debate.title': '第 2 层 · 多空辩论',
+  'tiered.help.debate':
+    '一个 AI 只找看多的理由（多方），另一个只找看空的理由（空方），双方只能引用已采集的证据；裁判 AI 权衡后给出复核结论。',
+  'tiered.debate.confidence': '裁判信心',
+  'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
+  'tiered.debate.reasonsFor': '看多理由',
+  'tiered.debate.reasonsAgainst': '看空理由',
+  'tiered.debate.noVerdict': '辩论未产生可用结论——方向沿用第 1 层（详见数据说明）。',
+  'tiered.debate.wouldChangeMind': '什么会改变结论',
+  'tiered.help.wouldChangeMind': '裁判 AI 自述：出现什么新证据时它会改变这次结论。',
+  'tiered.debate.transcript': '辩论记录',
+  'tiered.debate.bull': '多方',
+  'tiered.debate.bear': '空方',
+  'tiered.debate.round': '第 {round} 轮',
+  'tiered.risk.title': '第 3 层 · 风险压力测试',
+  'tiered.help.risk':
+    '三个风险审查 AI（保守 / 激进 / 中立）分别挑剔第 2 层的结论，风险裁判 AI 汇总成最终立场、仓位倍数和止损建议。倍数由程序应用到仓位计算，AI 无法直接改数字。',
+  'tiered.risk.multiplier': '仓位倍数',
+  'tiered.help.multiplier':
+    '对公式算出的股数打的折扣，只有三档：1 = 全仓执行，0.5 = 减半，0 = 方向成立但现在不开仓。',
+  'tiered.risk.multiplier.zero': '方向成立，但现在不开仓',
+  'tiered.risk.multiplier.half': '半仓',
+  'tiered.risk.multiplier.full': '全量',
+  'tiered.risk.stopAdvice': '止损建议',
+  'tiered.help.stopAdvice':
+    '风险裁判对止损位的意见：维持，或收紧到一个更靠近入场价的位置（收紧值经程序校验，必须介于原止损和入场价之间）。',
+  'tiered.risk.stopAdvice.keep': '维持',
+  'tiered.risk.stopAdvice.tighten': '收紧',
+  'tiered.risk.noVerdict': '压力测试未产生可用结论——沿用第 2 层输出（详见数据说明）。',
+  'tiered.risk.keyRisks': '关键风险',
+  'tiered.risk.personas': '三方审查意见',
+  'tiered.risk.persona.conservative': '保守方',
+  'tiered.risk.persona.aggressive': '激进方',
+  'tiered.risk.persona.neutral': '中立方',
+  'tiered.sizing.title': '仓位建议',
+  'tiered.help.sizing':
+    '由固定公式计算：可亏金额（本金 × 单笔风险%）÷ 每股潜在亏损（入场价 − 止损价，含手续费），再套用单一持仓上限（默认本金的 25%）。全程无 AI 参与。',
+  'tiered.sizing.offExplainer': '仓位计算未开启：还没有填写本金和单笔风险比例，所以本次报告不给出股数。',
+  'tiered.sizing.offHint':
+    '在上方运行区填写「本金」和「单笔风险 %」后再运行即可开启；也可以在 .env 中设置 TIERED_SIZING_CAPITAL 和 TIERED_SIZING_RISK_FRACTION 永久开启。',
+  'tiered.sizing.shares': '建议股数',
+  'tiered.help.shares': '公式算出的买入股数（A 股按 100 股一手取整；若有仓位倍数则已应用）。',
+  'tiered.sizing.positionValue': '持仓金额',
+  'tiered.help.positionValue': '建议股数 × 入场价，即这笔交易动用的资金。',
+  'tiered.sizing.riskAmount': '最大计划亏损',
+  'tiered.help.riskAmount': '若价格跌到止损位离场，这笔交易预计亏损的金额（含手续费估算）。',
+  'tiered.sizing.stopUsed': '所用止损',
+  'tiered.help.stopUsed': '仓位公式实际采用的止损价——与上方价格参考位中的止损一致（经校验的最终值）。',
+  'tiered.sizing.multiplierApplied': '风险裁判倍数已应用：{before} 股 × {multiplier} → {after} 股。',
+  'tiered.sizing.zeroShares': '0 股 = 风险裁判判定：方向成立，但现在不要开仓。这是明确的结论，不是数据缺失。',
+  'tiered.sizing.capApplied': '已触发单一持仓上限：按风险预算本可买更多，但单只股票的仓位被限制在本金的一定比例内。',
+  'tiered.sizing.inputsLine': '计算输入：本金 {capital}，单笔风险 {riskPct}%，入场价 {entry}。',
+  'tiered.sizing.reason.sizing_off': '仓位计算未开启（未提供本金和单笔风险比例）。',
+  'tiered.sizing.reason.not_a_buy': '当前结论不是「买入」，没有要开的仓位，因此不计算股数。',
+  'tiered.sizing.reason.no_entry': '缺少可用的入场价，无法计算仓位。',
+  'tiered.sizing.reason.no_stop': '缺少止损价——没有它就无法衡量每股风险，宁可不给股数也不编造。',
+  'tiered.sizing.reason.stop_not_below_entry': '止损价不低于入场价，价位自相矛盾，拒绝计算。',
+  'tiered.sizing.reason.invalid_input': '输入数值无效（本金、风险比例或价格超出合理范围）。',
+  'tiered.sizing.reason.too_small': '按风险预算算出的股数不足一股（或一手）——资金或风险比例太小，买不了这只股票。',
 } as const;
 
 export type UiTextKey = keyof typeof zh;
@@ -1703,6 +1798,124 @@ const en: Record<UiTextKey, string> = {
   'tiered.status.done': 'Done',
   'tiered.status.failed': 'Failed',
   'tiered.signalsExplainer': 'The "AI signals" page is the product-wide ledger of recommendations: daily analyses, alerts, and every run from this page each add an entry there, and the product later scores those entries against real prices. The full four-dimension report lives only here in the run history; the AI-signals entry is a summary. Each run appears there twice: one entry written by the product’s built-in flow (source "analysis") and one written by tiered analysis (source "tiered_analysis", with data-coverage labels).',
+  'tiered.depth.label': 'Depth',
+  'tiered.depth.1': 'Standard',
+  'tiered.depth.2': '+ Debate',
+  'tiered.depth.3': '+ Risk stress test',
+  'tiered.help.depth':
+    'Standard = four-dimension data + one AI verdict. "+ Debate" adds two AIs arguing the bull and bear case with a judge re-checking the verdict. "+ Risk stress test" adds three AI risk reviewers and a position-size multiplier. Deeper = more AI calls = slower and slightly costlier (a deep run costs a few cents).',
+  'tiered.finalVerdict': 'Final verdict (after tier {tier} review)',
+  'tiered.help.finalVerdict':
+    'The direction after the deepest review you selected — this is the call recorded in the AI-signals ledger.',
+  'tiered.tier1Label': 'Tier 1 (base analysis)',
+  'tiered.llmUsage': 'This run used {calls} AI calls (~{tokens} tokens)',
+  'tiered.help.llmUsage':
+    'AI calls made by tiered analysis itself during this run, with the total tokens (the billing unit — roughly word fragments). The tier-1 synthesis runs inside the product’s built-in flow and is not counted here.',
+  'tiered.sizingForm.title': 'Position sizing (optional)',
+  'tiered.sizingForm.capital': 'Capital, e.g. 100000',
+  'tiered.sizingForm.riskPct': 'Risk per trade %, e.g. 1',
+  'tiered.help.sizingForm':
+    'Fill these in and the report computes how many shares to buy: capital = the money you trade with; risk per trade % = the most you accept losing on one trade, as a percent of capital (1–2% is common). Leave blank = no share counts. These inputs apply to runs you start here; set TIERED_SIZING_* in .env to make them permanent.',
+  'tiered.levels.base': 'Formula base',
+  'tiered.levels.adjusted': 'AI adjusted',
+  'tiered.levels.noAdjustment': 'no change',
+  'tiered.levels.adjustmentRejected': 'adjustment rejected',
+  'tiered.help.levelBase':
+    'Computed by a fixed formula from the technical indicators. Click to see the formula and the numbers plugged into it.',
+  'tiered.help.levelAdjusted':
+    'The AI may nudge the base within a bounded band (at most one ATR — the stock’s average daily swing) and must give an evidence-backed reason; click to read it. Adjustments that fail the safety checks are rejected and the base is used.',
+  'tiered.levelModal.formulaTitle': '{level} — formula base',
+  'tiered.levelModal.formula': 'Formula',
+  'tiered.levelModal.withNumbers': 'With this run’s numbers',
+  'tiered.levelModal.inputs': 'Inputs',
+  'tiered.levelModal.inputsHint':
+    'Underlined numbers are clickable — they jump to that metric’s row on the technicals card (its data source).',
+  'tiered.levelModal.noBase':
+    'This run lacked the data needed to compute this level, so there is no formula base.',
+  'tiered.levelModal.adjustTitle': '{level} — AI adjustment',
+  'tiered.levelModal.reason': 'Why the AI moved it',
+  'tiered.levelModal.references': 'References',
+  'tiered.levelModal.referencesHint':
+    'References like technicals.sma_20 point at a specific metric row on the dimension cards below (click to jump); citation:N points at source N of the news-sentiment card (click to open the article).',
+  'tiered.levelModal.rejectedNote':
+    'This proposal failed the code-side safety checks and was rejected — the formula base is used instead.',
+  'tiered.debate.title': 'Tier 2 · Bull/bear debate',
+  'tiered.help.debate':
+    'One AI argues only the case FOR the stock (the bull), another only the case AGAINST (the bear); both may cite only the evidence already collected. A judge AI weighs the arguments and issues the reviewed verdict.',
+  'tiered.debate.confidence': 'Judge confidence',
+  'tiered.help.debateConfidence':
+    'How sure the judge AI is of its own verdict, from 0 to 1 — higher means more confident.',
+  'tiered.debate.reasonsFor': 'Reasons for',
+  'tiered.debate.reasonsAgainst': 'Reasons against',
+  'tiered.debate.noVerdict':
+    'The debate produced no usable verdict — the direction falls back to tier 1 (see Data notes).',
+  'tiered.debate.wouldChangeMind': 'What would change the verdict',
+  'tiered.help.wouldChangeMind':
+    'The judge AI’s own statement of what new evidence would make it change this call.',
+  'tiered.debate.transcript': 'Debate transcript',
+  'tiered.debate.bull': 'Bull',
+  'tiered.debate.bear': 'Bear',
+  'tiered.debate.round': 'round {round}',
+  'tiered.risk.title': 'Tier 3 · Risk stress test',
+  'tiered.help.risk':
+    'Three AI risk reviewers (conservative / aggressive / neutral) each poke at the tier-2 verdict; a risk judge merges them into a final stance, a position-size multiplier, and stop-loss advice. The multiplier is applied by code in the sizing card — the AI never edits numbers directly.',
+  'tiered.risk.multiplier': 'Size multiplier',
+  'tiered.help.multiplier':
+    'A discount applied to the computed share count. Only three values exist: 1 = take the full computed position, 0.5 = take half, 0 = the direction stands but do not open a position now.',
+  'tiered.risk.multiplier.zero': 'direction stands, but do not open now',
+  'tiered.risk.multiplier.half': 'half position',
+  'tiered.risk.multiplier.full': 'full position',
+  'tiered.risk.stopAdvice': 'Stop-loss advice',
+  'tiered.help.stopAdvice':
+    'The risk judge’s view on the stop-loss: keep it, or tighten it to a level closer to the entry (a tightened value is code-checked to sit strictly between the current stop and the entry).',
+  'tiered.risk.stopAdvice.keep': 'keep',
+  'tiered.risk.stopAdvice.tighten': 'tighten',
+  'tiered.risk.noVerdict':
+    'The stress test produced no usable verdict — the tier-2 output stands (see Data notes).',
+  'tiered.risk.keyRisks': 'Key risks',
+  'tiered.risk.personas': 'The three reviews',
+  'tiered.risk.persona.conservative': 'Conservative',
+  'tiered.risk.persona.aggressive': 'Aggressive',
+  'tiered.risk.persona.neutral': 'Neutral',
+  'tiered.sizing.title': 'Position sizing',
+  'tiered.help.sizing':
+    'Computed by a fixed formula, never by AI: the money you accept losing (capital × risk per trade) divided by the loss per share if the stop is hit (entry − stop, fees included), then capped so one stock never exceeds a set share of your capital (default 25%).',
+  'tiered.sizing.offExplainer':
+    'Sizing is off: capital and risk per trade have not been provided, so this report prints no share count.',
+  'tiered.sizing.offHint':
+    'Enter “capital” and “risk per trade %” in the run form above and run again to turn it on — or set TIERED_SIZING_CAPITAL and TIERED_SIZING_RISK_FRACTION in .env to make it permanent.',
+  'tiered.sizing.shares': 'Shares',
+  'tiered.help.shares':
+    'The computed number of shares to buy (rounded to 100-share lots for China A-shares; the risk multiplier, if any, is already applied).',
+  'tiered.sizing.positionValue': 'Position value',
+  'tiered.help.positionValue': 'Shares × entry price — the money this trade would tie up.',
+  'tiered.sizing.riskAmount': 'Planned max loss',
+  'tiered.help.riskAmount':
+    'What you would expect to lose if the price falls to the stop-loss and you exit there (fee estimate included).',
+  'tiered.sizing.stopUsed': 'Stop used',
+  'tiered.help.stopUsed':
+    'The stop-loss price the sizing formula actually used — the same validated stop shown in the price levels above.',
+  'tiered.sizing.multiplierApplied':
+    'Risk-judge multiplier applied: {before} shares × {multiplier} → {after} shares.',
+  'tiered.sizing.zeroShares':
+    '0 shares = the risk judge ruled: the direction stands, but do not open a position now. That is a deliberate statement, not missing data.',
+  'tiered.sizing.capApplied':
+    'The single-position cap kicked in: the risk budget alone would have allowed more, but one stock is limited to a set share of your capital.',
+  'tiered.sizing.inputsLine':
+    'Inputs: capital {capital}, risk per trade {riskPct}%, entry {entry}.',
+  'tiered.sizing.reason.sizing_off':
+    'Sizing is off (capital and risk per trade were not provided).',
+  'tiered.sizing.reason.not_a_buy':
+    'The verdict is not “buy”, so there is no position to open and no share count to print.',
+  'tiered.sizing.reason.no_entry': 'No usable entry price — cannot size a position.',
+  'tiered.sizing.reason.no_stop':
+    'No stop-loss price — without it the risk per share is unmeasurable, so no share count is printed rather than a made-up one.',
+  'tiered.sizing.reason.stop_not_below_entry':
+    'The stop-loss is at or above the entry price — the levels contradict each other, so sizing refused.',
+  'tiered.sizing.reason.invalid_input':
+    'An input was invalid (capital, risk fraction, or a price outside the sane range).',
+  'tiered.sizing.reason.too_small':
+    'The computed size rounds down to zero shares (or zero lots) — the risk budget is too small for this stock’s price.',
 };
 
 export const UI_TEXT: Record<UiLanguage, Record<UiTextKey, string>> = {
