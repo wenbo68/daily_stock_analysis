@@ -218,6 +218,214 @@ class TestRunTieredAnalysis(unittest.TestCase):
         self.assertTrue(outcome.report.dimensions)
 
 
+class _FakeAdjuster:
+    """No-LLM stand-in for LevelAdjuster."""
+
+    def propose(self, symbol, bases, dimensions):
+        return [], []
+
+
+class _FakeDebateEngine:
+    def __init__(self, verdict=None, warnings=()):
+        self._verdict = verdict
+        self._warnings = list(warnings)
+        self.calls = []
+
+    def run(self, symbol, tier1, dimensions):
+        from src.tiered_analysis.debate import DebateResult
+
+        self.calls.append(symbol)
+        return DebateResult(verdict=self._verdict, warnings=self._warnings)
+
+
+class _FakeRiskEngine:
+    def __init__(self, verdict=None, warnings=()):
+        self._verdict = verdict
+        self._warnings = list(warnings)
+        self.calls = []
+
+    def run(self, symbol, tier2, dimensions):
+        from src.tiered_analysis.risk import RiskResult
+
+        self.calls.append(symbol)
+        return RiskResult(verdict=self._verdict, warnings=self._warnings)
+
+
+def _technicals_dim_with_levels():
+    """Payload the base-level formulas can compute from.
+
+    Bases: entry=96 (max(sma_20, swing_low) capped at close), backup=94,
+    stop=90 (entry − 2×ATR), target=108 (entry + 2×(entry−stop)).
+    """
+    return DimensionResult(
+        dimension="technicals",
+        kind=SourceKind.NUMERIC,
+        coverage=Coverage.FULL,
+        payload={"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
+                 "swing_low_20": 94.0, "atr_14": 3.0},
+    )
+
+
+def _buy_verdicts():
+    from src.tiered_analysis.debate import DebateVerdict
+    from src.tiered_analysis.risk import RiskVerdict
+
+    debate = DebateVerdict(direction=Direction.BUY, confidence=0.7,
+                           summary="bull case holds up")
+    risk = RiskVerdict(stance=Direction.BUY, size_multiplier=0.5,
+                       stop_advice="keep", tightened_stop=None,
+                       summary="half size")
+    return debate, risk
+
+
+class TestDepthRoutingAndSizing(unittest.TestCase):
+    """v2 slice 6: depth 1|2|3 routing, sizing, and cost visibility."""
+
+    def _run(self, depth=1, sizing_settings=None, sizing_overrides=None,
+             debate_verdict=None, risk_verdict=None):
+        from src.tiered_analysis.settings import SizingSettings
+        from src.tiered_analysis.tiers import Tier2Stage, Tier3Stage
+
+        logged = []
+
+        def logger(report, trace_id=None):
+            logged.append(report)
+            return "log-result"
+
+        debate_engine = _FakeDebateEngine(verdict=debate_verdict)
+        risk_engine = _FakeRiskEngine(verdict=risk_verdict)
+        outcome = run_tiered_analysis(
+            "AAPL",
+            market=Market.US,
+            providers=[_StubProvider("technicals", _technicals_dim_with_levels())],
+            analysis_runner=lambda symbol: _fake_analysis_result(),
+            signal_logger=logger,
+            level_adjuster=_FakeAdjuster(),
+            depth=depth,
+            sizing_settings=sizing_settings or SizingSettings(),
+            sizing_overrides=sizing_overrides,
+            tier2_stage=Tier2Stage(engine=debate_engine),
+            tier3_stage=Tier3Stage(engine=risk_engine),
+        )
+        return outcome, logged, debate_engine, risk_engine
+
+    def test_default_depth_is_tier1_only(self):
+        outcome, logged, debate_engine, risk_engine = self._run()
+        self.assertEqual(outcome.depth, 1)
+        self.assertEqual(sorted(outcome.state.reports), [1])
+        self.assertIs(outcome.final_report, outcome.report)
+        self.assertEqual(debate_engine.calls, [])
+        self.assertEqual(risk_engine.calls, [])
+        self.assertEqual(logged[0].tier, 1)
+
+    def test_depth_2_runs_debate_and_logs_tier2_direction(self):
+        debate, _ = _buy_verdicts()
+        outcome, logged, debate_engine, risk_engine = self._run(
+            depth=2, debate_verdict=debate)
+        self.assertEqual(sorted(outcome.state.reports), [1, 2])
+        self.assertEqual(outcome.final_report.tier, 2)
+        self.assertEqual(outcome.final_report.direction, Direction.BUY)
+        self.assertEqual(debate_engine.calls, ["AAPL"])
+        self.assertEqual(risk_engine.calls, [])
+        # the ledger gets the deepest tier, with the evidence attached
+        self.assertEqual(logged[0].tier, 2)
+        self.assertTrue(logged[0].dimensions)
+
+    def test_depth_3_runs_both_stages(self):
+        debate, risk = _buy_verdicts()
+        outcome, logged, _, risk_engine = self._run(
+            depth=3, debate_verdict=debate, risk_verdict=risk)
+        self.assertEqual(sorted(outcome.state.reports), [1, 2, 3])
+        self.assertEqual(outcome.final_report.tier, 3)
+        self.assertEqual(risk_engine.calls, ["AAPL"])
+        self.assertEqual(logged[0].tier, 3)
+
+    def test_invalid_depth_rejected(self):
+        with self.assertRaises(ValueError):
+            self._run(depth=4)
+        with self.assertRaises(ValueError):
+            self._run(depth=0)
+
+    def test_sizing_off_by_default_with_explicit_refusal(self):
+        outcome, _, _, _ = self._run()
+        self.assertFalse(outcome.sizing["enabled"])
+        self.assertEqual(outcome.sizing["reason_code"], "sizing_off")
+        self.assertTrue(outcome.final_report.sizing.is_empty)
+
+    def test_enabled_sizing_computes_shares_from_final_levels(self):
+        from src.tiered_analysis.settings import SizingSettings
+
+        outcome, logged, _, _ = self._run(
+            sizing_settings=SizingSettings(capital=100000.0,
+                                           risk_fraction=0.01))
+        # entry 96, stop 90 → loss/share 6 → floor(1000/6) = 166 shares
+        self.assertEqual(outcome.sizing["shares"], 166)
+        self.assertTrue(outcome.sizing["enabled"])
+        self.assertEqual(outcome.final_report.sizing.shares, 166.0)
+        # the sized position reaches the signal ledger
+        self.assertEqual(logged[0].sizing.shares, 166.0)
+
+    def test_tier3_multiplier_is_applied_by_code(self):
+        from src.tiered_analysis.settings import SizingSettings
+
+        debate, risk = _buy_verdicts()  # multiplier 0.5
+        outcome, _, _, _ = self._run(
+            depth=3, debate_verdict=debate, risk_verdict=risk,
+            sizing_settings=SizingSettings(capital=100000.0,
+                                           risk_fraction=0.01))
+        self.assertEqual(outcome.sizing["shares_before_multiplier"], 166)
+        self.assertEqual(outcome.sizing["shares"], 83)
+        self.assertEqual(outcome.sizing["risk_multiplier"], 0.5)
+        self.assertEqual(outcome.final_report.sizing.shares, 83.0)
+
+    def test_multiplier_zero_keeps_explicit_zero_position(self):
+        from dataclasses import replace as dc_replace
+
+        from src.tiered_analysis.settings import SizingSettings
+
+        debate, risk = _buy_verdicts()
+        risk = dc_replace(risk, size_multiplier=0.0)
+        outcome, _, _, _ = self._run(
+            depth=3, debate_verdict=debate, risk_verdict=risk,
+            sizing_settings=SizingSettings(capital=100000.0,
+                                           risk_fraction=0.01))
+        self.assertEqual(outcome.sizing["shares"], 0)
+        self.assertTrue(any("do not open" in note
+                            for note in outcome.sizing["notes"]))
+        # 0 shares is a statement, not an omission — slots stay filled
+        self.assertEqual(outcome.final_report.sizing.shares, 0.0)
+
+    def test_hold_direction_refuses_sizing(self):
+        from src.tiered_analysis.settings import SizingSettings
+
+        result = _fake_analysis_result()
+        result["decision_type"] = "hold"
+        outcome = run_tiered_analysis(
+            "AAPL",
+            market=Market.US,
+            providers=[_StubProvider("technicals",
+                                     _technicals_dim_with_levels())],
+            analysis_runner=lambda symbol: result,
+            log_signal=False,
+            level_adjuster=_FakeAdjuster(),
+            sizing_settings=SizingSettings(capital=100000.0,
+                                           risk_fraction=0.01),
+        )
+        self.assertEqual(outcome.sizing["reason_code"], "not_a_buy")
+        self.assertTrue(outcome.final_report.sizing.is_empty)
+
+    def test_per_run_overrides_enable_sizing(self):
+        outcome, _, _, _ = self._run(
+            sizing_overrides={"capital": 100000.0, "risk_fraction": 0.01})
+        self.assertEqual(outcome.sizing["shares"], 166)
+
+    def test_llm_usage_always_present_with_scope_note(self):
+        outcome, _, _, _ = self._run(depth=3, debate_verdict=None,
+                                     risk_verdict=None)
+        self.assertEqual(outcome.llm_usage["total"]["calls"], 0)  # all fakes
+        self.assertIn("tier-1", outcome.llm_usage["scope"])
+
+
 class TestRegistryBarsLoaderWiring(unittest.TestCase):
     def test_get_providers_accepts_bars_loader(self):
         from src.tiered_analysis.providers.registry import get_providers

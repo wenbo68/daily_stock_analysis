@@ -121,6 +121,15 @@ def build_signal_payload(
             "sizing_empty": report.sizing.is_empty,
         },
     }
+    if not report.sizing.is_empty:
+        # Slice 6: the ledger records the position the user actually saw,
+        # so v3's backtest can grade it. shares == 0 is meaningful ("the
+        # risk verdict said don't open"), not an omission.
+        payload["metadata"]["sizing"] = {
+            "capital": report.sizing.capital,
+            "risk_fraction": report.sizing.risk_fraction,
+            "shares": report.sizing.shares,
+        }
     return payload, None
 
 

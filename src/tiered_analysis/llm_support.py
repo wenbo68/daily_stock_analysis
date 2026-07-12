@@ -14,7 +14,10 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, List, Optional, Sequence
+import threading
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Sequence
 
 from .providers.base import DimensionResult
 
@@ -23,6 +26,96 @@ _CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 class LlmConfigError(RuntimeError):
     """LLM configuration missing — callers surface this as a warning."""
+
+
+@dataclass
+class _StageUsage:
+    calls: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    def as_dict(self) -> Dict[str, int]:
+        return {
+            "calls": self.calls,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+        }
+
+
+#: What the usage numbers cover — stored with them so a reader of an old
+#: run is never left guessing (tier 1's synthesis runs inside DSA's own
+#: pipeline and is billed/tracked there, not here).
+USAGE_SCOPE_NOTE = (
+    "tiered-package LLM calls only; the tier-1 synthesis runs inside the "
+    "DSA pipeline and is not counted here"
+)
+
+_UNATTRIBUTED_STAGE = "unattributed"
+
+_active = threading.local()
+
+
+class LlmUsageTracker:
+    """Per-run LLM call/token counter, grouped by pipeline stage.
+
+    The orchestrator activates one tracker for the run and opens a stage
+    around each LLM-using step; ``default_summarizer`` reports into
+    whichever tracker is active on the current thread. No tracker active
+    (v1 call sites, tests with fake summarizers) → recording is a no-op.
+    """
+
+    def __init__(self) -> None:
+        self._stages: Dict[str, _StageUsage] = {}
+        self._current: Optional[str] = None
+
+    @contextmanager
+    def activate(self):
+        previous = getattr(_active, "tracker", None)
+        _active.tracker = self
+        try:
+            yield self
+        finally:
+            _active.tracker = previous
+
+    @contextmanager
+    def stage(self, name: str):
+        previous = self._current
+        self._current = name
+        try:
+            yield
+        finally:
+            self._current = previous
+
+    def record(
+        self, prompt_tokens: Optional[int], completion_tokens: Optional[int]
+    ) -> None:
+        stage = self._stages.setdefault(
+            self._current or _UNATTRIBUTED_STAGE, _StageUsage()
+        )
+        stage.calls += 1
+        stage.prompt_tokens += int(prompt_tokens or 0)
+        stage.completion_tokens += int(completion_tokens or 0)
+
+    def to_detail(self) -> Dict[str, Any]:
+        total = _StageUsage()
+        for usage in self._stages.values():
+            total.calls += usage.calls
+            total.prompt_tokens += usage.prompt_tokens
+            total.completion_tokens += usage.completion_tokens
+        return {
+            "stages": {name: u.as_dict() for name, u in self._stages.items()},
+            "total": total.as_dict(),
+            "scope": USAGE_SCOPE_NOTE,
+        }
+
+
+def record_llm_usage(
+    prompt_tokens: Optional[int], completion_tokens: Optional[int]
+) -> None:
+    """Report one LLM call to the active tracker, if any."""
+    tracker = getattr(_active, "tracker", None)
+    if tracker is not None:
+        tracker.record(prompt_tokens, completion_tokens)
 
 
 def default_summarizer(prompt: str) -> str:
@@ -40,6 +133,11 @@ def default_summarizer(prompt: str) -> str:
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
+    )
+    usage = getattr(response, "usage", None)
+    record_llm_usage(
+        getattr(usage, "prompt_tokens", None),
+        getattr(usage, "completion_tokens", None),
     )
     return response.choices[0].message.content or ""
 

@@ -15,7 +15,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from src.tiered_analysis import history
 
@@ -24,15 +24,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _run_analysis(stock_code: str):
+def _run_analysis(stock_code: str, depth: int = 1,
+                  sizing_overrides: Optional[Dict[str, float]] = None):
     """Indirection so tests can patch the multi-minute production run."""
     from src.tiered_analysis.integration import run_tiered_analysis
 
-    return run_tiered_analysis(stock_code)
+    return run_tiered_analysis(
+        stock_code, depth=depth, sizing_overrides=sizing_overrides
+    )
+
+
+class SizingOverride(BaseModel):
+    """Per-run sizing inputs; saved settings fill whatever is omitted."""
+
+    capital: Optional[float] = Field(default=None, gt=0)
+    risk_fraction: Optional[float] = Field(default=None, gt=0, lt=1)
 
 
 class TieredAnalyzeRequest(BaseModel):
     stock_code: str
+    #: 1 = tier 1 only (v1 behavior), 2 = + debate, 3 = + risk stress.
+    depth: int = Field(default=1, ge=1, le=3)
+    sizing: Optional[SizingOverride] = None
 
     @field_validator("stock_code")
     @classmethod
@@ -41,6 +54,36 @@ class TieredAnalyzeRequest(BaseModel):
         if not cleaned:
             raise ValueError("stock_code must not be blank")
         return cleaned
+
+
+def _serialize_levels(levels: Any) -> Dict[str, Any]:
+    return {
+        "entry": levels.entry,
+        "secondary_entry": levels.secondary_entry,
+        "stop_loss": levels.stop_loss,
+        "take_profit": levels.take_profit,
+    }
+
+
+def _serialize_tier_section(report: Any) -> Optional[Dict[str, Any]]:
+    """Tier 2/3 section: verdict + audit trail, no dimension duplication."""
+    if report is None:
+        return None
+    section: Dict[str, Any] = {
+        "tier": report.tier,
+        "coverage": report.coverage.value,
+        "direction": report.direction.value,
+        "confidence": report.confidence,
+        "score": report.score,
+        "levels": _serialize_levels(report.levels),
+        "narrative": report.narrative,
+        "warnings": list(report.warnings),
+    }
+    if report.debate_detail is not None:
+        section["debate_detail"] = report.debate_detail
+    if report.risk_detail is not None:
+        section["risk_detail"] = report.risk_detail
+    return section
 
 
 def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
@@ -75,6 +118,8 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
             "reason": outcome.signal.reason,
         }
 
+    state_reports = getattr(outcome.state, "reports", {}) or {}
+    final = outcome.final_report or report
     return {
         "symbol": report.symbol,
         "market": report.market.value,
@@ -83,23 +128,33 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
         "score": report.score,
         "confidence": report.confidence,
         "coverage": report.coverage.value,
-        "levels": {
-            "entry": report.levels.entry,
-            "secondary_entry": report.levels.secondary_entry,
-            "stop_loss": report.levels.stop_loss,
-            "take_profit": report.levels.take_profit,
-        },
+        "levels": _serialize_levels(report.levels),
         "levels_detail": report.levels_detail,
         "narrative": report.narrative,
         "warnings": list(report.warnings),
         "dimensions": dimensions,
         "signal": signal,
+        # v2 slice 6 (additive): depth, deeper-tier sections, sizing, cost.
+        "depth": outcome.depth,
+        "final": {
+            "tier": final.tier,
+            "direction": final.direction.value,
+            "coverage": final.coverage.value,
+            "confidence": final.confidence,
+            "levels": _serialize_levels(final.levels),
+        },
+        "tier2": _serialize_tier_section(state_reports.get(2)),
+        "tier3": _serialize_tier_section(state_reports.get(3)),
+        "sizing": outcome.sizing,
+        "llm_usage": outcome.llm_usage,
     }
 
 
-def _run_task(task_id: str, stock_code: str) -> None:
+def _run_task(task_id: str, stock_code: str, depth: int = 1,
+              sizing_overrides: Optional[Dict[str, float]] = None) -> None:
     try:
-        outcome = _run_analysis(stock_code)
+        outcome = _run_analysis(stock_code, depth=depth,
+                                sizing_overrides=sizing_overrides)
         history.mark_done(task_id, _serialize_outcome(outcome))
     except Exception as exc:
         logger.error("tiered analysis task failed for %s: %s",
@@ -112,15 +167,18 @@ def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
     """Kick off a tiered run in the background; returns a pollable task."""
     task_id = uuid.uuid4().hex
     history.create_run(task_id, request.stock_code)
+    sizing_overrides: Optional[Dict[str, float]] = None
+    if request.sizing is not None:
+        sizing_overrides = request.sizing.model_dump(exclude_none=True) or None
     worker = threading.Thread(
         target=_run_task,
-        args=(task_id, request.stock_code),
+        args=(task_id, request.stock_code, request.depth, sizing_overrides),
         name=f"tiered-analysis-{request.stock_code}",
         daemon=True,
     )
     worker.start()
     return {"task_id": task_id, "stock_code": request.stock_code,
-            "status": "running"}
+            "depth": request.depth, "status": "running"}
 
 
 @router.get("/runs")

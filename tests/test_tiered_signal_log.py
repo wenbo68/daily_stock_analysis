@@ -104,6 +104,26 @@ class TestBuildSignalPayload:
         assert payload["metadata"]["tier"] == 1
         assert payload["metadata"]["sizing_empty"] is True
 
+    def test_filled_sizing_slots_reach_metadata(self):
+        # Slice 6: the ledger records the position the user actually saw.
+        from src.tiered_analysis.schema import SizingSlots
+
+        report = _report(sizing=SizingSlots(capital=100000.0,
+                                            risk_fraction=0.01, shares=83.0))
+        payload, _ = build_signal_payload(report)
+        assert payload["metadata"]["sizing_empty"] is False
+        assert payload["metadata"]["sizing"] == {
+            "capital": 100000.0, "risk_fraction": 0.01, "shares": 83.0,
+        }
+
+    def test_zero_shares_is_recorded_not_omitted(self):
+        from src.tiered_analysis.schema import SizingSlots
+
+        report = _report(sizing=SizingSlots(capital=100000.0,
+                                            risk_fraction=0.01, shares=0.0))
+        payload, _ = build_signal_payload(report)
+        assert payload["metadata"]["sizing"]["shares"] == 0.0
+
     def test_coverage_maps_to_known_quality_levels(self):
         # The repo's quality normalizer does not know the word "full" —
         # translate explicitly so badges never collapse to "unknown".

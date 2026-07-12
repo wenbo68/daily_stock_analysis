@@ -93,6 +93,39 @@ def _outcome(symbol="AAPL"):
     return TieredRunOutcome(report=report, state=state, signal=signal)
 
 
+def _deep_outcome(symbol="AAPL"):
+    """Depth-3 outcome with debate/risk sections and a sizing block."""
+    base = _outcome(symbol)
+    tier2 = TierReport(
+        tier=2, symbol=symbol, market=Market.US,
+        coverage=Coverage.FULL, direction=Direction.BUY,
+        confidence="0.70", levels=base.report.levels,
+        narrative="bull case holds",
+        debate_detail={"verdict": {"direction": "buy", "confidence": 0.7}},
+    )
+    tier3 = TierReport(
+        tier=3, symbol=symbol, market=Market.US,
+        coverage=Coverage.FULL, direction=Direction.BUY,
+        levels=base.report.levels, narrative="half size",
+        risk_detail={"verdict": {"stance": "buy", "size_multiplier": 0.5}},
+    )
+    state = TierState(
+        symbol=symbol, market=Market.US,
+        reports={1: base.report, 2: tier2, 3: tier3},
+    )
+    sizing = {"enabled": True, "shares": 83, "risk_multiplier": 0.5,
+              "reason_code": None, "refusal_reason": None, "notes": []}
+    llm_usage = {"stages": {"tier2_debate": {"calls": 3, "prompt_tokens": 900,
+                                             "completion_tokens": 300}},
+                 "total": {"calls": 3, "prompt_tokens": 900,
+                           "completion_tokens": 300},
+                 "scope": "tiered-package LLM calls only"}
+    return TieredRunOutcome(
+        report=base.report, state=state, signal=base.signal,
+        depth=3, final_report=tier3, sizing=sizing, llm_usage=llm_usage,
+    )
+
+
 def _poll_until_done(client, task_id, timeout_s=5.0):
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -107,7 +140,8 @@ def _poll_until_done(client, task_id, timeout_s=5.0):
 
 class TestTieredAnalyzeEndpoint:
     def test_accepts_and_completes_run(self, client):
-        with patch.object(tiered, "_run_analysis", lambda code: _outcome(code)):
+        with patch.object(tiered, "_run_analysis",
+                          lambda code, **kwargs: _outcome(code)):
             accepted = client.post("/tiered/analyze",
                                    json={"stock_code": "AAPL"})
             assert accepted.status_code == 202
@@ -128,7 +162,7 @@ class TestTieredAnalyzeEndpoint:
         assert dims["sentiment"]["citations"][0]["url"] == "https://reuters.example/x"
 
     def test_failed_run_reports_error(self, client):
-        def boom(code):
+        def boom(code, **kwargs):
             raise RuntimeError("upstream exploded")
 
         with patch.object(tiered, "_run_analysis", boom):
@@ -140,7 +174,8 @@ class TestTieredAnalyzeEndpoint:
         assert "upstream exploded" in body["error"]
 
     def test_runs_list_is_history_newest_first(self, client):
-        with patch.object(tiered, "_run_analysis", lambda code: _outcome(code)):
+        with patch.object(tiered, "_run_analysis",
+                          lambda code, **kwargs: _outcome(code)):
             first = client.post("/tiered/analyze",
                                 json={"stock_code": "AAPL"}).json()["task_id"]
             _poll_until_done(client, first)
@@ -161,3 +196,85 @@ class TestTieredAnalyzeEndpoint:
     def test_unknown_run_is_404(self, client):
         response = client.get("/tiered/runs/nope")
         assert response.status_code == 404
+
+
+class TestTieredDepthAndSizingApi:
+    """v2 slice 6: depth parameter, sizing override, new response sections."""
+
+    def test_depth_out_of_range_rejected(self, client):
+        for depth in (0, 4):
+            response = client.post(
+                "/tiered/analyze", json={"stock_code": "AAPL", "depth": depth})
+            assert response.status_code == 422
+
+    def test_invalid_sizing_override_rejected(self, client):
+        response = client.post("/tiered/analyze", json={
+            "stock_code": "AAPL",
+            "sizing": {"capital": -5, "risk_fraction": 0.01},
+        })
+        assert response.status_code == 422
+        response = client.post("/tiered/analyze", json={
+            "stock_code": "AAPL",
+            "sizing": {"risk_fraction": 1.5},
+        })
+        assert response.status_code == 422
+
+    def test_depth_and_sizing_reach_the_runner(self, client):
+        captured = {}
+
+        def fake_run(code, depth=1, sizing_overrides=None):
+            captured["code"] = code
+            captured["depth"] = depth
+            captured["sizing_overrides"] = sizing_overrides
+            return _deep_outcome(code)
+
+        with patch.object(tiered, "_run_analysis", fake_run):
+            accepted = client.post("/tiered/analyze", json={
+                "stock_code": "AAPL",
+                "depth": 3,
+                "sizing": {"capital": 50000, "risk_fraction": 0.02},
+            })
+            assert accepted.status_code == 202
+            assert accepted.json()["depth"] == 3
+            _poll_until_done(client, accepted.json()["task_id"])
+
+        assert captured["depth"] == 3
+        assert captured["sizing_overrides"] == {"capital": 50000.0,
+                                                "risk_fraction": 0.02}
+
+    def test_deep_run_response_contract(self, client):
+        with patch.object(tiered, "_run_analysis",
+                          lambda code, **kwargs: _deep_outcome(code)):
+            accepted = client.post("/tiered/analyze",
+                                   json={"stock_code": "AAPL", "depth": 3})
+            body = _poll_until_done(client, accepted.json()["task_id"])
+
+        result = body["result"]
+        assert result["depth"] == 3
+        # tier-1 fields keep their v1 shape for the existing UI
+        assert result["direction"] == "hold"
+        assert result["tier"] == 1
+        # the deepest tier is what the user should act on
+        assert result["final"]["tier"] == 3
+        assert result["final"]["direction"] == "buy"
+        assert result["tier2"]["debate_detail"]["verdict"]["direction"] == "buy"
+        assert result["tier3"]["risk_detail"]["verdict"]["size_multiplier"] == 0.5
+        assert result["sizing"]["shares"] == 83
+        assert result["llm_usage"]["total"]["calls"] == 3
+
+    def test_v1_shaped_outcome_serializes_with_defaults(self, client):
+        # An outcome without the new fields (depth-1 run) must still
+        # produce the additive keys, as explicit "not run" values.
+        with patch.object(tiered, "_run_analysis",
+                          lambda code, **kwargs: _outcome(code)):
+            accepted = client.post("/tiered/analyze",
+                                   json={"stock_code": "AAPL"})
+            body = _poll_until_done(client, accepted.json()["task_id"])
+
+        result = body["result"]
+        assert result["depth"] == 1
+        assert result["final"]["tier"] == 1
+        assert result["tier2"] is None
+        assert result["tier3"] is None
+        assert result["sizing"] is None
+        assert result["llm_usage"] is None
