@@ -2,9 +2,12 @@ import { useEffect, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { TieredCitation } from '../../api/tiered';
+import { Tooltip } from '../common';
+import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
 import { jumpToMetric } from '../tiered/termHelpers';
 import { ALT_LINK, TAG_BASE } from './altStyles';
+import { friendlyWarning } from './altWarningText';
 
 interface AltTagProps {
   tone: string;
@@ -81,6 +84,51 @@ export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) =>
       </div>
     </div>,
     document.body,
+  );
+};
+
+interface AltNotesProps {
+  notes: string[];
+}
+
+// Backend data notes, rewritten in plain English (altWarningText.ts).
+// Hover or tap a note to see the original technical message; notes whose
+// shape we don't recognize render as-is rather than get a made-up gloss.
+export const AltNotes = ({ notes }: AltNotesProps) => {
+  const { t } = useUiLanguage();
+
+  if (notes.length === 0) {
+    return null;
+  }
+  return (
+    <ul className="flex flex-col gap-1">
+      {notes.map((raw, index) => {
+        const friendly = friendlyWarning(raw, t);
+        return (
+          <li key={index} className="text-xs leading-relaxed text-amber-300">
+            {friendly ? (
+              <Tooltip
+                focusable
+                content={
+                  <span className="block max-w-[20rem] whitespace-normal">
+                    <span className="block font-semibold text-foreground">
+                      {t('tiered.note.rawLabel')}
+                    </span>
+                    <span className="mt-0.5 block font-mono text-[11px] text-secondary-text">
+                      {raw}
+                    </span>
+                  </span>
+                }
+              >
+                <span className="cursor-help">{friendly}</span>
+              </Tooltip>
+            ) : (
+              raw
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 };
 

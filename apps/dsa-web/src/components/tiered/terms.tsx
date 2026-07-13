@@ -38,12 +38,13 @@ export const HelpTerm = ({ label, helpKey, underline = true }: HelpTermProps) =>
 
 interface MetricTermProps {
   term: string;
+  underline?: boolean;
 }
 
 // Compact vocab (e.g. "SMA 20") with the full plain-language definition in
 // a popup: hover shows it, click/tap keeps it open (focus), clicking
 // elsewhere or Escape closes it. Unknown keys render as-is, no popup.
-export const MetricTerm = ({ term }: MetricTermProps) => {
+export const MetricTerm = ({ term, underline = true }: MetricTermProps) => {
   const { language } = useUiLanguage();
   const entry = metricEntry(term, language);
 
@@ -60,7 +61,12 @@ export const MetricTerm = ({ term }: MetricTermProps) => {
         </span>
       }
     >
-      <span className="cursor-help border-b border-dotted border-secondary-text/60">
+      <span
+        className={cn(
+          'cursor-help',
+          underline ? 'border-b border-dotted border-secondary-text/60' : '',
+        )}
+      >
         {entry.short}
       </span>
     </Tooltip>

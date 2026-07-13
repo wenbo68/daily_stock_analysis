@@ -113,13 +113,41 @@ describe('AltResult', () => {
     expect(screen.getByTestId('alt-order-size-shares').textContent).toContain('83');
   });
 
-  it('keeps the cards in the fixed order: verdict, size, tier 1, tier 2, tier 3, dimensions', () => {
+  it('keeps the cards in the fixed order: verdict, size, dimensions, tier 1, tier 2, tier 3', () => {
     renderResult(makeDeepResult());
     const ids = Array.from(document.querySelectorAll('[data-testid]'))
       .map((el) => el.getAttribute('data-testid') ?? '')
-      .filter((id) =>
-        ['alt-final-verdict', 'alt-order-size', 'alt-tier1', 'alt-tier2', 'alt-tier3'].includes(id),
+      .filter(
+        (id) =>
+          ['alt-final-verdict', 'alt-order-size', 'alt-tier1', 'alt-tier2', 'alt-tier3'].includes(
+            id,
+          ) || id === 'alt-dimension-technicals',
       );
-    expect(ids).toEqual(['alt-final-verdict', 'alt-order-size', 'alt-tier1', 'alt-tier2', 'alt-tier3']);
+    expect(ids).toEqual([
+      'alt-final-verdict',
+      'alt-order-size',
+      'alt-dimension-technicals',
+      'alt-tier1',
+      'alt-tier2',
+      'alt-tier3',
+    ]);
+  });
+
+  it('rewrites known data notes in plain English, keeping the raw text off-screen', () => {
+    const result = {
+      ...makeV1Result(),
+      warnings: [
+        "unparseable sniper level ideal_buy='Ideal buy point: N/A (waiting for clarity)'",
+        'some brand-new warning shape the frontend has never seen',
+      ],
+    };
+    renderResult(result);
+    // Known shape → the friendly sentence, not the engineer-speak.
+    expect(screen.getByText(/left blank|留空/)).toBeInTheDocument();
+    expect(screen.queryByText(/unparseable sniper level/)).not.toBeInTheDocument();
+    // Unknown shape → raw text unchanged (never an invented gloss).
+    expect(
+      screen.getByText('some brand-new warning shape the frontend has never seen'),
+    ).toBeInTheDocument();
   });
 });

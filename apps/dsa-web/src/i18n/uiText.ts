@@ -827,6 +827,36 @@ const zh = {
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
   'tiered.dataNotesHint': '记录数据受限之处以及系统的替代做法——刻意保留，让你了解这份报告的数据有多扎实。',
+  'tiered.note.rawLabel': '原始技术信息',
+  'tiered.tier1.adviceLabel': 'AI 的原话建议',
+  'tiered.help.tier1Advice':
+    '基础分析 AI 自己写的操作建议原文（例如“观望”“持有观察”）。上方彩色标签是把这句话归一成“买入 / 持有 / 卖出”三类后的标准结果——两者说的是同一件事。',
+  'tiered.note.textLevel': 'AI 把{level}写成了句子（“{text}”）而不是数字，因此该价位留空。',
+  'tiered.note.levelsMissing': '第 1 层分析没有返回价格参考位。',
+  'tiered.note.pageBlocked': '新闻网站 {domain} 拒绝加载全文，改用了搜索结果里较短的摘要。',
+  'tiered.note.fetchFailed': '一篇新闻（{domain}）未能下载，因此没有采用。',
+  'tiered.note.fundamentalsUnavailable': '美国证监会（SEC）官方财报数据未能加载，部分基本面数字可能缺失。',
+  'tiered.note.valuationUnavailable': '来自 Yahoo Finance 的估值指标未能加载。',
+  'tiered.note.macroUnavailable': '一项经济指标（{series}）未能从 FRED 数据库加载。',
+  'tiered.note.sentimentUnreadable': '读新闻的 AI 给出的回复无法解析，因此没有新闻综述。',
+  'tiered.note.citationsDiscarded': '新闻综述被丢弃，因为其中没有一条论断能核实到真实来源。',
+  'tiered.note.citationQuoteMissing':
+    'AI 引用了一句在原文（{domain}）里找不到的话，这条引用已被删掉。',
+  'tiered.note.citationBadIndex': 'AI 引用了一个不存在的来源编号，这条引用已被删掉。',
+  'tiered.note.adjustmentMalformed': 'AI 提出的一条价位微调格式不对，已忽略。',
+  'tiered.note.adjustmentRejected': 'AI 想微调{level}，但建议不符合规则，已保留公式算出的数字。',
+  'tiered.note.stopFallback': '公式算出的止损价不可用，改用了基于波动幅度（ATR）的止损。',
+  'tiered.note.noAtrStop': '缺少波动幅度数据（ATR），无法计算止损价。',
+  'tiered.note.noAtrStopTarget': '缺少波动幅度数据（ATR），止损价和目标价都无法计算。',
+  'tiered.note.noBackupEntry': '买入价下方没有找到更低的支撑位，因此没有备选买入价。',
+  'tiered.note.noEntryNoStop': '没有可用的买入价，因此无法设置止损。',
+  'tiered.note.judgeConfidenceDropped': '辩论裁判给出的信心值无法读取，因此没有显示。',
+  'tiered.note.judgeNoSummary': '辩论裁判没有写总结。',
+  'tiered.note.riskNoSummary': '风险裁判没有写总结。',
+  'tiered.note.claimNoEvidence': '有一条论点没有给出可核查的证据——仍然展示，但已标记。',
+  'tiered.note.stopAdviceUnusable': '风险裁判的止损建议无法读取，止损价保持不变。',
+  'tiered.note.tightenedStopDropped': '风险裁判建议的更紧止损价不合理（不在当前止损与买入价之间），已忽略。',
+  'tiered.note.badSetting': '有一项仓位设置不是数字，已忽略。',
   'tiered.help.direction':
     'AI 对这只股票的总体判断。买入 = 建仓或加仓；持有 = 暂不动作、继续观察；卖出 = 减仓或离场。这里只给方向——买多少股（仓位管理）是 v2 功能。',
   'tiered.help.score': '分析引擎根据技术指标计算的 0-100 分。分数越高，技术面越强。',
@@ -1793,6 +1823,51 @@ const en: Record<UiTextKey, string> = {
   'tiered.dataNotes': 'Data notes',
   'tiered.dataNotesHint':
     'Where data was limited and what the system did instead — kept visible on purpose so you know how solid this report is.',
+  'tiered.note.rawLabel': 'Original technical message',
+  'tiered.tier1.adviceLabel': 'The AI’s advice, in its own words',
+  'tiered.help.tier1Advice':
+    'The base-analysis AI’s operation advice exactly as it wrote it (e.g. “Watch”, “Hold and watch”). The colored tag above is the same call normalized into the three standard categories — Buy / Hold / Sell. They say the same thing in two forms.',
+  'tiered.note.textLevel':
+    'The AI wrote the {level} as a sentence (“{text}”) instead of a number, so that price was left blank.',
+  'tiered.note.levelsMissing': 'The tier-1 analysis didn’t return its price levels.',
+  'tiered.note.pageBlocked':
+    'A news site ({domain}) refused to load the full article, so a shorter summary from the search results was used instead.',
+  'tiered.note.fetchFailed': 'One news article ({domain}) couldn’t be downloaded, so it wasn’t used.',
+  'tiered.note.fundamentalsUnavailable':
+    'Official U.S. filings data (SEC) couldn’t be loaded, so some fundamentals figures may be missing.',
+  'tiered.note.valuationUnavailable': 'Valuation ratios from Yahoo Finance couldn’t be loaded.',
+  'tiered.note.macroUnavailable':
+    'One economic indicator ({series}) couldn’t be loaded from the FRED database.',
+  'tiered.note.sentimentUnreadable':
+    'The news-reading AI’s reply couldn’t be understood, so there is no news summary.',
+  'tiered.note.citationsDiscarded':
+    'The news summary was dropped because none of its claims could be traced to a real source.',
+  'tiered.note.citationQuoteMissing':
+    'The AI quoted a line that isn’t actually in the article ({domain}), so that citation was removed.',
+  'tiered.note.citationBadIndex':
+    'The AI cited a source number that doesn’t exist, so that citation was removed.',
+  'tiered.note.adjustmentMalformed': 'One AI-suggested price tweak was malformed and was ignored.',
+  'tiered.note.adjustmentRejected':
+    'The AI wanted to tweak the {level}, but its suggestion broke the rules, so the formula’s number was kept.',
+  'tiered.note.stopFallback':
+    'The formula’s stop-loss price wasn’t usable, so a volatility-based (ATR) stop was used instead.',
+  'tiered.note.noAtrStop': 'No volatility data (ATR) was available, so no stop-loss price could be computed.',
+  'tiered.note.noAtrStopTarget':
+    'No volatility data (ATR) was available, so neither the stop-loss nor the target price could be computed.',
+  'tiered.note.noBackupEntry':
+    'No lower support price was found below the entry, so there is no backup entry.',
+  'tiered.note.noEntryNoStop': 'There is no usable entry price, so no stop-loss could be set.',
+  'tiered.note.judgeConfidenceDropped':
+    'The debate judge’s confidence number couldn’t be read, so it isn’t shown.',
+  'tiered.note.judgeNoSummary': 'The debate judge didn’t write a summary.',
+  'tiered.note.riskNoSummary': 'The risk judge didn’t write a summary.',
+  'tiered.note.claimNoEvidence':
+    'One argument gave no checkable evidence — it is still shown, but flagged.',
+  'tiered.note.stopAdviceUnusable':
+    'The risk judge’s stop-loss advice couldn’t be read; the stop-loss was kept as-is.',
+  'tiered.note.tightenedStopDropped':
+    'The risk judge suggested a tighter stop-loss at an impossible price (not between the current stop and the entry), so it was ignored.',
+  'tiered.note.badSetting': 'One sizing setting isn’t a number and was ignored.',
   'tiered.help.direction':
     'The AI’s overall call for this stock. Buy = start or add to a position; Hold = do nothing new, keep watching; Sell = reduce or exit. Direction only — how many shares (position sizing) is a v2 feature.',
   'tiered.help.score':

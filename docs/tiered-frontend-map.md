@@ -81,6 +81,7 @@ so the two looks can be compared side by side. Same API, same data, same wording
 | `components/tiered-alt/AltResult.tsx` | The result skeleton — identical at every depth: final verdict hero → order size → tier 1 → tier 2 → tier 3 → dimensions. |
 | `components/tiered-alt/AltLevels.tsx` | Price levels: one big final number per level, the base→adjusted story in a single modal. |
 | `components/tiered-alt/AltDimensions.tsx` | The four data cards, alt-styled. |
+| `components/tiered-alt/altWarningText.ts` | Rewrites the backend's technical "data notes" into plain-English sentences (the raw message stays in a hover popup). Add a new pattern here when a new note shape shows up untranslated. |
 
 Once one version wins, delete the loser (page + its components folder + its nav entry).
 

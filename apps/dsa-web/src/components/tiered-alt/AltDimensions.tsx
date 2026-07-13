@@ -4,7 +4,7 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { dedupeCitations, formatValue, metricAnchorId } from '../tiered/termHelpers';
 import { HelpTerm, MetricTerm } from '../tiered/terms';
 import { ALT_LINK, COVERAGE_TAG } from './altStyles';
-import { AltCard, AltNarrative, AltTag } from './AltUi';
+import { AltCard, AltNarrative, AltNotes, AltTag } from './AltUi';
 
 const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
   technicals: 'tiered.dimension.technicals',
@@ -27,7 +27,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => (
         return (
           <div key={group}>
             <div className="mb-1 text-xs font-semibold text-gray-500">
-              <MetricTerm term={group} />
+              <MetricTerm term={group} underline={false} />
             </div>
             <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
               {Object.entries(values as Record<string, unknown>).map(([key, value]) => (
@@ -37,7 +37,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => (
                   className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
                 >
                   <dt className="text-xs">
-                    <MetricTerm term={key} />
+                    <MetricTerm term={key} underline={false} />
                   </dt>
                   <dd className="text-xs tabular-nums text-gray-300">{formatValue(value)}</dd>
                 </div>
@@ -53,7 +53,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => (
           className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
         >
           <dt className="text-xs">
-            <MetricTerm term={group} />
+            <MetricTerm term={group} underline={false} />
           </dt>
           <dd className="text-xs tabular-nums text-gray-300">{formatValue(values)}</dd>
         </div>
@@ -125,14 +125,14 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
 
       {dimension.warnings.length > 0 ? (
         <div className="mt-3">
-          <div className="mb-1 text-xs font-semibold text-gray-500">{t('tiered.dataNotes')}</div>
-          <ul className="flex flex-col gap-1">
-            {dimension.warnings.map((warning, index) => (
-              <li key={index} className="text-xs text-amber-300">
-                {warning}
-              </li>
-            ))}
-          </ul>
+          <div className="mb-1 text-xs font-semibold text-gray-500">
+            <HelpTerm
+              label={t('tiered.dataNotes')}
+              helpKey="tiered.dataNotesHint"
+              underline={false}
+            />
+          </div>
+          <AltNotes notes={dimension.warnings} />
         </div>
       ) : null}
     </AltCard>

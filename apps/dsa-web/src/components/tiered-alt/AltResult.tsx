@@ -11,7 +11,7 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm } from '../tiered/terms';
 import { ALT_LINK, COVERAGE_TAG, DIRECTION_TAG } from './altStyles';
-import { AltCard, AltEvidenceRefs, AltTag } from './AltUi';
+import { AltCard, AltEvidenceRefs, AltNotes, AltTag } from './AltUi';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -28,14 +28,10 @@ const AltWarnings = ({ warnings }: { warnings: string[] }) => {
   }
   return (
     <div className="mt-4">
-      <AltSectionLabel>{t('tiered.dataNotes')}</AltSectionLabel>
-      <ul className="flex flex-col gap-1">
-        {warnings.map((warning, index) => (
-          <li key={index} className="text-xs text-amber-300">
-            {warning}
-          </li>
-        ))}
-      </ul>
+      <AltSectionLabel>
+        <HelpTerm label={t('tiered.dataNotes')} helpKey="tiered.dataNotesHint" underline={false} />
+      </AltSectionLabel>
+      <AltNotes notes={warnings} />
     </div>
   );
 };
@@ -272,7 +268,6 @@ interface AltTierOneProps {
 
 const AltTierOne = ({ result, citations }: AltTierOneProps) => {
   const { t } = useUiLanguage();
-  const usage = result.llm_usage ?? null;
 
   return (
     <AltCard testId="alt-tier1">
@@ -292,7 +287,16 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
       />
 
       {result.narrative ? (
-        <p className="mb-4 text-sm leading-relaxed">{result.narrative}</p>
+        <div className="mb-4">
+          <AltSectionLabel>
+            <HelpTerm
+              label={t('tiered.tier1.adviceLabel')}
+              helpKey="tiered.help.tier1Advice"
+              underline={false}
+            />
+          </AltSectionLabel>
+          <p className="text-sm leading-relaxed">{result.narrative}</p>
+        </div>
       ) : null}
 
       <AltSectionLabel>{t('tiered.levels')}</AltSectionLabel>
@@ -312,17 +316,6 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
         ) : result.signal ? (
           <span className="text-amber-300">
             {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}
-          </span>
-        ) : null}
-        {usage && usage.total.calls > 0 ? (
-          <span className="text-gray-500">
-            <HelpTerm
-              label={t('tiered.llmUsage', {
-                calls: usage.total.calls,
-                tokens: usage.total.prompt_tokens + usage.total.completion_tokens,
-              })}
-              helpKey="tiered.help.llmUsage"
-            />
           </span>
         ) : null}
       </div>
@@ -538,18 +531,33 @@ interface AltResultProps {
 }
 
 // The same fixed skeleton at every depth: final verdict → order size →
-// tier 1 → tier 2 → tier 3 → the four dimension cards.
+// the four dimension reports (the raw material) → tier 1 → tier 2 → tier 3,
+// so the reading order matches the order things actually happened in.
 export const AltResult = ({ result }: AltResultProps) => {
+  const { t } = useUiLanguage();
   const citations = sentimentCitations(result.dimensions);
+  const usage = result.llm_usage ?? null;
 
   return (
     <div className="flex flex-col gap-6">
       <AltFinalVerdict result={result} />
       <AltOrderSize sizing={result.sizing ?? null} />
+      <AltDimensions dimensions={result.dimensions} />
       <AltTierOne result={result} citations={citations} />
       {result.tier2 ? <AltDebate section={result.tier2} citations={citations} /> : null}
       {result.tier3 ? <AltRisk section={result.tier3} citations={citations} /> : null}
-      <AltDimensions dimensions={result.dimensions} />
+      {usage && usage.total.calls > 0 ? (
+        <p className="text-xs text-gray-600">
+          <HelpTerm
+            underline={false}
+            label={t('tiered.llmUsage', {
+              calls: usage.total.calls,
+              tokens: usage.total.prompt_tokens + usage.total.completion_tokens,
+            })}
+            helpKey="tiered.help.llmUsage"
+          />
+        </p>
+      ) : null}
     </div>
   );
 };

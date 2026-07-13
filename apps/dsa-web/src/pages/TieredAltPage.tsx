@@ -188,7 +188,7 @@ const TieredAltPage = () => {
   return (
     <main className="mx-auto min-h-full w-full max-w-7xl px-4 pb-8 pt-4 md:px-6 lg:px-8">
       <div className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6 lg:p-8">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+        <div className="flex w-full flex-col gap-6">
           <header>
             <h1 className="text-2xl font-bold text-gray-300">{t('tiered.alt.title')}</h1>
             <p className="mt-1 text-sm text-gray-500">{t('tiered.alt.subtitle')}</p>
@@ -275,39 +275,51 @@ const TieredAltPage = () => {
             {submitError ? <p className="text-sm text-red-300">{submitError}</p> : null}
           </form>
 
-          {runs.length > 0 ? (
-            <div>
-              <div className="mb-2 text-xs font-semibold text-gray-300">{t('tiered.history')}</div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {runs.map((run) => (
-                  <button
-                    key={run.task_id}
-                    type="button"
-                    onClick={() => handleSelect(run.task_id)}
-                    className={cn(
-                      'flex shrink-0 cursor-pointer items-center gap-2 rounded bg-gray-800 px-3 py-1.5 text-xs',
-                      run.task_id === selectedTaskId
-                        ? 'text-gray-200 ring-1 ring-inset ring-blue-500'
-                        : 'text-gray-400 hover:text-gray-300',
-                    )}
-                  >
-                    <span className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOT[run.status])} />
-                    <span className="font-semibold">{run.stock_code}</span>
-                    <span className="text-gray-500">{formatTime(run.created_at, language)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
+            <aside className="h-fit rounded-lg bg-gray-800 p-4">
+              <div className="text-xs font-semibold text-gray-300">{t('tiered.history')}</div>
+              <p className="mt-1 text-xs text-gray-500">{t('tiered.historyHint')}</p>
+              {runs.length === 0 ? (
+                <p className="mt-4 text-xs text-gray-500">{t('tiered.empty')}</p>
+              ) : (
+                <ul className="mt-3 flex flex-col gap-1">
+                  {runs.map((run) => (
+                    <li key={run.task_id}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelect(run.task_id)}
+                        className={cn(
+                          'flex w-full cursor-pointer items-center gap-2 rounded px-2 py-2 text-left text-xs',
+                          run.task_id === selectedTaskId
+                            ? 'bg-gray-900/60 text-gray-200'
+                            : 'text-gray-400 hover:bg-gray-900/40 hover:text-gray-300',
+                        )}
+                      >
+                        <span
+                          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])}
+                        />
+                        <span className="font-semibold">{run.stock_code}</span>
+                        <span className="ml-auto text-gray-500">
+                          {formatTime(run.created_at, language)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </aside>
 
-          {selectedError ? <p className="text-sm text-red-300">{selectedError}</p> : null}
-          {selectedResult ? (
-            <AltResult result={selectedResult} />
-          ) : !selectedError ? (
-            <p className="py-10 text-center text-sm text-gray-600">
-              {selectedRun?.status === 'running' ? t('tiered.running') : t('tiered.empty')}
-            </p>
-          ) : null}
+            <div>
+              {selectedError ? <p className="text-sm text-red-300">{selectedError}</p> : null}
+              {selectedResult ? (
+                <AltResult result={selectedResult} />
+              ) : !selectedError ? (
+                <p className="py-10 text-center text-sm text-gray-600">
+                  {selectedRun?.status === 'running' ? t('tiered.running') : t('tiered.empty')}
+                </p>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
     </main>
