@@ -171,6 +171,12 @@ export type TieredRunSummary = {
   error: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // Digest of the stored report for the history rows. Null while running,
+  // after a failure, or on rows stored before the backend sent these.
+  // shares mirrors the report card: 0 = sizing ran but bought nothing,
+  // null = the run has no sizing block (shown as a dash).
+  direction?: 'buy' | 'hold' | 'sell' | 'unknown' | null;
+  shares?: number | null;
 };
 
 export type TieredRun = TieredRunSummary & {
@@ -198,7 +204,8 @@ export const tieredApi = {
     return response.data;
   },
 
-  listRuns: async (limit = 50): Promise<TieredRunSummary[]> => {
+  // 200 is the backend's cap; the page paginates client-side over this.
+  listRuns: async (limit = 200): Promise<TieredRunSummary[]> => {
     const response = await apiClient.get<{ items: TieredRunSummary[] }>('/api/v1/tiered/runs', {
       params: { limit },
     });

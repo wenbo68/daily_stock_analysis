@@ -1,51 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search, X } from 'lucide-react';
 import {
   tieredApi,
   type TieredDepth,
   type TieredResult,
+  type TieredRunSummary,
   type TieredSizingRequest,
 } from '../api/tiered';
-import { AltResult } from '../components/tiered-alt/AltResult';
-import { AltSelect } from '../components/tiered-alt/AltUi';
-import { STATUS_DOT } from '../components/tiered-alt/altStyles';
-import { HelpTerm } from '../components/tiered/terms';
+import { AltRunForm } from '../components/tiered-alt/AltRunForm';
+import { AltRunHistory } from '../components/tiered-alt/AltRunHistory';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
-import type { UiLanguage, UiTextKey } from '../i18n/uiText';
-import { cn } from '../utils/cn';
 
 const POLL_INTERVAL_MS = 5000;
-const DEPTHS: TieredDepth[] = [1, 2, 3];
 
 // Shared with the main tiered page so the values carry across both skins.
 const SIZING_CAPITAL_STORAGE_KEY = 'tiered.sizing.capital';
 const SIZING_RISK_PCT_STORAGE_KEY = 'tiered.sizing.riskPct';
 
-function formatTime(value: string | null, language: UiLanguage): string {
-  if (!value) {
-    return '—';
-  }
-  const date = new Date(value.endsWith('Z') ? value : `${value}Z`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-}
-
-function readStoredNumber(key: string): string {
+function readStoredNumber(key: string): string | null {
   try {
-    return window.localStorage.getItem(key) ?? '';
+    return window.localStorage.getItem(key) || null;
   } catch {
-    return '';
+    return null;
   }
 }
 
-function storeNumber(key: string, value: string): void {
+function storeNumber(key: string, value: string | null): void {
   try {
     if (value) {
       window.localStorage.setItem(key, value);
@@ -57,26 +36,26 @@ function storeNumber(key: string, value: string): void {
   }
 }
 
-// Alternate skin for tiered analysis, styled after showplayer.net: flat
-// gray-900 canvas, gray-800 surfaces, ring badges, blue accents, whitespace
-// instead of borders. Same API, same data, same i18n keys as /tiered.
+// Alternate skin for tiered analysis, styled after showplayer.net. Two
+// sections: the new-run form (write-only fields + pills + Start) and the
+// run history (filters + paged rows that expand into the full report).
 const TieredAltPage = () => {
-  const { t, language } = useUiLanguage();
-  const [stockCode, setStockCode] = useState('');
-  const [depth, setDepth] = useState<TieredDepth>(1);
-  const [capitalInput, setCapitalInput] = useState(() =>
+  const { t } = useUiLanguage();
+  const [ticker, setTicker] = useState<string | null>(null);
+  const [depth, setDepth] = useState<TieredDepth | null>(null);
+  const [capital, setCapital] = useState<string | null>(() =>
     readStoredNumber(SIZING_CAPITAL_STORAGE_KEY),
   );
-  const [riskPctInput, setRiskPctInput] = useState(() =>
+  const [riskPct, setRiskPct] = useState<string | null>(() =>
     readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY),
   );
-  const [runs, setRuns] = useState<Awaited<ReturnType<typeof tieredApi.listRuns>>>([]);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [selectedResult, setSelectedResult] = useState<TieredResult | null>(null);
-  const [selectedError, setSelectedError] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [runs, setRuns] = useState<TieredRunSummary[]>([]);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [details, setDetails] = useState<Record<string, TieredResult>>({});
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const loadedDetailRef = useRef<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const loadingDetailRef = useRef<string | null>(null);
 
   const anyRunning = useMemo(() => runs.some((run) => run.status === 'running'), [runs]);
 
@@ -103,233 +82,120 @@ const TieredAltPage = () => {
     return () => window.clearInterval(timer);
   }, [anyRunning, refreshRuns]);
 
-  const selectedRun = useMemo(
-    () => runs.find((run) => run.task_id === selectedTaskId) ?? null,
-    [runs, selectedTaskId],
+  const expandedRun = useMemo(
+    () => runs.find((run) => run.task_id === expandedTaskId) ?? null,
+    [runs, expandedTaskId],
   );
 
+  // Fetch the full report the first time a finished run is expanded (a run
+  // started as Running loads here too, the moment polling flips it to done).
   useEffect(() => {
-    if (!selectedTaskId || !selectedRun) {
+    const taskId = expandedTaskId;
+    if (!taskId || expandedRun?.status !== 'done' || details[taskId]) {
       return;
     }
-    if (selectedRun.status === 'failed') {
-      setSelectedResult(null);
-      setSelectedError(selectedRun.error || t('tiered.error.title'));
+    if (loadingDetailRef.current === taskId) {
       return;
     }
-    if (selectedRun.status !== 'done' || loadedDetailRef.current === selectedTaskId) {
-      return;
-    }
-    loadedDetailRef.current = selectedTaskId;
+    loadingDetailRef.current = taskId;
     void (async () => {
       try {
-        const run = await tieredApi.getRun(selectedTaskId);
-        setSelectedResult(run.result);
-        setSelectedError(run.result ? null : run.error);
-        // There is no server-side default capital/risk — but if the boxes
-        // are empty, offer what this run actually used so the numbers on
-        // screen and in the form agree.
-        const inputs = run.result?.sizing?.inputs;
-        if (inputs?.capital != null) {
-          setCapitalInput((prev) => prev || String(inputs.capital));
-        }
-        if (inputs?.risk_fraction != null) {
-          const pct = Number((inputs.risk_fraction * 100).toPrecision(12));
-          setRiskPctInput((prev) => prev || String(pct));
+        const run = await tieredApi.getRun(taskId);
+        const result = run.result;
+        if (result) {
+          setDetails((prev) => ({ ...prev, [taskId]: result }));
+          setDetailError(null);
+          // There is no server-side default capital/risk — but if none is
+          // picked yet, offer what this run actually used so the numbers on
+          // screen and in the form agree.
+          const inputs = result.sizing?.inputs;
+          if (inputs?.capital != null) {
+            const capitalUsed = String(inputs.capital);
+            setCapital((prev) => prev ?? capitalUsed);
+          }
+          if (inputs?.risk_fraction != null) {
+            const pctUsed = String(Number((inputs.risk_fraction * 100).toPrecision(12)));
+            setRiskPct((prev) => prev ?? pctUsed);
+          }
+        } else {
+          setDetailError(run.error || t('tiered.error.title'));
         }
       } catch (error) {
-        loadedDetailRef.current = null;
-        setSelectedError(error instanceof Error ? error.message : String(error));
+        setDetailError(error instanceof Error ? error.message : String(error));
+      } finally {
+        loadingDetailRef.current = null;
       }
     })();
-  }, [selectedTaskId, selectedRun, t]);
+  }, [expandedTaskId, expandedRun?.status, details, t]);
 
-  const handleSelect = useCallback((taskId: string) => {
-    setSelectedTaskId(taskId);
-    setSelectedResult(null);
-    setSelectedError(null);
-    loadedDetailRef.current = null;
+  const handleToggle = useCallback((taskId: string) => {
+    setDetailError(null);
+    setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
   }, []);
 
-  const sizingRequest = useMemo((): TieredSizingRequest | undefined => {
-    const capital = Number(capitalInput);
-    const riskPct = Number(riskPctInput);
-    const request: TieredSizingRequest = {};
-    if (capitalInput.trim() && Number.isFinite(capital) && capital > 0) {
-      request.capital = capital;
-    }
-    if (riskPctInput.trim() && Number.isFinite(riskPct) && riskPct > 0 && riskPct < 100) {
-      request.risk_fraction = riskPct / 100;
-    }
-    return Object.keys(request).length > 0 ? request : undefined;
-  }, [capitalInput, riskPctInput]);
-
-  const handleRun = useCallback(async () => {
-    const code = stockCode.trim();
-    if (!code || submitting) {
+  const handleStart = useCallback(async () => {
+    if (!ticker || submitting) {
       return;
     }
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const started = await tieredApi.start(code, depth, sizingRequest);
-      storeNumber(SIZING_CAPITAL_STORAGE_KEY, capitalInput.trim());
-      storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPctInput.trim());
-      setStockCode('');
+      const sizing: TieredSizingRequest = {};
+      const capitalValue = Number(capital);
+      if (capital && Number.isFinite(capitalValue) && capitalValue > 0) {
+        sizing.capital = capitalValue;
+      }
+      const pctValue = Number(riskPct);
+      if (riskPct && Number.isFinite(pctValue) && pctValue > 0 && pctValue < 100) {
+        sizing.risk_fraction = pctValue / 100;
+      }
+      const started = await tieredApi.start(
+        ticker,
+        depth ?? 1,
+        Object.keys(sizing).length > 0 ? sizing : undefined,
+      );
+      storeNumber(SIZING_CAPITAL_STORAGE_KEY, capital);
+      storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPct);
+      setTicker(null);
+      // The new run is already in the backend list as Running; show it at
+      // the top of the history, expanded, until polling flips it to done.
       await refreshRuns();
-      handleSelect(started.task_id);
+      setDetailError(null);
+      setExpandedTaskId(started.task_id);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
     } finally {
       setSubmitting(false);
     }
-  }, [
-    stockCode,
-    submitting,
-    depth,
-    sizingRequest,
-    capitalInput,
-    riskPctInput,
-    refreshRuns,
-    handleSelect,
-  ]);
-
-  const depthOptions = DEPTHS.map((value) => ({
-    value: String(value),
-    label: t(`tiered.depth.${value}` as UiTextKey),
-  }));
-
-  const historyOptions = runs.map((run) => ({
-    value: run.task_id,
-    label: `${run.stock_code} · ${formatTime(run.created_at, language)}`,
-    node: (
-      <span className="flex items-center gap-2">
-        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])} />
-        <span>{run.stock_code}</span>
-        <span className="ml-auto font-normal text-gray-500">
-          {formatTime(run.created_at, language)}
-        </span>
-      </span>
-    ),
-  }));
-
-  const capitalOptions = ['10000', '50000', '100000', '200000', '500000', '1000000'].map(
-    (value) => ({ value, label: value }),
-  );
-  const riskOptions = ['0.5', '1', '2'].map((value) => ({ value, label: `${value} %` }));
+  }, [ticker, submitting, depth, capital, riskPct, refreshRuns]);
 
   return (
-    <main className="mx-auto min-h-full w-full max-w-7xl px-4 pb-8 pt-4 md:px-6 lg:px-8">
-      <div className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6 lg:p-8">
-        <div className="flex w-full flex-col gap-6">
-          {/* showplayer.net top bar: a grid of labeled controls; the run
-              only starts on the indigo search button, never on change. */}
-          <form
-            className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-3 sm:gap-3 md:gap-4 lg:grid-cols-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleRun();
-            }}
-          >
-            <div className="col-span-2 flex w-full flex-col gap-2 sm:col-span-1">
-              <span className="font-semibold text-gray-300">{t('tiered.altForm.ticker')}</span>
-              <div className="flex w-full items-center gap-2">
-                <div className="flex w-full items-center rounded bg-gray-800">
-                  <input
-                    value={stockCode}
-                    onChange={(event) => setStockCode(event.target.value)}
-                    placeholder={t('tiered.inputPlaceholder')}
-                    aria-label={t('tiered.altForm.ticker')}
-                    className="w-full bg-transparent pl-3 text-gray-300 placeholder-gray-500 outline-none"
-                  />
-                  {stockCode ? (
-                    <button
-                      type="button"
-                      aria-label={t('tiered.altForm.clear')}
-                      onClick={() => setStockCode('')}
-                      className="cursor-pointer p-2 text-gray-500 hover:text-gray-300"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  ) : null}
-                </div>
-                <button
-                  type="submit"
-                  aria-label={t('tiered.run')}
-                  disabled={!stockCode.trim() || submitting}
-                  className="cursor-pointer rounded bg-indigo-600 p-2 text-gray-200 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Search className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
+    <main className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 px-4 pb-8 pt-4 md:px-6 lg:px-8">
+      <section className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6">
+        <AltRunForm
+          ticker={ticker}
+          depth={depth}
+          capital={capital}
+          riskPct={riskPct}
+          submitting={submitting}
+          error={submitError}
+          onTicker={setTicker}
+          onDepth={setDepth}
+          onCapital={setCapital}
+          onRiskPct={setRiskPct}
+          onStart={() => void handleStart()}
+        />
+      </section>
 
-            <AltSelect
-              mode="select"
-              label={
-                <HelpTerm
-                  label={t('tiered.depth.label')}
-                  helpKey="tiered.help.depth"
-                  underline={false}
-                />
-              }
-              options={depthOptions}
-              value={String(depth)}
-              onSelect={(value) => setDepth(Number(value) as TieredDepth)}
-            />
-            <AltSelect
-              mode="text"
-              label={
-                <HelpTerm
-                  label={t('tiered.altForm.capital')}
-                  helpKey="tiered.help.sizingForm"
-                  underline={false}
-                />
-              }
-              options={capitalOptions}
-              value={capitalInput}
-              onText={setCapitalInput}
-              placeholder={t('tiered.sizingForm.capital')}
-              inputMode="decimal"
-            />
-            <AltSelect
-              mode="text"
-              label={
-                <HelpTerm
-                  label={t('tiered.altForm.risk')}
-                  helpKey="tiered.help.sizingForm"
-                  underline={false}
-                />
-              }
-              options={riskOptions}
-              value={riskPctInput}
-              onText={setRiskPctInput}
-              placeholder={t('tiered.sizingForm.riskPct')}
-              inputMode="decimal"
-            />
-            <AltSelect
-              mode="select"
-              label={t('tiered.history')}
-              options={historyOptions}
-              value={selectedTaskId ?? ''}
-              onSelect={handleSelect}
-              placeholder={t('tiered.empty')}
-            />
-          </form>
-
-          {anyRunning ? <p className="text-sm text-gray-500">{t('tiered.running')}</p> : null}
-          {submitError ? <p className="text-sm text-red-300">{submitError}</p> : null}
-          {selectedError ? <p className="text-sm text-red-300">{selectedError}</p> : null}
-
-          {selectedResult ? (
-            <AltResult result={selectedResult} />
-          ) : !selectedError ? (
-            <p className="py-10 text-center text-sm text-gray-600">
-              {selectedRun?.status === 'running' ? t('tiered.running') : t('tiered.empty')}
-            </p>
-          ) : null}
-        </div>
-      </div>
+      <section className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6">
+        <AltRunHistory
+          runs={runs}
+          expandedTaskId={expandedTaskId}
+          expandedResult={expandedTaskId ? (details[expandedTaskId] ?? null) : null}
+          expandedError={detailError}
+          onToggle={handleToggle}
+        />
+      </section>
     </main>
   );
 };

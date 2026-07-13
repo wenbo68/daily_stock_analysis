@@ -74,6 +74,31 @@ def _row_summary(row: Any) -> Dict[str, Any]:
     }
 
 
+def _result_digest(row: Any) -> Dict[str, Any]:
+    """The two report facts the run list shows per row — final direction and
+    computed share count — without shipping the full report. ``shares``
+    mirrors the report card: 0 when sizing ran but bought nothing, None
+    (shown as a dash) when the run has no sizing block at all. Anything
+    unreadable degrades to None rather than breaking the list."""
+    digest: Dict[str, Any] = {"direction": None, "shares": None}
+    if row.status != "done" or not row.result_json:
+        return digest
+    try:
+        result = json.loads(row.result_json)
+    except ValueError:
+        return digest
+    if not isinstance(result, dict):
+        return digest
+    final = result.get("final")
+    direction = final.get("direction") if isinstance(final, dict) else None
+    digest["direction"] = direction or result.get("direction")
+    sizing = result.get("sizing")
+    if isinstance(sizing, dict):
+        shares = sizing.get("shares")
+        digest["shares"] = shares if shares is not None else 0
+    return digest
+
+
 def list_runs(limit: int = DEFAULT_LIST_LIMIT) -> List[Dict[str, Any]]:
     """Newest-first run summaries (no result payloads — keep the list light)."""
     from src.storage import TieredRunRecord
@@ -86,7 +111,7 @@ def list_runs(limit: int = DEFAULT_LIST_LIMIT) -> List[Dict[str, Any]]:
             .limit(safe_limit)
             .all()
         )
-        return [_row_summary(row) for row in rows]
+        return [{**_row_summary(row), **_result_digest(row)} for row in rows]
 
 
 def get_run(task_id: str) -> Optional[Dict[str, Any]]:

@@ -84,6 +84,30 @@ class TestTieredRunHistory:
         # list is lightweight: no full result payloads
         assert all("result" not in r for r in runs)
 
+    def test_list_digest_has_direction_and_shares(self, isolated_db):
+        create_run("task-1", "AAPL")
+        mark_done("task-1", {**RESULT,
+                             "final": {"direction": "buy"},
+                             "sizing": {"shares": 41}})
+        create_run("task-2", "NVDA")  # still running — no digest yet
+        runs = {r["task_id"]: r for r in list_runs()}
+        assert runs["task-1"]["direction"] == "buy"
+        assert runs["task-1"]["shares"] == 41
+        assert runs["task-2"]["direction"] is None
+        assert runs["task-2"]["shares"] is None
+
+    def test_list_digest_degrades_on_old_or_refused_runs(self, isolated_db):
+        # v1 result: no final/sizing blocks -> top-level direction, dash shares
+        create_run("task-1", "AAPL")
+        mark_done("task-1", RESULT)
+        # sizing ran but refused to buy (shares None) -> 0, like the report card
+        create_run("task-2", "MSFT")
+        mark_done("task-2", {**RESULT, "sizing": {"shares": None}})
+        runs = {r["task_id"]: r for r in list_runs()}
+        assert runs["task-1"]["direction"] == "hold"
+        assert runs["task-1"]["shares"] is None
+        assert runs["task-2"]["shares"] == 0
+
     def test_list_respects_limit(self, isolated_db):
         for index in range(5):
             create_run(f"task-{index}", "AAPL")

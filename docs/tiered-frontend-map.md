@@ -75,9 +75,12 @@ so the two looks can be compared side by side. Same API, same data, same wording
 
 | File | What it is |
 |---|---|
-| `pages/TieredAltPage.tsx` | The alt page: a showplayer-style top bar (ticker field + indigo run button, dropdown selectors for depth / capital / risk / run history) with the result full-width below, all on a gray-900 canvas. |
-| `components/tiered-alt/altStyles.ts` | The alt design tokens: badge recipes (`bg-*-500/20 text-*-300 ring-*-500/30`), link color. |
-| `components/tiered-alt/AltUi.tsx` | Alt primitives: card, tag, modal, narrative-with-citations, evidence links. |
+| `pages/TieredAltPage.tsx` | The alt page: two gray-900 section cards. Section 1 is the new-run form, section 2 the run history. The page owns all data state (runs list + 5s polling while anything runs, per-run report cache, start/expand handlers) and hands it to the two section components. |
+| `components/tiered-alt/AltRunForm.tsx` | Section 1: write-only fields (ticker / depth / capital / risk) whose choices land as removable pills below, plus the indigo Start pill. Nothing runs on change — only on Start. |
+| `components/tiered-alt/AltRunHistory.tsx` | Section 2: filters (ticker, date start/end, verdict, shares min/max) that apply the moment they're entered and show as pills; then the run rows (15 per page, ticker + date + verdict + shares) that expand inline into the full report. |
+| `components/tiered-alt/AltFields.tsx` | The write-only form controls: `AltSelect` (dropdown/suggestions), `AltCommitInput`/`AltTextField`/`AltPairField` (Enter-to-commit boxes), `AltPill`/`AltPillRow`. |
+| `components/tiered-alt/altStyles.ts` | The alt design tokens: badge recipes (`bg-*-500/20 text-*-300 ring-*-500/30`), pill tints per selection kind, status-dot colors, link color. |
+| `components/tiered-alt/AltUi.tsx` | Alt primitives: card, tag, modal, data-notes mark, narrative-with-citations, evidence links. |
 | `components/tiered-alt/AltResult.tsx` | The result skeleton — identical at every depth: final verdict hero → order size → tier 1 → tier 2 → tier 3 → dimensions. |
 | `components/tiered-alt/AltLevels.tsx` | Price levels: one big final number per level, the base→adjusted story in a single modal. |
 | `components/tiered-alt/AltDimensions.tsx` | The four data cards, alt-styled. |
