@@ -133,6 +133,24 @@ describe('AltResult', () => {
     ]);
   });
 
+  it('shows 0 shares (not a dash) when the run decided not to buy', () => {
+    const deep = makeDeepResult();
+    renderResult({
+      ...deep,
+      sizing: {
+        ...deep.sizing!,
+        shares: null,
+        shares_before_multiplier: null,
+        risk_multiplier: null,
+        reason_code: 'not_a_buy',
+        refusal_reason: "Sizing only applies when opening a position (direction is 'hold', not 'buy').",
+      },
+    });
+    const hero = screen.getByTestId('alt-order-size-shares').textContent ?? '';
+    expect(hero).toContain('0');
+    expect(hero).not.toContain('—');
+  });
+
   it('tucks data notes behind an exclamation mark that opens a plain-English modal', () => {
     const result = {
       ...makeV1Result(),

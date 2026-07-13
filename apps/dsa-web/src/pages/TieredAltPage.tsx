@@ -128,6 +128,17 @@ const TieredAltPage = () => {
         const run = await tieredApi.getRun(selectedTaskId);
         setSelectedResult(run.result);
         setSelectedError(run.result ? null : run.error);
+        // There is no server-side default capital/risk — but if the boxes
+        // are empty, offer what this run actually used so the numbers on
+        // screen and in the form agree.
+        const inputs = run.result?.sizing?.inputs;
+        if (inputs?.capital != null) {
+          setCapitalInput((prev) => prev || String(inputs.capital));
+        }
+        if (inputs?.risk_fraction != null) {
+          const pct = Number((inputs.risk_fraction * 100).toPrecision(12));
+          setRiskPctInput((prev) => prev || String(pct));
+        }
       } catch (error) {
         loadedDetailRef.current = null;
         setSelectedError(error instanceof Error ? error.message : String(error));

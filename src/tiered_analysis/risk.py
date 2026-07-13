@@ -64,6 +64,7 @@ The three risk reviews:
 You are the risk manager merging these reviews. Reply with JSON only:
 {{"stance": "buy" | "hold" | "sell",
  "size_multiplier": 0 | 0.5 | 1.0,
+ "confidence": 0.0 to 1.0,
  "stop_advice": "keep" | "tighten",
  "tightened_stop": null or a number strictly between the current stop and the entry,
  "summary": "one plain-language paragraph explaining the risk ruling",
@@ -91,6 +92,9 @@ class RiskVerdict:
     tightened_stop: Optional[float]
     summary: str
     key_risks: Tuple[AnchoredReason, ...] = ()
+    #: The judge's own 0-1 sureness about this ruling (mirrors the debate
+    #: judge); None when the LLM gave nothing usable.
+    confidence: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +110,7 @@ class RiskResult:
             verdict = {
                 "stance": self.verdict.stance.value,
                 "size_multiplier": self.verdict.size_multiplier,
+                "confidence": self.verdict.confidence,
                 "stop_advice": self.verdict.stop_advice,
                 "tightened_stop": self.verdict.tightened_stop,
                 "summary": self.verdict.summary,
@@ -212,6 +217,15 @@ class RiskEngine:
 
         warnings: List[str] = []
 
+        confidence = parsed.get("confidence")
+        if isinstance(confidence, (int, float)) and 0 <= confidence <= 1:
+            confidence = float(confidence)
+        else:
+            warnings.append(
+                f"risk judge confidence {confidence!r} unusable — dropped"
+            )
+            confidence = None
+
         stop_advice = str(parsed.get("stop_advice") or "").strip().lower()
         if stop_advice not in _STOP_ADVICE_VALUES:
             warnings.append(
@@ -264,5 +278,6 @@ class RiskEngine:
             tightened_stop=tightened_stop,
             summary=summary,
             key_risks=tuple(key_risks),
+            confidence=confidence,
         )
         return verdict, warnings

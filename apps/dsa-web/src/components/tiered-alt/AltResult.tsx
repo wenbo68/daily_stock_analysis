@@ -10,7 +10,7 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm } from '../tiered/terms';
-import { ALT_LINK, COVERAGE_TAG, DIRECTION_TAG } from './altStyles';
+import { ALT_LINK, DIRECTION_TAG } from './altStyles';
 import { AltCard, AltEvidenceRefs, AltNotesButton, AltTag } from './AltUi';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
@@ -85,8 +85,9 @@ interface AltOrderSizeProps {
   sizing: TieredSizing | null;
 }
 
-// Always rendered, whatever the depth or verdict: the share count is either
-// a number, 0, or a dash with the reason — never silently absent.
+// Always rendered, whatever the depth or verdict: the share count is a
+// number, or 0 when the run decided not to buy — never silently absent.
+// Only runs stored before sizing existed show a dash.
 const AltOrderSize = ({ sizing }: AltOrderSizeProps) => {
   const { t } = useUiLanguage();
   const isSized = sizing !== null && sizing.shares !== null;
@@ -102,7 +103,7 @@ const AltOrderSize = ({ sizing }: AltOrderSizeProps) => {
 
       <div className="mt-4 flex items-baseline gap-2" data-testid="alt-order-size-shares">
         <span className="text-4xl font-bold tabular-nums text-gray-300">
-          {isSized ? sizing.shares : '—'}
+          {sizing === null ? '—' : (sizing.shares ?? 0)}
         </span>
         <span className="text-xs text-gray-500">
           <HelpTerm label={t('tiered.sizing.shares')} helpKey="tiered.help.shares" />
@@ -189,6 +190,19 @@ const AltOrderSize = ({ sizing }: AltOrderSizeProps) => {
 
 // ---------- tier cards ----------
 
+// The unified per-tier "Score" chip: always 0-100, whatever scale the
+// backend spoke (tier 1 is already 0-100; the tier-2/3 judges report 0-1).
+const TierScore = ({ value, helpKey }: { value: number; helpKey: UiTextKey }) => {
+  const { t } = useUiLanguage();
+  return (
+    <span className="text-xs text-gray-500">
+      <HelpTerm label={t('tiered.score')} helpKey={helpKey} />
+      {': '}
+      <span className="tabular-nums text-gray-300">{Math.round(value)}</span>
+    </span>
+  );
+};
+
 interface TierHeaderProps {
   titleKey: UiTextKey;
   helpKey: UiTextKey;
@@ -197,6 +211,9 @@ interface TierHeaderProps {
   extra?: ReactNode;
 }
 
+// Coverage is signaled by the notes mark alone: nothing when the data was
+// complete, ⚠ when partial, a red X when unavailable — no Full/Partial
+// tag competing with the Buy/Hold/Sell one.
 const TierHeader = ({ titleKey, helpKey, section, notes, extra }: TierHeaderProps) => {
   const { t } = useUiLanguage();
   return (
@@ -207,16 +224,7 @@ const TierHeader = ({ titleKey, helpKey, section, notes, extra }: TierHeaderProp
       <AltTag tone={DIRECTION_TAG[section.direction]}>
         {t(`tiered.direction.${section.direction}` as UiTextKey)}
       </AltTag>
-      <HelpTerm
-        underline={false}
-        helpKey="tiered.help.coverage"
-        label={
-          <AltTag tone={COVERAGE_TAG[section.coverage]}>
-            {t(`tiered.coverage.${section.coverage}` as UiTextKey)}
-          </AltTag>
-        }
-      />
-      {notes ? <AltNotesButton notes={notes} /> : null}
+      <AltNotesButton notes={notes ?? []} coverage={section.coverage} />
       {extra}
     </div>
   );
@@ -239,11 +247,7 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
         notes={result.warnings}
         extra={
           result.score !== null ? (
-            <span className="text-xs text-gray-500">
-              <HelpTerm label={t('tiered.score')} helpKey="tiered.help.score" />
-              {': '}
-              <span className="tabular-nums text-gray-300">{result.score}</span>
-            </span>
+            <TierScore value={result.score} helpKey="tiered.help.score" />
           ) : null
         }
       />
@@ -251,23 +255,6 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
       <AltSectionLabel>{t('tiered.levels')}</AltSectionLabel>
       <AltLevels levels={result.levels} levelsDetail={result.levels_detail} citations={citations} />
       <p className="mt-2 text-xs text-gray-500">{t('tiered.levelsNote')}</p>
-
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-        {result.signal?.logged ? (
-          <>
-            <span className="text-emerald-300">
-              {t('tiered.signalSaved', { id: result.signal.signal_id ?? '—' })}
-            </span>
-            <Link to="/decision-signals" className={ALT_LINK}>
-              {t('tiered.viewSignals')}
-            </Link>
-          </>
-        ) : result.signal ? (
-          <span className="text-amber-300">
-            {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}
-          </span>
-        ) : null}
-      </div>
     </AltCard>
   );
 };
@@ -290,12 +277,8 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
         section={section}
         notes={section.warnings}
         extra={
-          section.confidence ? (
-            <span className="text-xs text-gray-500">
-              <HelpTerm label={t('tiered.debate.confidence')} helpKey="tiered.help.debateConfidence" />
-              {': '}
-              <span className="tabular-nums text-gray-300">{section.confidence}</span>
-            </span>
+          verdict?.confidence != null ? (
+            <TierScore value={verdict.confidence * 100} helpKey="tiered.help.judgeScore" />
           ) : null
         }
       />
@@ -404,6 +387,11 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
         helpKey="tiered.help.risk"
         section={section}
         notes={section.warnings}
+        extra={
+          verdict?.confidence != null ? (
+            <TierScore value={verdict.confidence * 100} helpKey="tiered.help.riskScore" />
+          ) : null
+        }
       />
 
       {verdict ? (
@@ -495,18 +483,34 @@ export const AltResult = ({ result }: AltResultProps) => {
       <AltTierOne result={result} citations={citations} />
       {result.tier2 ? <AltDebate section={result.tier2} citations={citations} /> : null}
       {result.tier3 ? <AltRisk section={result.tier3} citations={citations} /> : null}
-      {usage && usage.total.calls > 0 ? (
-        <p className="text-xs text-gray-600">
-          <HelpTerm
-            underline={false}
-            label={t('tiered.llmUsage', {
-              calls: usage.total.calls,
-              tokens: usage.total.prompt_tokens + usage.total.completion_tokens,
-            })}
-            helpKey="tiered.help.llmUsage"
-          />
-        </p>
-      ) : null}
+      <div className="flex flex-col gap-1 text-xs">
+        {result.signal?.logged ? (
+          <p className="flex flex-wrap items-center gap-x-3">
+            <span className="text-emerald-300">
+              {t('tiered.signalSaved', { id: result.signal.signal_id ?? '—' })}
+            </span>
+            <Link to="/decision-signals" className={ALT_LINK}>
+              {t('tiered.viewSignals')}
+            </Link>
+          </p>
+        ) : result.signal ? (
+          <p className="text-amber-300">
+            {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}
+          </p>
+        ) : null}
+        {usage && usage.total.calls > 0 ? (
+          <p className="text-gray-600">
+            <HelpTerm
+              underline={false}
+              label={t('tiered.llmUsage', {
+                calls: usage.total.calls,
+                tokens: usage.total.prompt_tokens + usage.total.completion_tokens,
+              })}
+              helpKey="tiered.help.llmUsage"
+            />
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 };

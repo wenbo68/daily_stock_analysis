@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleAlert, X } from 'lucide-react';
-import type { TieredCitation } from '../../api/tiered';
+import { CircleAlert, CircleX, X } from 'lucide-react';
+import type { TieredCitation, TieredCoverage } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
 import { jumpToMetric } from '../tiered/termHelpers';
@@ -88,20 +88,24 @@ export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) =>
 
 interface AltNotesButtonProps {
   notes: string[];
+  coverage?: TieredCoverage;
 }
 
-// Data notes live behind a small amber exclamation mark: clicking it opens
-// a modal listing each note in plain English (altWarningText.ts) with the
+// The card's only data-quality signal. Full data and nothing to report →
+// no mark at all. Something to report → a small amber exclamation mark
+// (or a red X when the data was entirely unavailable) that opens a modal
+// listing each note in plain English (altWarningText.ts) with the
 // original technical message underneath. Notes whose shape we don't
-// recognize render as-is rather than get a made-up gloss. No notes → no
-// mark at all.
-export const AltNotesButton = ({ notes }: AltNotesButtonProps) => {
+// recognize render as-is rather than get a made-up gloss.
+export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps) => {
   const { t } = useUiLanguage();
   const [isOpen, setIsOpen] = useState(false);
 
-  if (notes.length === 0) {
+  if (notes.length === 0 && coverage === 'full') {
     return null;
   }
+  const isUnavailable = coverage === 'unavailable';
+  const Icon = isUnavailable ? CircleX : CircleAlert;
   return (
     <>
       <button
@@ -109,13 +113,16 @@ export const AltNotesButton = ({ notes }: AltNotesButtonProps) => {
         data-testid="alt-notes-button"
         aria-label={t('tiered.dataNotes')}
         onClick={() => setIsOpen(true)}
-        className="inline-flex cursor-pointer items-center gap-1 rounded text-amber-300 hover:text-amber-200"
+        className={cn(
+          'inline-flex cursor-pointer items-center rounded',
+          isUnavailable ? 'text-red-300 hover:text-red-200' : 'text-amber-300 hover:text-amber-200',
+        )}
       >
-        <CircleAlert className="h-4 w-4" />
-        {notes.length > 1 ? <span className="text-xs font-semibold">{notes.length}</span> : null}
+        <Icon className="h-4 w-4" />
       </button>
       <AltModal isOpen={isOpen} title={t('tiered.dataNotes')} onClose={() => setIsOpen(false)}>
         <p className="mb-4 text-xs leading-relaxed text-gray-500">{t('tiered.dataNotesHint')}</p>
+        {notes.length === 0 ? <p className="text-sm text-amber-300">{t('tiered.note.none')}</p> : null}
         <ul className="flex flex-col gap-4">
           {notes.map((raw, index) => {
             const friendly = friendlyWarning(raw, t);

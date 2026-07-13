@@ -1,4 +1,4 @@
-import type { TieredDimension, TieredResult, TieredRunStatus } from '../../api/tiered';
+import type { TieredResult, TieredRunStatus } from '../../api/tiered';
 
 // showplayer badge recipe: soft tinted fill + matching inset ring, no border.
 export const TAG_BASE =
@@ -9,12 +9,6 @@ export const DIRECTION_TAG: Record<TieredResult['direction'], string> = {
   hold: 'bg-amber-500/20 text-amber-300 ring-amber-500/30',
   sell: 'bg-red-500/20 text-red-300 ring-red-500/30',
   unknown: 'bg-gray-500/20 text-gray-300 ring-gray-500/30',
-};
-
-export const COVERAGE_TAG: Record<TieredDimension['coverage'], string> = {
-  full: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30',
-  partial: 'bg-amber-500/20 text-amber-300 ring-amber-500/30',
-  unavailable: 'bg-red-500/20 text-red-300 ring-red-500/30',
 };
 
 export const STATUS_DOT: Record<TieredRunStatus, string> = {

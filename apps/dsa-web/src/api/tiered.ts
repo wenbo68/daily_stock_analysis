@@ -69,6 +69,9 @@ export type TieredRiskDetail = {
   verdict: {
     stance: string;
     size_multiplier: number;
+    // Absent on runs stored before the risk judge reported its own 0-1
+    // sureness; the UI hides the score for those.
+    confidence?: number | null;
     stop_advice: string;
     tightened_stop: number | null;
     summary: string;
@@ -76,6 +79,8 @@ export type TieredRiskDetail = {
   } | null;
   warnings: string[];
 };
+
+export type TieredCoverage = 'full' | 'partial' | 'unavailable';
 
 // The deepest tier's verdict in summary form — what the run ends on.
 export type TieredFinal = {

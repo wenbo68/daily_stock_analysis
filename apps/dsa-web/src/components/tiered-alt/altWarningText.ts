@@ -118,7 +118,7 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
   {
-    pattern: /^judge confidence .* unusable — dropped$/,
+    pattern: /^(?:risk )?judge confidence .* unusable — dropped$/,
     toText: (_m, t) => t('tiered.note.judgeConfidenceDropped'),
   },
   {

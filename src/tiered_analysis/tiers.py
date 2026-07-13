@@ -295,7 +295,9 @@ class Tier3Stage(TierStage):
             market=state.market,
             coverage=Coverage.FULL,
             direction=verdict.stance,
-            confidence=tier2.confidence,
+            confidence=(
+                f"{verdict.confidence:.2f}" if verdict.confidence is not None else None
+            ),
             score=tier2.score,
             levels=levels,
             narrative=verdict.summary or None,

@@ -58,6 +58,7 @@ def _judge_json(**overrides):
     body = {
         "stance": "buy",
         "size_multiplier": 0.5,
+        "confidence": 0.8,
         "stop_advice": "tighten",
         "tightened_stop": 92.0,
         "summary": "Take half the position; valuation risk argues for caution.",
@@ -107,10 +108,20 @@ class TestRiskEngine(unittest.TestCase):
         verdict = result.verdict
         self.assertEqual(verdict.stance, Direction.BUY)
         self.assertEqual(verdict.size_multiplier, 0.5)
+        self.assertAlmostEqual(verdict.confidence, 0.8)
         self.assertEqual(verdict.stop_advice, "tighten")
         self.assertAlmostEqual(verdict.tightened_stop, 92.0)
         self.assertIn("half the position", verdict.summary)
         self.assertEqual(result.warnings, [])
+
+    def test_unusable_confidence_dropped_with_warning(self):
+        # Mirrors the debate judge: a bad confidence never voids the verdict,
+        # it just disappears with a note.
+        for bad in (None, 1.4, "high"):
+            result, _ = _engine_run(judge_reply=_judge_json(confidence=bad))
+            self.assertIsNotNone(result.verdict)
+            self.assertIsNone(result.verdict.confidence)
+            self.assertTrue(any("confidence" in w for w in result.warnings))
 
     def test_multiplier_must_be_from_the_enum(self):
         self.assertEqual(SIZE_MULTIPLIERS, (0.0, 0.5, 1.0))

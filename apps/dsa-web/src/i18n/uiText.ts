@@ -827,6 +827,16 @@ const zh = {
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
   'tiered.dataNotesHint': '记录数据受限之处以及系统的替代做法——刻意保留，让你了解这份报告的数据有多扎实。',
+  'tiered.note.none': '这一部分没有可用数据，但没有记录更具体的原因。',
+  'tiered.group.trend': '价格与趋势',
+  'tiered.group.momentum': '动量',
+  'tiered.group.volatility': '波动与区间',
+  'tiered.group.meta': '数据与评分',
+  'tiered.group.reportInfo': '报告信息',
+  'tiered.group.other': '其他',
+  'tiered.dataSources': '数据来源',
+  'tiered.help.judgeScore': '辩论裁判 AI 对自己结论的把握，0-100，越高越有把握。',
+  'tiered.help.riskScore': '风险裁判 AI 对自己裁定（仓位倍数与止损建议）的把握，0-100，越高越有把握。',
   'tiered.note.textLevel': 'AI 把{level}写成了句子（“{text}”）而不是数字，因此该价位留空。',
   'tiered.note.levelsMissing': '第 1 层分析没有返回价格参考位。',
   'tiered.note.pageBlocked': '新闻网站 {domain} 拒绝加载全文，改用了搜索结果里较短的摘要。',
@@ -1820,6 +1830,19 @@ const en: Record<UiTextKey, string> = {
   'tiered.dataNotes': 'Data notes',
   'tiered.dataNotesHint':
     'Where data was limited and what the system did instead — kept visible on purpose so you know how solid this report is.',
+  'tiered.note.none':
+    'This section had no usable data, but no specific reason was recorded.',
+  'tiered.group.trend': 'Price & trend',
+  'tiered.group.momentum': 'Momentum',
+  'tiered.group.volatility': 'Volatility & range',
+  'tiered.group.meta': 'Data & score',
+  'tiered.group.reportInfo': 'Report info',
+  'tiered.group.other': 'Other',
+  'tiered.dataSources': 'Data sources',
+  'tiered.help.judgeScore':
+    'How sure the debate-judge AI is of its own ruling, 0–100 — higher = more sure.',
+  'tiered.help.riskScore':
+    'How sure the risk-judge AI is of its own ruling (the size multiplier and stop-loss advice), 0–100 — higher = more sure.',
   'tiered.note.textLevel':
     'The AI wrote the {level} as a sentence (“{text}”) instead of a number, so that price was left blank.',
   'tiered.note.levelsMissing': 'The tier-1 analysis didn’t return its price levels.',
