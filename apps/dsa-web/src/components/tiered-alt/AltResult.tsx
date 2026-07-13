@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ComponentProps, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   TieredCitation,
@@ -9,13 +9,18 @@ import type {
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { formatPrice, sentimentCitations } from '../tiered/termHelpers';
-import { HelpTerm } from '../tiered/terms';
+import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { ALT_LINK, DIRECTION_TAG } from './altStyles';
 import { AltCard, AltEvidenceRefs, AltNotesButton, AltTag } from './AltUi';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
 // ---------- small shared pieces ----------
+
+// Alt skin rule: help popups everywhere, dotted underlines nowhere.
+const HelpTerm = (props: ComponentProps<typeof BaseHelpTerm>) => (
+  <BaseHelpTerm underline={false} {...props} />
+);
 
 const AltSectionLabel = ({ children }: { children: ReactNode }) => (
   <div className="mb-1 text-xs font-semibold text-gray-500">{children}</div>
@@ -211,9 +216,10 @@ interface TierHeaderProps {
   extra?: ReactNode;
 }
 
-// Coverage is signaled by the notes mark alone: nothing when the data was
-// complete, ⚠ when partial, a red X when unavailable — no Full/Partial
-// tag competing with the Buy/Hold/Sell one.
+// Coverage is signaled by the notes mark alone, pinned to the card's
+// top-right corner: nothing when the data was complete, ⚠ when partial,
+// a red X when unavailable — no Full/Partial tag competing with the
+// Buy/Hold/Sell one.
 const TierHeader = ({ titleKey, helpKey, section, notes, extra }: TierHeaderProps) => {
   const { t } = useUiLanguage();
   return (
@@ -224,8 +230,10 @@ const TierHeader = ({ titleKey, helpKey, section, notes, extra }: TierHeaderProp
       <AltTag tone={DIRECTION_TAG[section.direction]}>
         {t(`tiered.direction.${section.direction}` as UiTextKey)}
       </AltTag>
-      <AltNotesButton notes={notes ?? []} coverage={section.coverage} />
       {extra}
+      <span className="ml-auto">
+        <AltNotesButton notes={notes ?? []} coverage={section.coverage} />
+      </span>
     </div>
   );
 };

@@ -9,9 +9,14 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { formatPrice, jumpToMetric } from '../tiered/termHelpers';
-import { HelpTerm, MetricTerm } from '../tiered/terms';
+import { HelpTerm as BaseHelpTerm, MetricTerm } from '../tiered/terms';
 import { ALT_LINK } from './altStyles';
 import { AltEvidenceRefs, AltModal } from './AltUi';
+
+// Alt skin rule: help popups everywhere, dotted underlines nowhere.
+const HelpTerm = (props: Parameters<typeof BaseHelpTerm>[0]) => (
+  <BaseHelpTerm underline={false} {...props} />
+);
 
 const LEVEL_ORDER = ['entry', 'secondary_entry', 'stop_loss', 'take_profit'] as const;
 type LevelKey = (typeof LEVEL_ORDER)[number];
@@ -73,11 +78,7 @@ const AltFormula = ({ formula, inputs, onNavigate }: AltFormulaProps) => {
             </button>
           );
         }
-        return (
-          <span key={index} className="border-b border-dotted border-gray-500">
-            {formatPrice(value)}
-          </span>
-        );
+        return <span key={index}>{formatPrice(value)}</span>;
       })}
     </code>
   );

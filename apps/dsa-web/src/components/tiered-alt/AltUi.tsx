@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleAlert, CircleX, X } from 'lucide-react';
+import { ChevronDown, CircleAlert, CircleX, X } from 'lucide-react';
 import type { TieredCitation, TieredCoverage } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
@@ -83,6 +83,122 @@ export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) =>
       </div>
     </div>,
     document.body,
+  );
+};
+
+export interface AltSelectOption {
+  value: string;
+  label: string;
+  node?: ReactNode;
+}
+
+interface AltSelectProps {
+  label: ReactNode;
+  options: AltSelectOption[];
+  value: string;
+  placeholder?: string;
+  inputMode?: 'decimal';
+  // 'select': the input filters the option list; the placeholder shows the
+  //   current choice. 'text': the input IS the value; the options are
+  //   suggestions that fill it on click.
+  mode: 'select' | 'text';
+  onSelect?: (value: string) => void;
+  onText?: (value: string) => void;
+}
+
+// The showplayer.net filter control: a label above a flat gray-800 text
+// row with a chevron, opening a flat dropdown panel underneath.
+export const AltSelect = ({
+  label,
+  options,
+  value,
+  placeholder,
+  inputMode,
+  mode,
+  onSelect,
+  onText,
+}: AltSelectProps) => {
+  const [written, setWritten] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        setWritten('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const isSelect = mode === 'select';
+  const selectedLabel = options.find((option) => option.value === value)?.label;
+  const shown = isSelect
+    ? options.filter((option) => option.label.toLowerCase().includes(written.toLowerCase()))
+    : options;
+
+  const pick = (option: AltSelectOption) => {
+    if (isSelect) {
+      onSelect?.(option.value);
+      setWritten('');
+    } else {
+      onText?.(option.value);
+    }
+    window.setTimeout(() => setIsOpen(false), 50);
+  };
+
+  return (
+    <div className="flex w-full flex-col gap-2">
+      <span className="font-semibold text-gray-300">{label}</span>
+      <div ref={containerRef} className="relative">
+        <div className="flex w-full items-center rounded bg-gray-800">
+          <input
+            type="text"
+            value={isSelect ? written : value}
+            inputMode={inputMode}
+            onFocus={() => setIsOpen(true)}
+            onChange={(event) => {
+              if (isSelect) {
+                setWritten(event.target.value);
+              } else {
+                onText?.(event.target.value);
+              }
+              setIsOpen(true);
+            }}
+            placeholder={isSelect ? (selectedLabel ?? placeholder) : placeholder}
+            aria-label={typeof label === 'string' ? label : undefined}
+            className="w-full bg-transparent pl-3 text-gray-300 placeholder-gray-500 outline-none"
+          />
+          <button
+            type="button"
+            aria-label="Toggle options"
+            onClick={() => setIsOpen(!isOpen)}
+            className="cursor-pointer p-2 text-gray-500 hover:text-gray-300"
+          >
+            <ChevronDown className="h-5 w-5" />
+          </button>
+        </div>
+        {isOpen && shown.length > 0 ? (
+          <div className="absolute top-full z-10 mt-2 flex max-h-96 w-full flex-col overflow-y-auto rounded bg-gray-800 p-2 text-xs font-semibold">
+            {shown.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => pick(option)}
+                className={cn(
+                  'w-full cursor-pointer rounded p-2 text-start hover:bg-gray-900 hover:text-blue-400',
+                  option.value === value ? 'text-blue-400' : '',
+                )}
+              >
+                {option.node ?? option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 };
 

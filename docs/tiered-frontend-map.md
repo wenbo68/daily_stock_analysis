@@ -75,7 +75,7 @@ so the two looks can be compared side by side. Same API, same data, same wording
 
 | File | What it is |
 |---|---|
-| `pages/TieredAltPage.tsx` | The alt page: form, history strip, result — all on a gray-900 canvas. |
+| `pages/TieredAltPage.tsx` | The alt page: a showplayer-style top bar (ticker field + indigo run button, dropdown selectors for depth / capital / risk / run history) with the result full-width below, all on a gray-900 canvas. |
 | `components/tiered-alt/altStyles.ts` | The alt design tokens: badge recipes (`bg-*-500/20 text-*-300 ring-*-500/30`), link color. |
 | `components/tiered-alt/AltUi.tsx` | Alt primitives: card, tag, modal, narrative-with-citations, evidence links. |
 | `components/tiered-alt/AltResult.tsx` | The result skeleton — identical at every depth: final verdict hero → order size → tier 1 → tier 2 → tier 3 → dimensions. |

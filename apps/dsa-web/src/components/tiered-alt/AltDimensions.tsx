@@ -173,7 +173,7 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
       ) : null}
 
       {uniqueCitations.length > 0 ? (
-        <div className="mt-3">
+        <div className="mt-3 border-t border-gray-700/60 pt-3">
           <div className="mb-1 text-xs font-semibold text-gray-500">
             {dimension.narrative ? t('tiered.citations') : t('tiered.dataSources')}
           </div>

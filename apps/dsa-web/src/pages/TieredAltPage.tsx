@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import {
   tieredApi,
   type TieredDepth,
@@ -7,6 +7,7 @@ import {
   type TieredSizingRequest,
 } from '../api/tiered';
 import { AltResult } from '../components/tiered-alt/AltResult';
+import { AltSelect } from '../components/tiered-alt/AltUi';
 import { STATUS_DOT } from '../components/tiered-alt/altStyles';
 import { HelpTerm } from '../components/tiered/terms';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
@@ -55,9 +56,6 @@ function storeNumber(key: string, value: string): void {
     // storage unavailable (private mode) — the run still works
   }
 }
-
-const inputClass =
-  'w-full rounded bg-gray-800 px-3 py-2 text-sm text-gray-300 placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500';
 
 // Alternate skin for tiered analysis, styled after showplayer.net: flat
 // gray-900 canvas, gray-800 surfaces, ring badges, blue accents, whitespace
@@ -196,141 +194,140 @@ const TieredAltPage = () => {
     handleSelect,
   ]);
 
+  const depthOptions = DEPTHS.map((value) => ({
+    value: String(value),
+    label: t(`tiered.depth.${value}` as UiTextKey),
+  }));
+
+  const historyOptions = runs.map((run) => ({
+    value: run.task_id,
+    label: `${run.stock_code} · ${formatTime(run.created_at, language)}`,
+    node: (
+      <span className="flex items-center gap-2">
+        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])} />
+        <span>{run.stock_code}</span>
+        <span className="ml-auto font-normal text-gray-500">
+          {formatTime(run.created_at, language)}
+        </span>
+      </span>
+    ),
+  }));
+
+  const capitalOptions = ['10000', '50000', '100000', '200000', '500000', '1000000'].map(
+    (value) => ({ value, label: value }),
+  );
+  const riskOptions = ['0.5', '1', '2'].map((value) => ({ value, label: `${value} %` }));
+
   return (
     <main className="mx-auto min-h-full w-full max-w-7xl px-4 pb-8 pt-4 md:px-6 lg:px-8">
       <div className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6 lg:p-8">
         <div className="flex w-full flex-col gap-6">
-          <header>
-            <h1 className="text-2xl font-bold text-gray-300">{t('tiered.alt.title')}</h1>
-            <p className="mt-1 text-sm text-gray-500">{t('tiered.alt.subtitle')}</p>
-          </header>
-
+          {/* showplayer.net top bar: a grid of labeled controls; the run
+              only starts on the indigo search button, never on change. */}
           <form
-            className="flex flex-col gap-4"
+            className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-3 sm:gap-3 md:gap-4 lg:grid-cols-5"
             onSubmit={(event) => {
               event.preventDefault();
               void handleRun();
             }}
           >
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="flex flex-1 items-center rounded bg-gray-800">
-                <span className="p-2 text-gray-500">
-                  <Search className="h-4 w-4" />
-                </span>
-                <input
-                  value={stockCode}
-                  onChange={(event) => setStockCode(event.target.value)}
-                  placeholder={t('tiered.inputPlaceholder')}
-                  aria-label={t('tiered.inputPlaceholder')}
-                  className="w-full bg-transparent py-2 pr-3 text-sm text-gray-300 placeholder-gray-500 outline-none"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!stockCode.trim() || submitting}
-                className="cursor-pointer rounded bg-blue-600 px-5 py-2 text-sm font-semibold text-gray-200 hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {t('tiered.run')}
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2" role="radiogroup" aria-label={t('tiered.depth.label')}>
-                <span className="text-xs font-semibold text-gray-300">
-                  <HelpTerm label={t('tiered.depth.label')} helpKey="tiered.help.depth" />
-                </span>
-                {DEPTHS.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={depth === value}
-                    disabled={submitting}
-                    onClick={() => setDepth(value)}
-                    className={cn(
-                      'cursor-pointer rounded px-3 py-1.5 text-xs font-semibold',
-                      depth === value
-                        ? 'bg-blue-600 text-gray-200'
-                        : 'bg-gray-800 text-gray-400 hover:text-gray-300',
-                    )}
-                  >
-                    {t(`tiered.depth.${value}` as UiTextKey)}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-gray-300">
-                  <HelpTerm label={t('tiered.sizingForm.title')} helpKey="tiered.help.sizingForm" />
-                </span>
-                <input
-                  value={capitalInput}
-                  onChange={(event) => setCapitalInput(event.target.value)}
-                  placeholder={t('tiered.sizingForm.capital')}
-                  aria-label={t('tiered.sizingForm.capital')}
-                  inputMode="decimal"
-                  className={cn(inputClass, 'w-40')}
-                />
-                <input
-                  value={riskPctInput}
-                  onChange={(event) => setRiskPctInput(event.target.value)}
-                  placeholder={t('tiered.sizingForm.riskPct')}
-                  aria-label={t('tiered.sizingForm.riskPct')}
-                  inputMode="decimal"
-                  className={cn(inputClass, 'w-40')}
-                />
+            <div className="col-span-2 flex w-full flex-col gap-2 sm:col-span-1">
+              <span className="font-semibold text-gray-300">{t('tiered.altForm.ticker')}</span>
+              <div className="flex w-full items-center gap-2">
+                <div className="flex w-full items-center rounded bg-gray-800">
+                  <input
+                    value={stockCode}
+                    onChange={(event) => setStockCode(event.target.value)}
+                    placeholder={t('tiered.inputPlaceholder')}
+                    aria-label={t('tiered.altForm.ticker')}
+                    className="w-full bg-transparent pl-3 text-gray-300 placeholder-gray-500 outline-none"
+                  />
+                  {stockCode ? (
+                    <button
+                      type="button"
+                      aria-label={t('tiered.altForm.clear')}
+                      onClick={() => setStockCode('')}
+                      className="cursor-pointer p-2 text-gray-500 hover:text-gray-300"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  ) : null}
+                </div>
+                <button
+                  type="submit"
+                  aria-label={t('tiered.run')}
+                  disabled={!stockCode.trim() || submitting}
+                  className="cursor-pointer rounded bg-indigo-600 p-2 text-gray-200 hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
               </div>
             </div>
 
-            {anyRunning ? <p className="text-sm text-gray-500">{t('tiered.running')}</p> : null}
-            {submitError ? <p className="text-sm text-red-300">{submitError}</p> : null}
+            <AltSelect
+              mode="select"
+              label={
+                <HelpTerm
+                  label={t('tiered.depth.label')}
+                  helpKey="tiered.help.depth"
+                  underline={false}
+                />
+              }
+              options={depthOptions}
+              value={String(depth)}
+              onSelect={(value) => setDepth(Number(value) as TieredDepth)}
+            />
+            <AltSelect
+              mode="text"
+              label={
+                <HelpTerm
+                  label={t('tiered.altForm.capital')}
+                  helpKey="tiered.help.sizingForm"
+                  underline={false}
+                />
+              }
+              options={capitalOptions}
+              value={capitalInput}
+              onText={setCapitalInput}
+              placeholder={t('tiered.sizingForm.capital')}
+              inputMode="decimal"
+            />
+            <AltSelect
+              mode="text"
+              label={
+                <HelpTerm
+                  label={t('tiered.altForm.risk')}
+                  helpKey="tiered.help.sizingForm"
+                  underline={false}
+                />
+              }
+              options={riskOptions}
+              value={riskPctInput}
+              onText={setRiskPctInput}
+              placeholder={t('tiered.sizingForm.riskPct')}
+              inputMode="decimal"
+            />
+            <AltSelect
+              mode="select"
+              label={t('tiered.history')}
+              options={historyOptions}
+              value={selectedTaskId ?? ''}
+              onSelect={handleSelect}
+              placeholder={t('tiered.empty')}
+            />
           </form>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[280px_1fr]">
-            <aside className="h-fit rounded-lg bg-gray-800 p-4">
-              <div className="text-xs font-semibold text-gray-300">{t('tiered.history')}</div>
-              <p className="mt-1 text-xs text-gray-500">{t('tiered.historyHint')}</p>
-              {runs.length === 0 ? (
-                <p className="mt-4 text-xs text-gray-500">{t('tiered.empty')}</p>
-              ) : (
-                <ul className="mt-3 flex flex-col gap-1">
-                  {runs.map((run) => (
-                    <li key={run.task_id}>
-                      <button
-                        type="button"
-                        onClick={() => handleSelect(run.task_id)}
-                        className={cn(
-                          'flex w-full cursor-pointer items-center gap-2 rounded px-2 py-2 text-left text-xs',
-                          run.task_id === selectedTaskId
-                            ? 'bg-gray-900/60 text-gray-200'
-                            : 'text-gray-400 hover:bg-gray-900/40 hover:text-gray-300',
-                        )}
-                      >
-                        <span
-                          className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])}
-                        />
-                        <span className="font-semibold">{run.stock_code}</span>
-                        <span className="ml-auto text-gray-500">
-                          {formatTime(run.created_at, language)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </aside>
+          {anyRunning ? <p className="text-sm text-gray-500">{t('tiered.running')}</p> : null}
+          {submitError ? <p className="text-sm text-red-300">{submitError}</p> : null}
+          {selectedError ? <p className="text-sm text-red-300">{selectedError}</p> : null}
 
-            <div>
-              {selectedError ? <p className="text-sm text-red-300">{selectedError}</p> : null}
-              {selectedResult ? (
-                <AltResult result={selectedResult} />
-              ) : !selectedError ? (
-                <p className="py-10 text-center text-sm text-gray-600">
-                  {selectedRun?.status === 'running' ? t('tiered.running') : t('tiered.empty')}
-                </p>
-              ) : null}
-            </div>
-          </div>
+          {selectedResult ? (
+            <AltResult result={selectedResult} />
+          ) : !selectedError ? (
+            <p className="py-10 text-center text-sm text-gray-600">
+              {selectedRun?.status === 'running' ? t('tiered.running') : t('tiered.empty')}
+            </p>
+          ) : null}
         </div>
       </div>
     </main>
