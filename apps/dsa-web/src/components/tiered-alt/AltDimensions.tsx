@@ -4,7 +4,7 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { dedupeCitations, formatValue, metricAnchorId } from '../tiered/termHelpers';
 import { HelpTerm, MetricTerm } from '../tiered/terms';
 import { ALT_LINK, COVERAGE_TAG } from './altStyles';
-import { AltCard, AltNarrative, AltNotes, AltTag } from './AltUi';
+import { AltCard, AltNarrative, AltNotesButton, AltTag } from './AltUi';
 
 const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
   technicals: 'tiered.dimension.technicals',
@@ -18,12 +18,22 @@ interface AltPayloadTableProps {
   payload: Record<string, unknown>;
 }
 
+function isGroup(values: unknown): values is Record<string, unknown> {
+  return values !== null && typeof values === 'object' && !Array.isArray(values);
+}
+
 // Rows keep the same anchor ids as the main page so evidence links and
-// formula inputs can scroll straight to their source here too.
-const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => (
+// formula inputs can scroll straight to their source here too. Plain
+// metrics render first and grouped ones (e.g. MACD's three numbers) last,
+// so a group heading never interrupts the flat list mid-card.
+const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
+  const entries = Object.entries(payload);
+  const ordered = [...entries.filter(([, v]) => !isGroup(v)), ...entries.filter(([, v]) => isGroup(v))];
+
+  return (
   <div className="flex flex-col gap-3">
-    {Object.entries(payload).map(([group, values]) => {
-      if (values !== null && typeof values === 'object' && !Array.isArray(values)) {
+    {ordered.map(([group, values]) => {
+      if (isGroup(values)) {
         return (
           <div key={group}>
             <div className="mb-1 text-xs font-semibold text-gray-500">
@@ -60,7 +70,8 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => (
       );
     })}
   </div>
-);
+  );
+};
 
 interface AltDimensionCardProps {
   dimension: TieredDimension;
@@ -77,15 +88,18 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
         <h3 className="font-semibold text-gray-300">
           {labelKey ? t(labelKey) : dimension.dimension}
         </h3>
-        <HelpTerm
-          underline={false}
-          helpKey="tiered.help.coverage"
-          label={
-            <AltTag tone={COVERAGE_TAG[dimension.coverage]}>
-              {t(`tiered.coverage.${dimension.coverage}` as UiTextKey)}
-            </AltTag>
-          }
-        />
+        <div className="flex items-center gap-2">
+          <AltNotesButton notes={dimension.warnings} />
+          <HelpTerm
+            underline={false}
+            helpKey="tiered.help.coverage"
+            label={
+              <AltTag tone={COVERAGE_TAG[dimension.coverage]}>
+                {t(`tiered.coverage.${dimension.coverage}` as UiTextKey)}
+              </AltTag>
+            }
+          />
+        </div>
       </div>
 
       {dimension.narrative ? (
@@ -123,18 +137,6 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
         </div>
       ) : null}
 
-      {dimension.warnings.length > 0 ? (
-        <div className="mt-3">
-          <div className="mb-1 text-xs font-semibold text-gray-500">
-            <HelpTerm
-              label={t('tiered.dataNotes')}
-              helpKey="tiered.dataNotesHint"
-              underline={false}
-            />
-          </div>
-          <AltNotes notes={dimension.warnings} />
-        </div>
-      ) : null}
     </AltCard>
   );
 };

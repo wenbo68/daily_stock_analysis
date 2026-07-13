@@ -827,10 +827,6 @@ const zh = {
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
   'tiered.dataNotesHint': '记录数据受限之处以及系统的替代做法——刻意保留，让你了解这份报告的数据有多扎实。',
-  'tiered.note.rawLabel': '原始技术信息',
-  'tiered.tier1.adviceLabel': 'AI 的原话建议',
-  'tiered.help.tier1Advice':
-    '基础分析 AI 自己写的操作建议原文（例如“观望”“持有观察”）。上方彩色标签是把这句话归一成“买入 / 持有 / 卖出”三类后的标准结果——两者说的是同一件事。',
   'tiered.note.textLevel': 'AI 把{level}写成了句子（“{text}”）而不是数字，因此该价位留空。',
   'tiered.note.levelsMissing': '第 1 层分析没有返回价格参考位。',
   'tiered.note.pageBlocked': '新闻网站 {domain} 拒绝加载全文，改用了搜索结果里较短的摘要。',
@@ -859,7 +855,8 @@ const zh = {
   'tiered.note.badSetting': '有一项仓位设置不是数字，已忽略。',
   'tiered.help.direction':
     'AI 对这只股票的总体判断。买入 = 建仓或加仓；持有 = 暂不动作、继续观察；卖出 = 减仓或离场。这里只给方向——买多少股（仓位管理）是 v2 功能。',
-  'tiered.help.score': '分析引擎根据技术指标计算的 0-100 分。分数越高，技术面越强。',
+  'tiered.help.score':
+    '基础分析 AI 自己给出的 0-100 信心分，越高越看多。这是 AI 的判断，不是公式——技术面报告里的“技术分”才是由固定公式算出来的。',
   'tiered.help.coverage':
     '底层数据的完整程度。完整 = 全部到位；部分 = 有缺口（见数据说明）；不可用 = 没有可用数据。',
   'tiered.help.narrative': 'AI 阅读下方四份维度报告后写出的结论。',
@@ -1823,10 +1820,6 @@ const en: Record<UiTextKey, string> = {
   'tiered.dataNotes': 'Data notes',
   'tiered.dataNotesHint':
     'Where data was limited and what the system did instead — kept visible on purpose so you know how solid this report is.',
-  'tiered.note.rawLabel': 'Original technical message',
-  'tiered.tier1.adviceLabel': 'The AI’s advice, in its own words',
-  'tiered.help.tier1Advice':
-    'The base-analysis AI’s operation advice exactly as it wrote it (e.g. “Watch”, “Hold and watch”). The colored tag above is the same call normalized into the three standard categories — Buy / Hold / Sell. They say the same thing in two forms.',
   'tiered.note.textLevel':
     'The AI wrote the {level} as a sentence (“{text}”) instead of a number, so that price was left blank.',
   'tiered.note.levelsMissing': 'The tier-1 analysis didn’t return its price levels.',
@@ -1871,7 +1864,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.help.direction':
     'The AI’s overall call for this stock. Buy = start or add to a position; Hold = do nothing new, keep watching; Sell = reduce or exit. Direction only — how many shares (position sizing) is a v2 feature.',
   'tiered.help.score':
-    'A 0–100 score the analysis engine computes from the technical indicators. Higher = a technically stronger setup.',
+    'A 0–100 conviction score the base AI assigns in its overall read — higher = more bullish. It is the AI’s judgment, not a formula. (The “Tech score” inside the technicals report IS computed by a fixed formula.)',
   'tiered.help.coverage':
     'How complete the underlying data was. Full = everything arrived; Partial = some gaps (see Data notes); Unavailable = nothing usable came back.',
   'tiered.help.narrative': 'The AI’s written conclusion after reading the four dimension reports below.',

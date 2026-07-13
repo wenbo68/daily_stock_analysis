@@ -223,7 +223,7 @@ const TieredAltPage = () => {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+            <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2" role="radiogroup" aria-label={t('tiered.depth.label')}>
                 <span className="text-xs font-semibold text-gray-300">
                   <HelpTerm label={t('tiered.depth.label')} helpKey="tiered.help.depth" />

@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   TieredCitation,
@@ -11,7 +11,7 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm } from '../tiered/terms';
 import { ALT_LINK, COVERAGE_TAG, DIRECTION_TAG } from './altStyles';
-import { AltCard, AltEvidenceRefs, AltNotes, AltTag } from './AltUi';
+import { AltCard, AltEvidenceRefs, AltNotesButton, AltTag } from './AltUi';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -20,21 +20,6 @@ import { AltLevels } from './AltLevels';
 const AltSectionLabel = ({ children }: { children: ReactNode }) => (
   <div className="mb-1 text-xs font-semibold text-gray-500">{children}</div>
 );
-
-const AltWarnings = ({ warnings }: { warnings: string[] }) => {
-  const { t } = useUiLanguage();
-  if (warnings.length === 0) {
-    return null;
-  }
-  return (
-    <div className="mt-4">
-      <AltSectionLabel>
-        <HelpTerm label={t('tiered.dataNotes')} helpKey="tiered.dataNotesHint" underline={false} />
-      </AltSectionLabel>
-      <AltNotes notes={warnings} />
-    </div>
-  );
-};
 
 const AltFold = ({ title, children }: { title: string; children: ReactNode }) => (
   <details className="mt-4 rounded bg-gray-900/60 px-4 py-3">
@@ -59,16 +44,6 @@ const AltFinalVerdict = ({ result }: AltFinalVerdictProps) => {
     levels: result.levels,
   };
 
-  const trail: { tier: number; direction: TieredResult['direction'] }[] = [
-    { tier: 1, direction: result.direction },
-  ];
-  if (result.tier2) {
-    trail.push({ tier: 2, direction: result.tier2.direction });
-  }
-  if (result.tier3) {
-    trail.push({ tier: 3, direction: result.tier3.direction });
-  }
-
   return (
     <header data-testid="alt-final-verdict">
       <div className="flex flex-wrap items-center gap-3">
@@ -90,22 +65,6 @@ const AltFinalVerdict = ({ result }: AltFinalVerdictProps) => {
           ? t('tiered.final.decidedBy1')
           : t('tiered.final.decidedBy', { tier: final.tier })}
       </p>
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
-        <span className="text-gray-500">
-          <HelpTerm label={t('tiered.final.trail')} helpKey="tiered.help.finalTrail" />:
-        </span>
-        {trail.map((step, index) => (
-          <Fragment key={step.tier}>
-            {index > 0 ? <span className="text-gray-600">→</span> : null}
-            <span className="flex items-center gap-1.5">
-              <span className="text-gray-500">{t(`tiered.trail.${step.tier}` as UiTextKey)}</span>
-              <AltTag tone={DIRECTION_TAG[step.direction]}>
-                {t(`tiered.direction.${step.direction}` as UiTextKey)}
-              </AltTag>
-            </span>
-          </Fragment>
-        ))}
-      </div>
     </header>
   );
 };
@@ -234,10 +193,11 @@ interface TierHeaderProps {
   titleKey: UiTextKey;
   helpKey: UiTextKey;
   section: Pick<TieredTierSection, 'direction' | 'coverage'>;
+  notes?: string[];
   extra?: ReactNode;
 }
 
-const TierHeader = ({ titleKey, helpKey, section, extra }: TierHeaderProps) => {
+const TierHeader = ({ titleKey, helpKey, section, notes, extra }: TierHeaderProps) => {
   const { t } = useUiLanguage();
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -256,6 +216,7 @@ const TierHeader = ({ titleKey, helpKey, section, extra }: TierHeaderProps) => {
           </AltTag>
         }
       />
+      {notes ? <AltNotesButton notes={notes} /> : null}
       {extra}
     </div>
   );
@@ -275,6 +236,7 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
         titleKey="tiered.tier1.title"
         helpKey="tiered.help.tier1"
         section={{ direction: result.direction, coverage: result.coverage }}
+        notes={result.warnings}
         extra={
           result.score !== null ? (
             <span className="text-xs text-gray-500">
@@ -285,19 +247,6 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
           ) : null
         }
       />
-
-      {result.narrative ? (
-        <div className="mb-4">
-          <AltSectionLabel>
-            <HelpTerm
-              label={t('tiered.tier1.adviceLabel')}
-              helpKey="tiered.help.tier1Advice"
-              underline={false}
-            />
-          </AltSectionLabel>
-          <p className="text-sm leading-relaxed">{result.narrative}</p>
-        </div>
-      ) : null}
 
       <AltSectionLabel>{t('tiered.levels')}</AltSectionLabel>
       <AltLevels levels={result.levels} levelsDetail={result.levels_detail} citations={citations} />
@@ -319,8 +268,6 @@ const AltTierOne = ({ result, citations }: AltTierOneProps) => {
           </span>
         ) : null}
       </div>
-
-      <AltWarnings warnings={result.warnings} />
     </AltCard>
   );
 };
@@ -341,6 +288,7 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
         titleKey="tiered.debate.title"
         helpKey="tiered.help.debate"
         section={section}
+        notes={section.warnings}
         extra={
           section.confidence ? (
             <span className="text-xs text-gray-500">
@@ -424,8 +372,6 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
           ))}
         </AltFold>
       ) : null}
-
-      <AltWarnings warnings={section.warnings} />
     </AltCard>
   );
 };
@@ -453,7 +399,12 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
 
   return (
     <AltCard testId="alt-tier3">
-      <TierHeader titleKey="tiered.risk.title" helpKey="tiered.help.risk" section={section} />
+      <TierHeader
+        titleKey="tiered.risk.title"
+        helpKey="tiered.help.risk"
+        section={section}
+        notes={section.warnings}
+      />
 
       {verdict ? (
         <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -518,8 +469,6 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
           ))}
         </AltFold>
       ) : null}
-
-      <AltWarnings warnings={section.warnings} />
     </AltCard>
   );
 };

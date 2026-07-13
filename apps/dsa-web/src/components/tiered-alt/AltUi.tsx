@@ -1,8 +1,7 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { CircleAlert, X } from 'lucide-react';
 import type { TieredCitation } from '../../api/tiered';
-import { Tooltip } from '../common';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
 import { jumpToMetric } from '../tiered/termHelpers';
@@ -87,48 +86,53 @@ export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) =>
   );
 };
 
-interface AltNotesProps {
+interface AltNotesButtonProps {
   notes: string[];
 }
 
-// Backend data notes, rewritten in plain English (altWarningText.ts).
-// Hover or tap a note to see the original technical message; notes whose
-// shape we don't recognize render as-is rather than get a made-up gloss.
-export const AltNotes = ({ notes }: AltNotesProps) => {
+// Data notes live behind a small amber exclamation mark: clicking it opens
+// a modal listing each note in plain English (altWarningText.ts) with the
+// original technical message underneath. Notes whose shape we don't
+// recognize render as-is rather than get a made-up gloss. No notes → no
+// mark at all.
+export const AltNotesButton = ({ notes }: AltNotesButtonProps) => {
   const { t } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
 
   if (notes.length === 0) {
     return null;
   }
   return (
-    <ul className="flex flex-col gap-1">
-      {notes.map((raw, index) => {
-        const friendly = friendlyWarning(raw, t);
-        return (
-          <li key={index} className="text-xs leading-relaxed text-amber-300">
-            {friendly ? (
-              <Tooltip
-                focusable
-                content={
-                  <span className="block max-w-[20rem] whitespace-normal">
-                    <span className="block font-semibold text-foreground">
-                      {t('tiered.note.rawLabel')}
-                    </span>
-                    <span className="mt-0.5 block font-mono text-[11px] text-secondary-text">
-                      {raw}
-                    </span>
+    <>
+      <button
+        type="button"
+        data-testid="alt-notes-button"
+        aria-label={t('tiered.dataNotes')}
+        onClick={() => setIsOpen(true)}
+        className="inline-flex cursor-pointer items-center gap-1 rounded text-amber-300 hover:text-amber-200"
+      >
+        <CircleAlert className="h-4 w-4" />
+        {notes.length > 1 ? <span className="text-xs font-semibold">{notes.length}</span> : null}
+      </button>
+      <AltModal isOpen={isOpen} title={t('tiered.dataNotes')} onClose={() => setIsOpen(false)}>
+        <p className="mb-4 text-xs leading-relaxed text-gray-500">{t('tiered.dataNotesHint')}</p>
+        <ul className="flex flex-col gap-4">
+          {notes.map((raw, index) => {
+            const friendly = friendlyWarning(raw, t);
+            return (
+              <li key={index} className="text-sm leading-relaxed">
+                <span className="text-amber-300">{friendly ?? raw}</span>
+                {friendly ? (
+                  <span className="mt-1 block font-mono text-[11px] leading-relaxed text-gray-500">
+                    {raw}
                   </span>
-                }
-              >
-                <span className="cursor-help">{friendly}</span>
-              </Tooltip>
-            ) : (
-              raw
-            )}
-          </li>
-        );
-      })}
-    </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      </AltModal>
+    </>
   );
 };
 

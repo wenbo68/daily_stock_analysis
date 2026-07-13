@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { TieredResult, TieredTierSection } from '../../../api/tiered';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
@@ -133,7 +133,7 @@ describe('AltResult', () => {
     ]);
   });
 
-  it('rewrites known data notes in plain English, keeping the raw text off-screen', () => {
+  it('tucks data notes behind an exclamation mark that opens a plain-English modal', () => {
     const result = {
       ...makeV1Result(),
       warnings: [
@@ -142,9 +142,11 @@ describe('AltResult', () => {
       ],
     };
     renderResult(result);
-    // Known shape → the friendly sentence, not the engineer-speak.
+    // Nothing inline — the notes only exist behind the mark.
+    expect(screen.queryByText(/left blank|留空/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('alt-notes-button'));
+    // Known shape → the friendly sentence (raw text shown beneath it).
     expect(screen.getByText(/left blank|留空/)).toBeInTheDocument();
-    expect(screen.queryByText(/unparseable sniper level/)).not.toBeInTheDocument();
     // Unknown shape → raw text unchanged (never an invented gloss).
     expect(
       screen.getByText('some brand-new warning shape the frontend has never seen'),
