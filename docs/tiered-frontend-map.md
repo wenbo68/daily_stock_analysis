@@ -92,7 +92,7 @@ Once one version wins, delete the loser (page + its components folder + its nav 
 ## 3. Where the words live
 
 ### `i18n/uiText.ts`
-**Every sentence on the page, in Chinese and English.** Two big lists keyed by names
+**Every sentence on the page, in Chinese and English.** Hover-help texts (`tiered.help.*`) follow a fixed style: concise, minimalist, and one sentence per line — sentences are separated by `\n` and the popup renders with `whitespace-pre-line`. Two big lists keyed by names
 like `tiered.sizing.title`; the `zh` block is around line 800, the matching `en`
 block around line 1750. To reword anything: search for the current text, change it
 in **both** blocks. Adding a new key: add it to `zh` first (that block defines the

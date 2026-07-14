@@ -112,7 +112,9 @@ export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps
         <Icon className="h-4 w-4" />
       </button>
       <AltModal isOpen={isOpen} title={t('tiered.dataNotes')} onClose={() => setIsOpen(false)}>
-        <p className="mb-4 text-xs leading-relaxed text-gray-500">{t('tiered.dataNotesHint')}</p>
+        <p className="mb-4 whitespace-pre-line text-xs leading-relaxed text-gray-500">
+          {t('tiered.dataNotesHint')}
+        </p>
         {notes.length === 0 ? <p className="text-sm text-amber-300">{t('tiered.note.none')}</p> : null}
         <ul className="flex flex-col gap-4">
           {notes.map((raw, index) => {

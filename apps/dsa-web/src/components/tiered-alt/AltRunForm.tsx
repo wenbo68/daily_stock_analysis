@@ -110,7 +110,7 @@ export const AltRunForm = ({
                   ? t('tiered.altForm.capitalCurrency', { currency })
                   : t('tiered.altForm.capital')
               }
-              helpKey="tiered.help.sizingForm"
+              helpKey="tiered.help.capital"
               underline={false}
             />
           }
@@ -126,7 +126,7 @@ export const AltRunForm = ({
           label={
             <HelpTerm
               label={t('tiered.altForm.risk')}
-              helpKey="tiered.help.sizingForm"
+              helpKey="tiered.help.riskPct"
               underline={false}
             />
           }

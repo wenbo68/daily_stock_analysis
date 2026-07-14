@@ -826,7 +826,7 @@ const zh = {
   'tiered.citations': '参考来源（编号对应正文中的 [n] 标注）',
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
-  'tiered.dataNotesHint': '记录数据受限之处以及系统的替代做法——刻意保留，让你了解这份报告的数据有多扎实。',
+  'tiered.dataNotesHint': '记录数据受限之处，以及系统的替代做法。\n保留展示，让你判断这份报告有多扎实。',
   'tiered.note.none': '这一部分没有可用数据，但没有记录更具体的原因。',
   'tiered.group.trend': '价格与趋势',
   'tiered.group.momentum': '动量',
@@ -835,8 +835,8 @@ const zh = {
   'tiered.group.reportInfo': '报告信息',
   'tiered.group.other': '其他',
   'tiered.dataSources': '数据来源',
-  'tiered.help.judgeScore': '辩论裁判 AI 对自己结论的把握，0-100，越高越有把握。',
-  'tiered.help.riskScore': '风险裁判 AI 对自己裁定（仓位倍数与止损建议）的把握，0-100，越高越有把握。',
+  'tiered.help.judgeScore': '辩论裁判对自己结论的把握，0-100。\n越高越有把握。',
+  'tiered.help.riskScore': '风险裁判对自己结论的把握，0-100。\n越高越有把握。',
   'tiered.note.textLevel': 'AI 把{level}写成了句子（“{text}”）而不是数字，因此该价位留空。',
   'tiered.note.levelsMissing': '第 1 层分析没有返回价格参考位。',
   'tiered.note.pageBlocked': '新闻网站 {domain} 拒绝加载全文，改用了搜索结果里较短的摘要。',
@@ -866,14 +866,14 @@ const zh = {
   'tiered.help.direction':
     'AI 对这只股票的总体判断。买入 = 建仓或加仓；持有 = 暂不动作、继续观察；卖出 = 减仓或离场。这里只给方向——买多少股（仓位管理）是 v2 功能。',
   'tiered.help.score':
-    '基础分析 AI 自己给出的 0-100 信心分，越高越看多。这是 AI 的判断，不是公式——技术面报告里的“技术分”才是由固定公式算出来的。',
+    '层级 1 AI 的信心分，0-100。\n越高越看多。\n这是 AI 的判断，不是公式——技术面卡片里的“技术评分”才是公式算出来的。',
   'tiered.help.coverage':
     '底层数据的完整程度。完整 = 全部到位；部分 = 有缺口（见数据说明）；不可用 = 没有可用数据。',
   'tiered.help.narrative': 'AI 阅读下方四份维度报告后写出的结论。',
-  'tiered.help.entry': '理想买入价——分析认为最合适的进场位，通常靠近支撑位（此前买盘出现过的价位）。',
-  'tiered.help.secondaryEntry': '次优买入价——更低的备用进场位，以防价格先继续下探。',
-  'tiered.help.stopLoss': '止损位——价格跌到这里说明判断错了，在此卖出可控制亏损。',
-  'tiered.help.takeProfit': '目标位——分析建议在此卖出、锁定收益的价位。',
+  'tiered.help.entry': '理想买入价。\n通常靠近支撑位——此前买盘出现过的价位。',
+  'tiered.help.secondaryEntry': '备用买入价。\n更低的进场位，以防价格先继续下探。',
+  'tiered.help.stopLoss': '止损位。\n跌到这里说明判断错了——在此卖出可控制亏损。',
+  'tiered.help.takeProfit': '目标位。\n分析建议在此卖出、锁定收益。',
   'tiered.signalSaved': '已记录到 AI 建议（信号 #{id}）',
   'tiered.signalSkipped': '未记录：{reason}',
   'tiered.viewSignals': '查看 AI 建议列表',
@@ -889,7 +889,7 @@ const zh = {
   'tiered.depth.2': '+ 多空辩论',
   'tiered.depth.3': '+ 风险压力测试',
   'tiered.help.depth':
-    '层级 1 = 四维数据 + 一次 AI 结论。层级 2 再让两个 AI 分别唱多、唱空，由裁判 AI 复核结论。层级 3 再加三个风险审查 AI 给出仓位倍数。层级越高 = AI 调用越多 = 更慢也更花钱（层级 3 运行约几分钱）。',
+    '层级 1：四份数据报告加一次 AI 结论。\n层级 2：加一场多空立场辩论。\n层级 3：再加一场风险辩论，给出仓位倍数。\n层级越高，AI 调用越多、越慢。',
   'tiered.final.title': '最终结论',
   'tiered.help.finalVerdict': '经过所选最深一层复核后的方向，也是记入 AI 建议台账的那条结论。',
   'tiered.final.decidedBy': '由第 {tier} 层复核得出',
@@ -902,10 +902,10 @@ const zh = {
   'tiered.trail.3': '第 3 层 风险测试',
   'tiered.tier1.title': '第 1 层 · 基础分析',
   'tiered.help.tier1':
-    '四个维度的数据（技术面 / 基本面 / 宏观 / 新闻情绪）加一次 AI 综合结论；价格参考位由公式计算、AI 只能有限调整。',
+    '第一个结论——一个 AI 读完上方四份报告后给出判断。\n下方价位由固定公式算出，AI 只能小幅调整。',
   'tiered.llmUsage': '本次运行 AI 调用 {calls} 次（约 {tokens} tokens）',
   'tiered.help.llmUsage':
-    '本次运行中分层分析自身发起的 AI 调用次数与 token（计费单位，约等于词的碎片）总量。第 1 层的综合结论由产品内置流程完成，不计入此数。',
+    '本次运行发起的 AI 调用次数与 token 总量（token 是计费单位）。\n层级 1 的结论由产品内置流程完成，不计入。',
   'tiered.sizingForm.title': '你的本金与风险（输入，可选）',
   'tiered.sizingForm.capital': '本金，如 100000',
   'tiered.sizingForm.riskPct': '单笔风险 %，如 1',
@@ -932,30 +932,30 @@ const zh = {
   'tiered.levelModal.rejectedNote': '该调整未通过程序校验，已被拒绝——实际使用公式基准价。',
   'tiered.debate.title': '第 2 层 · 多空辩论',
   'tiered.help.debate':
-    '一个 AI 只找看多的理由（多方），另一个只找看空的理由（空方），双方只能引用已采集的证据；裁判 AI 权衡后给出复核结论。',
+    '一个 AI 唱多，另一个唱空。\n裁判权衡双方后给出本结论。\n三者都只能引用四份报告里的证据。',
   'tiered.debate.confidence': '裁判信心',
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
   'tiered.debate.reasonsAgainst': '看空理由',
   'tiered.debate.noVerdict': '辩论未产生可用结论——方向沿用第 1 层（详见数据说明）。',
   'tiered.debate.wouldChangeMind': '什么会改变结论',
-  'tiered.help.wouldChangeMind': '裁判 AI 自述：出现什么新证据时它会改变这次结论。',
+  'tiered.help.wouldChangeMind': '裁判自述：出现什么新证据会推翻这次结论。',
   'tiered.debate.transcript': '辩论记录',
   'tiered.debate.bull': '多方',
   'tiered.debate.bear': '空方',
   'tiered.debate.round': '第 {round} 轮',
   'tiered.risk.title': '第 3 层 · 风险压力测试',
   'tiered.help.risk':
-    '三个风险审查 AI（保守 / 激进 / 中立）分别挑剔第 2 层的结论，风险裁判 AI 汇总成最终立场、仓位倍数和止损建议。倍数由程序应用到仓位计算，AI 无法直接改数字。',
+    '三个风险审查者——保守、激进、中立——分别挑剔层级 2 的结论。\n风险裁判汇总成本结论、仓位倍数和止损。',
   'tiered.risk.multiplier': '仓位倍数',
   'tiered.help.multiplier':
-    '对公式算出的股数打的折扣，只有三档：1 = 全仓执行，0.5 = 减半，0 = 方向成立但现在不开仓。',
+    '风险裁判对公式股数打的折扣。\n1 = 全仓，0.5 = 减半，0 = 现在不开仓。\n由程序在股数计算中应用。',
   'tiered.risk.multiplier.zero': '方向成立，但现在不开仓',
   'tiered.risk.multiplier.half': '半仓',
   'tiered.risk.multiplier.full': '全量',
   'tiered.risk.stopAdvice': '止损建议',
   'tiered.help.stopAdvice':
-    '风险裁判对止损位的意见：维持，或收紧到一个更靠近入场价的位置（收紧值经程序校验，必须介于原止损和入场价之间）。',
+    '“维持” = 沿用上方算出的止损。\n给出价格 = 裁判把止损收紧到该价位，股数计算采用这个值。',
   'tiered.risk.stopAdvice.keep': '维持',
   'tiered.risk.stopAdvice.tighten': '收紧',
   'tiered.risk.noVerdict': '压力测试未产生可用结论——沿用第 2 层输出（详见数据说明）。',
@@ -966,7 +966,7 @@ const zh = {
   'tiered.risk.persona.neutral': '中立方',
   'tiered.sizing.title': '建议下单量（计算结果）',
   'tiered.help.sizing':
-    '由固定公式计算：可亏金额（本金 × 单笔风险%）÷ 每股潜在亏损（入场价 − 止损价，含手续费），再套用单一持仓上限（默认本金的 25%）。全程无 AI 参与。',
+    '固定算术，无 AI 参与。\n每个数字都能点击跳到它在本报告中出现的位置。\n结果向下取整为整数股，单只股票最多占用本金的 25%。',
   'tiered.sizing.subtitle':
     '这张卡是输出，不是你的输入：程序拿你在运行区填的本金和单笔风险，结合本次的止损价算出股数；层级 3 时还会乘以风险裁判的仓位倍数。',
   'tiered.sizing.offExplainer': '仓位计算未开启：还没有填写本金和单笔风险比例，所以本次报告不给出股数。',
@@ -1057,6 +1057,8 @@ const zh = {
   'tiered.alt.levels.adjusted': '调整值',
   'tiered.alt.levels.keep': '不变',
   'tiered.alt.signalSaved': '已记录到 AI 建议 #{id}',
+  'tiered.help.capital': '你的交易本金，货币跟随股票所在市场。\n股数计算以它为起点。\n会记住，供下次运行使用。',
+  'tiered.help.riskPct': '单笔交易你最多接受亏掉本金的百分之几。\n常见为 1-2%。',
 } as const;
 
 export type UiTextKey = keyof typeof zh;
@@ -1888,7 +1890,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.warnings': 'Warnings',
   'tiered.dataNotes': 'Data notes',
   'tiered.dataNotesHint':
-    'Where data was limited and what the system did instead — kept visible on purpose so you know how solid this report is.',
+    'Where data fell short, and what the system did instead.\nShown so you can judge how solid this report is.',
   'tiered.note.none':
     'This section had no usable data, but no specific reason was recorded.',
   'tiered.group.trend': 'Price & trend',
@@ -1899,9 +1901,9 @@ const en: Record<UiTextKey, string> = {
   'tiered.group.other': 'Other',
   'tiered.dataSources': 'Data sources',
   'tiered.help.judgeScore':
-    'How sure the debate-judge AI is of its own ruling, 0–100 — higher = more sure.',
+    'How sure the debate judge is of its ruling, 0–100.\nHigher = more sure.',
   'tiered.help.riskScore':
-    'How sure the risk-judge AI is of its own ruling (the size multiplier and stop-loss advice), 0–100 — higher = more sure.',
+    'How sure the risk judge is of its ruling, 0–100.\nHigher = more sure.',
   'tiered.note.textLevel':
     'The AI wrote the {level} as a sentence (“{text}”) instead of a number, so that price was left blank.',
   'tiered.note.levelsMissing': 'The tier-1 analysis didn’t return its price levels.',
@@ -1946,17 +1948,17 @@ const en: Record<UiTextKey, string> = {
   'tiered.help.direction':
     'The AI’s overall call for this stock. Buy = start or add to a position; Hold = do nothing new, keep watching; Sell = reduce or exit. Direction only — how many shares (position sizing) is a v2 feature.',
   'tiered.help.score':
-    'A 0–100 conviction score the base AI assigns in its overall read — higher = more bullish. It is the AI’s judgment, not a formula. (The “Tech score” inside the technicals report IS computed by a fixed formula.)',
+    'The tier-1 AI’s conviction, 0–100.\nHigher = more bullish.\nJudgment, not a formula — the Tech score on the technicals card is the computed one.',
   'tiered.help.coverage':
     'How complete the underlying data was. Full = everything arrived; Partial = some gaps (see Data notes); Unavailable = nothing usable came back.',
   'tiered.help.narrative': 'The AI’s written conclusion after reading the four dimension reports below.',
   'tiered.help.entry':
-    'Ideal buy price — where the analysis sees the best entry, usually near a support level (a price where buyers stepped in before).',
+    'Ideal buy price.\nUsually near a support level — a price where buyers stepped in before.',
   'tiered.help.secondaryEntry':
-    'Backup buy price — a second, lower entry in case the price dips further before rebounding.',
+    'Backup buy price.\nA lower entry in case the price dips further first.',
   'tiered.help.stopLoss':
-    'Safety exit — if the price falls to this level the idea is considered wrong; selling here caps the loss.',
-  'tiered.help.takeProfit': 'Profit target — where the analysis suggests selling to lock in gains.',
+    'Safety exit.\nA fall to here means the idea was wrong — selling caps the loss.',
+  'tiered.help.takeProfit': 'Profit target.\nWhere the analysis suggests selling to lock in gains.',
   'tiered.signalSaved': 'Recorded to AI signals (signal #{id})',
   'tiered.signalSkipped': 'Not recorded: {reason}',
   'tiered.viewSignals': 'View AI signals',
@@ -1972,7 +1974,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.depth.2': '+ Debate',
   'tiered.depth.3': '+ Risk stress test',
   'tiered.help.depth':
-    'Tier 1 = four-dimension data + one AI verdict. Tier 2 adds two AIs arguing the bull and bear case with a judge re-checking the verdict. Tier 3 adds three AI risk reviewers and a position-size multiplier. Higher tier = more AI calls = slower and slightly costlier (a tier-3 run costs a few cents).',
+    'Tier 1: the four data reports plus one AI verdict.\nTier 2: adds the bull/bear position debate.\nTier 3: adds the risk debate, which sets the size multiplier.\nHigher tiers make more AI calls and run slower.',
   'tiered.final.title': 'Final verdict',
   'tiered.help.finalVerdict':
     'The direction after the deepest review you selected — this is the call recorded in the AI-signals ledger.',
@@ -1986,10 +1988,10 @@ const en: Record<UiTextKey, string> = {
   'tiered.trail.3': 'Tier 3 risk test',
   'tiered.tier1.title': 'Tier 1 · Base analysis',
   'tiered.help.tier1':
-    'The four data dimensions (technicals / fundamentals / macro / news sentiment) plus one AI synthesis; price levels come from formulas, with only bounded AI adjustment.',
+    'The first verdict — one AI reads the four reports above and makes the call.\nThe price levels below are computed by fixed formulas; the AI may only nudge them within limits.',
   'tiered.llmUsage': 'This run used {calls} AI calls (~{tokens} tokens)',
   'tiered.help.llmUsage':
-    'AI calls made by tiered analysis itself during this run, with the total tokens (the billing unit — roughly word fragments). The tier-1 synthesis runs inside the product’s built-in flow and is not counted here.',
+    'AI calls this run made, and their total tokens (the billing unit).\nThe tier-1 verdict runs in the product’s built-in flow and is not counted.',
   'tiered.sizingForm.title': 'Your capital & risk (input, optional)',
   'tiered.sizingForm.capital': 'Capital, e.g. 100000',
   'tiered.sizingForm.riskPct': 'Risk per trade %, e.g. 1',
@@ -2020,7 +2022,7 @@ const en: Record<UiTextKey, string> = {
     'This proposal failed the code-side safety checks and was rejected — the formula base is used instead.',
   'tiered.debate.title': 'Tier 2 · Bull/bear debate',
   'tiered.help.debate':
-    'One AI argues only the case FOR the stock (the bull), another only the case AGAINST (the bear); both may cite only the evidence already collected. A judge AI weighs the arguments and issues the reviewed verdict.',
+    'One AI argues for the stock, another argues against it.\nA judge weighs both sides and issues this verdict.\nAll of them may cite only the evidence in the four reports.',
   'tiered.debate.confidence': 'Judge confidence',
   'tiered.help.debateConfidence':
     'How sure the judge AI is of its own verdict, from 0 to 1 — higher means more confident.',
@@ -2030,23 +2032,23 @@ const en: Record<UiTextKey, string> = {
     'The debate produced no usable verdict — the direction falls back to tier 1 (see Data notes).',
   'tiered.debate.wouldChangeMind': 'What would change the verdict',
   'tiered.help.wouldChangeMind':
-    'The judge AI’s own statement of what new evidence would make it change this call.',
+    'The judge’s own answer: what new evidence would overturn this verdict.',
   'tiered.debate.transcript': 'Debate transcript',
   'tiered.debate.bull': 'Bull',
   'tiered.debate.bear': 'Bear',
   'tiered.debate.round': 'round {round}',
   'tiered.risk.title': 'Tier 3 · Risk stress test',
   'tiered.help.risk':
-    'Three AI risk reviewers (conservative / aggressive / neutral) each poke at the tier-2 verdict; a risk judge merges them into a final stance, a position-size multiplier, and stop-loss advice. The multiplier is applied by code in the sizing card — the AI never edits numbers directly.',
+    'Three risk reviewers — conservative, aggressive, neutral — critique the tier-2 verdict.\nA risk judge merges them into this verdict, the size and the stop loss.',
   'tiered.risk.multiplier': 'Size multiplier',
   'tiered.help.multiplier':
-    'A discount applied to the computed share count. Only three values exist: 1 = take the full computed position, 0.5 = take half, 0 = the direction stands but do not open a position now.',
+    'The risk judge’s discount on the computed share count.\n1 = full position, 0.5 = half, 0 = do not open now.\nCode applies it in the shares computation.',
   'tiered.risk.multiplier.zero': 'direction stands, but do not open now',
   'tiered.risk.multiplier.half': 'half position',
   'tiered.risk.multiplier.full': 'full position',
   'tiered.risk.stopAdvice': 'Stop-loss advice',
   'tiered.help.stopAdvice':
-    'The risk judge’s view on the stop-loss: keep it, or tighten it to a level closer to the entry (a tightened value is code-checked to sit strictly between the current stop and the entry).',
+    '“keep” = the stop loss stands as computed above.\nA price = the judge tightened the stop to it, and the shares computation uses that value.',
   'tiered.risk.stopAdvice.keep': 'keep',
   'tiered.risk.stopAdvice.tighten': 'tighten',
   'tiered.risk.noVerdict':
@@ -2058,7 +2060,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.risk.persona.neutral': 'Neutral',
   'tiered.sizing.title': 'Suggested order size (computed result)',
   'tiered.help.sizing':
-    'Computed by a fixed formula, never by AI: the money you accept losing (capital × risk per trade) divided by the loss per share if the stop is hit (entry − stop, fees included), then capped so one stock never exceeds a set share of your capital (default 25%).',
+    'Fixed arithmetic, no AI.\nEvery number links to where it appears in this report.\nThe result is rounded down to whole shares, and one stock may use at most 25% of capital.',
   'tiered.sizing.subtitle':
     'This card is output, not your input: code takes the capital and risk you entered in the run form, combines them with this run’s stop-loss to compute a share count, and on tier-3 runs multiplies by the risk judge’s size multiplier.',
   'tiered.sizing.offExplainer':
@@ -2165,6 +2167,10 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.levels.adjusted': 'Adjusted',
   'tiered.alt.levels.keep': 'keep',
   'tiered.alt.signalSaved': 'Recorded to AI signals #{id}',
+  'tiered.help.capital':
+    'The money you trade with, in the ticker’s own currency.\nThe shares computation starts from it.\nRemembered for your next run.',
+  'tiered.help.riskPct':
+    'The most you accept losing on one trade, as a percent of capital.\n1–2% is common.',
 };
 
 export const UI_TEXT: Record<UiLanguage, Record<UiTextKey, string>> = {

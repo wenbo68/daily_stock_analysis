@@ -22,7 +22,7 @@ const en: Record<string, MetricEntry> = {
   },
   sma_20: {
     short: 'SMA 20',
-    full: '20-day simple moving average — the average closing price over the last 20 trading days. Smooths out daily noise to show the short-term trend.',
+    full: '20-day simple moving average — the average closing price over the last 20 trading days.\nSmooths out daily noise to show the short-term trend.',
   },
   sma_60: {
     short: 'SMA 60',
@@ -38,7 +38,7 @@ const en: Record<string, MetricEntry> = {
   },
   rsi_14: {
     short: 'RSI 14',
-    full: 'Relative Strength Index over 14 days — a momentum gauge from 0 to 100. Above 70 usually means overheated (price may pull back); below 30 means oversold (price may bounce).',
+    full: 'Relative Strength Index over 14 days — a momentum gauge from 0 to 100.\nAbove 70 usually means overheated (price may pull back); below 30 means oversold (price may bounce).',
   },
   macd: {
     short: 'MACD',
@@ -46,23 +46,23 @@ const en: Record<string, MetricEntry> = {
   },
   signal: {
     short: 'Signal',
-    full: 'The signal line — an average of the MACD line. The MACD line crossing above or below it is a common buy/sell trigger.',
+    full: 'The signal line — an average of the MACD line.\nThe MACD line crossing above or below it is a common buy/sell trigger.',
   },
   histogram: {
     short: 'Histogram',
-    full: 'MACD line minus signal line. Positive and growing = upward momentum building; negative = fading.',
+    full: 'MACD line minus signal line.\nPositive and growing = upward momentum building; negative = fading.',
   },
   atr_14: {
     short: 'ATR 14',
-    full: 'Average True Range over 14 days — the typical daily price swing in dollars. A volatility measure often used to place stop-loss levels.',
+    full: 'Average True Range over 14 days — the typical daily price swing in dollars.\nA volatility measure often used to place stop-loss levels.',
   },
   swing_low_20: {
     short: 'Swing low 20',
-    full: 'The lowest price actually traded during the last 20 trading days — a floor the market has already defended once. Used as a support anchor for the entry levels.',
+    full: 'The lowest price actually traded during the last 20 trading days — a floor the market has already defended once.\nUsed as a support anchor for the entry levels.',
   },
   bias_20: {
     short: 'Bias 20',
-    full: 'How far the price sits above or below its own 20-day average, in %. Stretched values tend to snap back.',
+    full: 'How far the price sits above or below its own 20-day average, in %.\nStretched values tend to snap back.',
   },
   score: {
     short: 'Tech score',
@@ -104,7 +104,7 @@ const en: Record<string, MetricEntry> = {
   },
   roe_pct: {
     short: 'ROE %',
-    full: 'Return on Equity — profit as a % of shareholders’ money. Measures how efficiently the company uses investor capital.',
+    full: 'Return on Equity — profit as a % of shareholders’ money.\nMeasures how efficiently the company uses investor capital.',
   },
   balance_sheet: {
     short: 'Balance sheet',
@@ -112,11 +112,11 @@ const en: Record<string, MetricEntry> = {
   },
   current_ratio: {
     short: 'Current ratio',
-    full: 'Short-term assets ÷ short-term debts. Above 1 means the company can cover its near-term bills.',
+    full: 'Short-term assets ÷ short-term debts.\nAbove 1 means the company can cover its near-term bills.',
   },
   debt_to_equity: {
     short: 'Debt/Equity',
-    full: 'Total debts ÷ shareholders’ money. Lower generally means safer.',
+    full: 'Total debts ÷ shareholders’ money.\nLower generally means safer.',
   },
   cash: {
     short: 'Cash',
@@ -144,7 +144,7 @@ const en: Record<string, MetricEntry> = {
   },
   pe_ttm: {
     short: 'P/E (TTM)',
-    full: 'Price-to-Earnings — share price ÷ the last 12 months’ earnings (Trailing Twelve Months). Higher = the market pays more per dollar of profit.',
+    full: 'Price-to-Earnings — share price ÷ the last 12 months’ earnings (Trailing Twelve Months).\nHigher = the market pays more per dollar of profit.',
   },
   pe_forward: {
     short: 'Forward P/E',
@@ -178,7 +178,7 @@ const en: Record<string, MetricEntry> = {
   },
   fed_funds_rate_pct: {
     short: 'Fed funds %',
-    full: 'The US central bank’s base interest rate. Higher rates cool the economy and usually pressure stock prices.',
+    full: 'The US central bank’s base interest rate.\nHigher rates cool the economy and usually pressure stock prices.',
   },
   treasury_10y_pct: {
     short: '10Y yield %',
@@ -190,7 +190,7 @@ const en: Record<string, MetricEntry> = {
   },
   curve_10y_2y_pct: {
     short: '10Y−2Y spread',
-    full: '10-year yield minus 2-year yield. Below zero (an “inverted curve”) is a classic recession warning.',
+    full: '10-year yield minus 2-year yield.\nBelow zero (an “inverted curve”) is a classic recession warning.',
   },
   inflation: {
     short: 'Inflation',
@@ -214,7 +214,7 @@ const en: Record<string, MetricEntry> = {
   },
   vix: {
     short: 'VIX',
-    full: 'The “fear index” — expected market turbulence implied by options prices. Higher = investors more nervous.',
+    full: 'The “fear index” — expected market turbulence implied by options prices.\nHigher = investors more nervous.',
   },
   wti_oil_usd: {
     short: 'WTI oil $',
@@ -245,11 +245,11 @@ const zh: Record<string, MetricEntry> = {
   ema_26: { short: 'EMA 26', full: '26日指数移动平均线——较慢的加权均线，与 EMA 12 搭配使用。' },
   rsi_14: {
     short: 'RSI 14',
-    full: '14日相对强弱指标——0到100的动量计。高于70通常代表过热（可能回调），低于30代表超卖（可能反弹）。',
+    full: '14日相对强弱指标——0到100的动量计。\n高于70通常代表过热（可能回调），低于30代表超卖（可能反弹）。',
   },
   macd: { short: 'MACD', full: '指数平滑异同均线——通过对比快、慢两条均线衡量趋势动量的指标。' },
-  signal: { short: '信号线', full: 'MACD 线的均值。MACD 线上穿或下穿信号线是常见的买卖触发信号。' },
-  histogram: { short: '柱状值', full: 'MACD 线减信号线。为正且扩大 = 上涨动量增强；为负 = 动量减弱。' },
+  signal: { short: '信号线', full: 'MACD 线的均值。\nMACD 线上穿或下穿信号线是常见的买卖触发信号。' },
+  histogram: { short: '柱状值', full: 'MACD 线减信号线。\n为正且扩大 = 上涨动量增强；为负 = 动量减弱。' },
   atr_14: {
     short: 'ATR 14',
     full: '14日平均真实波幅——日常价格波动的典型幅度（以货币计），常用来设置止损距离。',
@@ -258,7 +258,7 @@ const zh: Record<string, MetricEntry> = {
     short: '20日低点',
     full: '最近20个交易日的最低成交价——市场已经防守过一次的价格底部，用作买入价位的支撑锚点。',
   },
-  bias_20: { short: '乖离率 20', full: '价格偏离自身20日均线的百分比。偏离过大往往会回归。' },
+  bias_20: { short: '乖离率 20', full: '价格偏离自身20日均线的百分比。\n偏离过大往往会回归。' },
   score: { short: '技术评分', full: '由上述指标综合计算出的技术面总分。' },
 
   growth: { short: '成长性', full: '取自最新年报的同比增长数据。' },
@@ -274,8 +274,8 @@ const zh: Record<string, MetricEntry> = {
     full: '净资产收益率——利润占股东投入资金的百分比，衡量公司使用股东资本的效率。',
   },
   balance_sheet: { short: '资产负债', full: '公司拥有什么、欠什么的快照——财务稳健度。' },
-  current_ratio: { short: '流动比率', full: '短期资产÷短期负债。大于1说明能覆盖近期账单。' },
-  debt_to_equity: { short: '产权比率', full: '总负债÷股东权益。数值越低通常越安全。' },
+  current_ratio: { short: '流动比率', full: '短期资产÷短期负债。\n大于1说明能覆盖近期账单。' },
+  debt_to_equity: { short: '产权比率', full: '总负债÷股东权益。\n数值越低通常越安全。' },
   cash: { short: '现金', full: '持有的现金及现金等价物（美元）。' },
   meta: { short: '报表信息', full: '这些数字来自哪份财务报告。' },
   entity_name: { short: '公司名称', full: '公司的注册法定名称。' },
@@ -284,7 +284,7 @@ const zh: Record<string, MetricEntry> = {
   valuation: { short: '估值', full: '股价相对盈利、销售额和资产贵不贵。' },
   pe_ttm: {
     short: '市盈率 TTM',
-    full: '股价÷过去12个月的每股盈利（TTM = 最近十二个月）。数值越高，市场为每一元利润付的价格越贵。',
+    full: '股价÷过去12个月的每股盈利（TTM = 最近十二个月）。\n数值越高，市场为每一元利润付的价格越贵。',
   },
   pe_forward: { short: '预期市盈率', full: '股价÷分析师预期的下一年度盈利。' },
   ps_ttm: { short: '市销率 TTM', full: '总市值÷过去12个月的营业收入。' },
@@ -296,13 +296,13 @@ const zh: Record<string, MetricEntry> = {
   rates: { short: '利率', full: '由央行和债券市场决定的利率水平。' },
   fed_funds_rate_pct: {
     short: '联邦基金利率 %',
-    full: '美国央行的基准利率。利率越高，经济降温，通常也会压制股价。',
+    full: '美国央行的基准利率。\n利率越高，经济降温，通常也会压制股价。',
   },
   treasury_10y_pct: { short: '10年期收益率 %', full: '10年期美国国债收益率——长期利率的基准。' },
   treasury_2y_pct: { short: '2年期收益率 %', full: '2年期美国国债收益率——反映市场对短期利率走向的预期。' },
   curve_10y_2y_pct: {
     short: '10Y−2Y 利差',
-    full: '10年期减2年期收益率。低于零（“倒挂”）是经典的衰退预警信号。',
+    full: '10年期减2年期收益率。\n低于零（“倒挂”）是经典的衰退预警信号。',
   },
   inflation: { short: '通胀', full: '消费者物价上涨的速度。' },
   cpi_yoy_pct: { short: 'CPI 同比 %', full: '消费者物价指数——日常物价相比一年前上涨了多少。' },
@@ -311,7 +311,7 @@ const zh: Record<string, MetricEntry> = {
   markets: { short: '市场情绪', full: '衡量市场整体紧张程度的指标。' },
   vix: {
     short: 'VIX',
-    full: '“恐慌指数”——期权价格隐含的预期市场波动。越高说明投资者越紧张。',
+    full: '“恐慌指数”——期权价格隐含的预期市场波动。\n越高说明投资者越紧张。',
   },
   wti_oil_usd: { short: 'WTI 油价 $', full: '美国基准原油价格（美元/桶）。' },
   dollar_index_broad: { short: '美元指数', full: '美元相对一篮子其他货币的强弱。' },

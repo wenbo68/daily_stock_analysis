@@ -22,7 +22,8 @@ export const HelpTerm = ({ label, helpKey, underline = true }: HelpTermProps) =>
   return (
     <Tooltip
       focusable
-      content={<span className="block max-w-[16rem] whitespace-normal">{t(helpKey)}</span>}
+      // pre-line: help texts put each sentence on its own line via \n
+      content={<span className="block max-w-[16rem] whitespace-pre-line">{t(helpKey)}</span>}
     >
       <span
         className={cn(
@@ -55,7 +56,7 @@ export const MetricTerm = ({ term, underline = true }: MetricTermProps) => {
     <Tooltip
       focusable
       content={
-        <span className="block max-w-[16rem] whitespace-normal">
+        <span className="block max-w-[16rem] whitespace-pre-line">
           <span className="block font-semibold text-foreground">{entry.short}</span>
           <span className="mt-0.5 block text-secondary-text">{entry.full}</span>
         </span>
