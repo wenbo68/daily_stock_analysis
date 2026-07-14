@@ -140,6 +140,40 @@ Repo root, Python:
 
 ## 7. How to work on it
 
+### Starting the server
+
+The backend server (uvicorn — the program that runs the Python API and also serves
+the built website at http://localhost:8000) is started **from the repo root**
+(`~/developer/personal/daily_stock_analysis`), not from `apps/dsa-web`:
+
+```bash
+cd ~/developer/personal/daily_stock_analysis
+nohup .venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8000 >> logs/uvicorn-manual.log 2>&1 &
+```
+
+In plain words: `nohup ... &` means "run it in the background and keep it alive
+after the terminal closes"; output is appended to `logs/uvicorn-manual.log`.
+
+Useful checks:
+
+```bash
+pgrep -f "uvicorn server:app"        # is it running? (prints its process id, or nothing)
+tail -20 logs/uvicorn-manual.log     # see its latest log lines
+```
+
+To **restart** it (needed whenever backend Python code changes — frontend-only
+changes just need `npm run build` + a hard refresh):
+
+```bash
+kill <the id pgrep printed>          # then run the nohup line above again
+```
+
+> Gotcha: don't use `pkill -f "uvicorn server:app"` inside a combined command —
+> the pattern matches the command you're typing and can kill your own shell.
+> `pgrep` first, then `kill` the printed id.
+
+### Frontend commands
+
 ```bash
 cd apps/dsa-web
 npm run dev        # live-editing server at http://localhost:5173/tiered
