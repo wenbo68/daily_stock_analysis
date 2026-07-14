@@ -154,7 +154,8 @@ nohup .venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8000 >> logs/
 In plain words: `nohup ... &` means "run it in the background and keep it alive
 after the terminal closes"; output is appended to `logs/uvicorn-manual.log`.
 
-Useful checks:
+**Before starting, check whether one is already running** — starting a second
+copy is harmless (it dies with `Exit 3` because port 8000 is taken) but noisy:
 
 ```bash
 pgrep -f "uvicorn server:app"        # is it running? (prints its process id, or nothing)
