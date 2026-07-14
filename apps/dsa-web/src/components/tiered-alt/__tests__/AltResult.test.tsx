@@ -1,10 +1,59 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import type { TieredResult, TieredTierSection } from '../../../api/tiered';
+import type { TieredLevelsDetail, TieredResult, TieredTierSection } from '../../../api/tiered';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { AltResult } from '../AltResult';
 
 const LEVELS = { entry: 96, secondary_entry: 94, stop_loss: 90, take_profit: 108 };
+
+// Consistent with LEVELS: entry and target were adjusted by the AI, the
+// backup entry and the stop kept their computed bases.
+const LEVELS_DETAIL: TieredLevelsDetail = {
+  levels: {
+    entry: {
+      base: 95,
+      formula: 'min(close, max(sma_20, swing_low_20))',
+      inputs: { close: 100, sma_20: 95, swing_low_20: 92 },
+      adjusted: 96,
+      reason: 'Momentum supports paying up a little.',
+      evidence: ['technicals.sma_20'],
+      rejection: null,
+      final: 96,
+    },
+    secondary_entry: {
+      base: 94,
+      formula: 'max(support strictly below ideal entry: sma_60, swing_low_20)',
+      inputs: { ideal_entry: 95, sma_60: 94, swing_low_20: 92 },
+      adjusted: null,
+      reason: null,
+      evidence: [],
+      rejection: null,
+      final: 94,
+    },
+    stop_loss: {
+      base: 90,
+      formula: 'ideal_entry − 2 × atr_14',
+      inputs: { ideal_entry: 95, atr_14: 2.5, multiplier: 2 },
+      adjusted: null,
+      reason: null,
+      evidence: [],
+      rejection: null,
+      final: 90,
+    },
+    take_profit: {
+      base: 105,
+      formula: 'ideal_entry + 2 × (ideal_entry − stop_loss)',
+      inputs: { ideal_entry: 95, stop_loss: 90, reward_risk_multiple: 2 },
+      adjusted: 108,
+      reason: 'Growth supports a higher target.',
+      evidence: [],
+      rejection: null,
+      final: 108,
+    },
+  },
+  warnings: [],
+};
 
 function makeDimension(name: string): TieredResult['dimensions'][number] {
   return {
@@ -52,10 +101,26 @@ function makeV1Result(): TieredResult {
 function makeDeepResult(): TieredResult {
   return {
     ...makeV1Result(),
+    levels_detail: LEVELS_DETAIL,
     depth: 3,
     final: { tier: 3, direction: 'hold', coverage: 'full', confidence: null, levels: LEVELS },
     tier2: { ...makeSection(2, 'hold'), debate_detail: { turns: [], verdict: null, warnings: [] } },
-    tier3: { ...makeSection(3, 'hold'), risk_detail: { takes: [], verdict: null, warnings: [] } },
+    tier3: {
+      ...makeSection(3, 'hold'),
+      risk_detail: {
+        takes: [],
+        verdict: {
+          stance: 'hold',
+          size_multiplier: 0.5,
+          confidence: 0.7,
+          stop_advice: 'keep',
+          tightened_stop: null,
+          summary: 'Risk summary.',
+          key_risks: [],
+        },
+        warnings: [],
+      },
+    },
     sizing: {
       enabled: true,
       shares: 83,
@@ -83,9 +148,11 @@ function makeDeepResult(): TieredResult {
 
 function renderResult(result: TieredResult) {
   render(
-    <UiLanguageProvider>
-      <AltResult result={result} taskId="task-9" />
-    </UiLanguageProvider>,
+    <MemoryRouter>
+      <UiLanguageProvider>
+        <AltResult result={result} taskId="task-9" />
+      </UiLanguageProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -100,6 +167,8 @@ describe('AltResult', () => {
     expect(screen.queryByTestId('alt-shares-computation')).not.toBeInTheDocument();
     // the obsolete symbol/verdict hero is gone — the row already says both
     expect(screen.queryByText('AAPL')).not.toBeInTheDocument();
+    // no audit trail on old runs → the table falls back to the stored values
+    expect(screen.getByTestId('alt-levels-table')).toHaveTextContent('96');
   });
 
   it('keeps the blocks in the fixed order with their titles above the cards', () => {
@@ -121,19 +190,58 @@ describe('AltResult', () => {
     expect(screen.getByText(/四维数据报告|Four-dimension reports/)).toBeInTheDocument();
     expect(screen.getByText(/层级 1：初步立场|Tier 1: preliminary stance/)).toBeInTheDocument();
     expect(screen.getByText(/层级 2：立场辩论|Tier 2: position debate/)).toBeInTheDocument();
-    expect(screen.getByText(/层级 3：仓位辩论|Tier 3: sizing debate/)).toBeInTheDocument();
+    expect(screen.getByText(/层级 3：风险辩论|Tier 3: risk debate/)).toBeInTheDocument();
     expect(screen.getByText(/股数计算|Shares computation/)).toBeInTheDocument();
   });
 
-  it('shows the shares computation as a formula whose numbers are links', () => {
+  it('shows the tier-1 levels as a computed/adjusted table', () => {
+    renderResult(makeDeepResult());
+    // computed row on top, one clickable base per level
+    expect(screen.getByTestId('alt-level-computed-entry')).toHaveTextContent('95');
+    expect(screen.getByTestId('alt-level-computed-secondary_entry')).toHaveTextContent('94');
+    expect(screen.getByTestId('alt-level-computed-stop_loss')).toHaveTextContent('90');
+    expect(screen.getByTestId('alt-level-computed-take_profit')).toHaveTextContent('105');
+    // adjusted row: moved levels show the new number, untouched ones "keep"
+    expect(screen.getByTestId('alt-level-adjusted-entry')).toHaveTextContent('96');
+    expect(screen.getByTestId('alt-level-adjusted-take_profit')).toHaveTextContent('108');
+    expect(screen.getAllByTestId(/alt-level-keep-/)).toHaveLength(2);
+    // the old explainer texts around the levels are gone
+    expect(screen.queryByText(/价格参考位|Price levels/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/资金管理|money-management/)).not.toBeInTheDocument();
+  });
+
+  it('clicking a computed level opens its formula with every number linked to a source', () => {
+    renderResult(makeDeepResult());
+    fireEvent.click(screen.getByTestId('alt-level-computed-stop_loss'));
+    const dialog = screen.getByRole('dialog');
+    // the formula in words, then plugged in, then the result
+    expect(within(dialog).getByText('ideal_entry − 2 × atr_14')).toBeInTheDocument();
+    // ideal_entry came from the computed entry cell, atr_14 from technicals
+    expect(within(dialog).getByRole('button', { name: 'ideal_entry' })).toHaveTextContent('95');
+    expect(within(dialog).getByRole('button', { name: 'atr_14' })).toHaveTextContent('2.50');
+    expect(within(dialog).getByText('= 90')).toBeInTheDocument();
+  });
+
+  it('clicking an adjusted level opens the AI reason with its references, nothing else', () => {
+    renderResult(makeDeepResult());
+    fireEvent.click(screen.getByTestId('alt-level-adjusted-entry'));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Momentum supports paying up a little.')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'technicals.sma_20' })).toBeInTheDocument();
+    // the inputs table and the reference explainer were removed
+    expect(within(dialog).queryByText(/^(输入项|Inputs)$/)).not.toBeInTheDocument();
+  });
+
+  it('expands the shares computation to numbers that all exist in the report', () => {
     renderResult(makeDeepResult());
     const formula = screen.getByTestId('alt-shares-formula');
-    expect(formula.textContent).toBe('= (100000) × (1%) × (0.5) / (6)');
-    // each number links back to where it came from within this run entry
-    expect(screen.getByRole('button', { name: '100000' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '1%' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '0.5' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '6' })).toBeInTheDocument();
+    expect(formula.textContent).toBe('= (100000) × (1%) × (0.5) / ((96) − (90))');
+    // each number links back to where it appears within this run entry
+    expect(within(formula).getByRole('button', { name: '100000' })).toBeInTheDocument();
+    expect(within(formula).getByRole('button', { name: '1%' })).toBeInTheDocument();
+    expect(within(formula).getByRole('button', { name: '0.5' })).toBeInTheDocument();
+    expect(within(formula).getByRole('button', { name: '96' })).toBeInTheDocument();
+    expect(within(formula).getByRole('button', { name: '90' })).toBeInTheDocument();
     expect(screen.getByText(/= 83/)).toBeInTheDocument();
   });
 
@@ -152,6 +260,51 @@ describe('AltResult', () => {
     });
     expect(screen.queryByTestId('alt-shares-formula')).not.toBeInTheDocument();
     expect(screen.getByTestId('alt-shares-computation').textContent).not.toBe('');
+  });
+
+  it('renders citation evidence as sentiment.citation:N in link colors', () => {
+    const deep = makeDeepResult();
+    const sentiment = deep.dimensions.find((d) => d.dimension === 'sentiment')!;
+    sentiment.citations = [
+      { source_name: 'news', title: 'Some article', url: 'https://example.com/a', snippet: null },
+    ];
+    deep.tier2!.debate_detail!.verdict = {
+      direction: 'hold',
+      confidence: 0.6,
+      summary: 'Summary.',
+      reasons_for: [{ claim: 'Bull claim', evidence: ['citation:1'] }],
+      reasons_against: [],
+      would_change_mind: null,
+    };
+    renderResult(deep);
+    const ref = screen.getByText('sentiment.citation:1');
+    expect(ref.tagName).toBe('A');
+    expect(ref).toHaveAttribute('href', 'https://example.com/a');
+    expect(ref.className).toContain('text-blue-400');
+  });
+
+  it('lists non-link sources above link sources under one Sources title', () => {
+    const result = makeV1Result();
+    result.dimensions[1].citations = [
+      { source_name: 'SEC EDGAR', title: 'SEC EDGAR companyfacts', url: 'https://sec.gov/x', snippet: null },
+      { source_name: 'Yahoo Finance summary (yfinance)', title: null, url: null, snippet: null },
+    ];
+    renderResult(result);
+    const card = screen.getByTestId('alt-dimension-fundamentals');
+    expect(within(card).getByText(/^(来源|Sources)$/)).toBeInTheDocument();
+    const items = within(card).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('Yahoo Finance summary (yfinance)');
+    expect(items[1]).toHaveTextContent('SEC EDGAR companyfacts');
+  });
+
+  it('links the recorded signal number straight to that signal', () => {
+    const deep = {
+      ...makeDeepResult(),
+      signal: { logged: true, signal_id: 32, created: true, reason: null },
+    };
+    renderResult(deep);
+    const link = screen.getByRole('link', { name: /#32/ });
+    expect(link).toHaveAttribute('href', '/decision-signals?signal=32');
   });
 
   it('tucks data notes behind an exclamation mark that opens a plain-English modal', () => {

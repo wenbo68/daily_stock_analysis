@@ -185,14 +185,17 @@ interface AltEvidenceRefsProps {
   onNavigate?: () => void;
 }
 
-// Evidence references as links: "citation:N" opens the news source, a
-// payload path scrolls to that metric row. Unresolvable refs stay text.
+// Evidence references as links: "citation:N" opens the news source (shown
+// as "sentiment.citation:N" — the same dimension.path grammar as every
+// other reference), a payload path scrolls to that metric row.
+// Unresolvable refs stay text.
 export const AltEvidenceRefs = ({ refs, citations, onNavigate }: AltEvidenceRefsProps) => (
   <span className="inline-flex flex-wrap gap-x-2 text-[11px]">
     {refs.map((refPath, index) => {
       const citationMatch = CITATION_REF_RE.exec(refPath);
       if (citationMatch) {
         const citation = citations[Number(citationMatch[1]) - 1];
+        const shown = `sentiment.${refPath}`;
         if (citation?.url) {
           return (
             <a
@@ -203,11 +206,11 @@ export const AltEvidenceRefs = ({ refs, citations, onNavigate }: AltEvidenceRefs
               aria-label={citation.title ?? citation.url}
               className={ALT_LINK}
             >
-              {refPath}
+              {shown}
             </a>
           );
         }
-        return <span key={index}>{refPath}</span>;
+        return <span key={index}>{shown}</span>;
       }
       return (
         <button

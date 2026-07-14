@@ -35,5 +35,8 @@ export const ALT_COLOR = {
   gray: 'bg-gray-500/20 text-gray-300 ring-gray-500/30',
 } as const;
 
-// Inline text link, showplayer blue.
-export const ALT_LINK = 'text-blue-400 hover:text-blue-300 hover:underline';
+// Inline text link, showplayer blue. The color utilities carry ! because
+// index.css has an unlayered `a { color: inherit }` rule that outranks
+// Tailwind's layered utilities on <a> tags — without !, every anchor link
+// on this page silently renders in the surrounding text color.
+export const ALT_LINK = 'text-blue-400! hover:text-blue-300! hover:underline';

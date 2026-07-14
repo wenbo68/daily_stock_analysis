@@ -149,6 +149,12 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
   const { t } = useUiLanguage();
   const labelKey = DIMENSION_LABEL_KEYS[dimension.dimension];
   const uniqueCitations = dedupeCitations(dimension.citations);
+  // Listed non-links first, links after; each keeps the [n] number of its
+  // position in uniqueCitations, because that is what the narrative's
+  // inline [n] marks refer to.
+  const listedCitations = uniqueCitations
+    .map((citation, index) => ({ citation, number: index + 1 }))
+    .sort((a, b) => Number(Boolean(a.citation.url)) - Number(Boolean(b.citation.url)));
 
   return (
     <AltCard testId={`alt-dimension-${dimension.dimension}`}>
@@ -172,16 +178,16 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
         <AltPayloadTable dimension={dimension.dimension} payload={dimension.payload} />
       ) : null}
 
-      {uniqueCitations.length > 0 ? (
+      {listedCitations.length > 0 ? (
         <div className="mt-3 border-t border-gray-700/60 pt-3">
           <div className="mb-1 text-xs font-semibold text-gray-500">
-            {dimension.narrative ? t('tiered.citations') : t('tiered.dataSources')}
+            {t('tiered.alt.sources')}
           </div>
           <ul className="flex flex-col gap-1">
-            {uniqueCitations.map((citation, index) => (
-              <li key={index} className="flex gap-2 text-xs">
+            {listedCitations.map(({ citation, number }) => (
+              <li key={number} className="flex gap-2 text-xs">
                 {dimension.narrative ? (
-                  <span className="shrink-0 text-gray-500">[{index + 1}]</span>
+                  <span className="shrink-0 text-gray-500">[{number}]</span>
                 ) : null}
                 {citation.url ? (
                   <a

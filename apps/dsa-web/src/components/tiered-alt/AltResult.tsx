@@ -11,7 +11,7 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
-import { plainNumber, riskPctText } from './altFormat';
+import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
 import { ALT_LINK, DIRECTION_TAG } from './altStyles';
 import { AltCard, AltEvidenceRefs, AltNotesButton, AltTag } from './AltUi';
 import { AltDimensions } from './AltDimensions';
@@ -83,21 +83,39 @@ const FormulaLink = ({ targetId, children }: { targetId: string | null; children
 interface AltSharesComputationProps {
   sizing: TieredSizing;
   taskId?: string;
+  /** Where the entry / stop-loss numbers already appear in this report. */
+  entryTargetId: string | null;
+  stopTargetId: string | null;
 }
 
 // Just the arithmetic, three lines: the formula in words, the same formula
 // with this run's numbers (each number links to where it came from), and
-// the share count it produces. Runs where no count could be computed show
-// the refusal reason instead.
-const AltSharesComputation = ({ sizing, taskId }: AltSharesComputationProps) => {
+// the share count it produces. The denominator is spelled out as
+// (entry) − (stop loss) so every number in it already exists somewhere in
+// this report. Runs where no count could be computed show the refusal
+// reason instead.
+const AltSharesComputation = ({
+  sizing,
+  taskId,
+  entryTargetId,
+  stopTargetId,
+}: AltSharesComputationProps) => {
   const { t } = useUiLanguage();
 
   const capital = sizing.inputs.capital;
   const riskFraction = sizing.inputs.risk_fraction;
-  const lossPerShare = sizing.loss_per_share;
+  const entry = sizing.inputs.entry;
+  const stopLoss = sizing.inputs.stop_loss;
   const multiplier = sizing.risk_multiplier;
+  const feeFraction = sizing.inputs.fee_fraction ?? 0;
 
-  if (sizing.shares === null || capital === null || riskFraction === null || lossPerShare === null) {
+  if (
+    sizing.shares === null ||
+    capital === null ||
+    riskFraction === null ||
+    entry === null ||
+    stopLoss === null
+  ) {
     const reasonKey = sizing.reason_code ? REASON_KEYS[sizing.reason_code] : undefined;
     return (
       <AltCard testId="alt-shares-computation">
@@ -108,13 +126,28 @@ const AltSharesComputation = ({ sizing, taskId }: AltSharesComputationProps) => 
     );
   }
 
+  // Round-trip fee rate; 0 for this user's runs, but when set it is part
+  // of the loss per share, so the formula must show it.
+  const feeTerm =
+    feeFraction > 0 ? (
+      <>
+        {' + ('}
+        <FormulaLink targetId={entryTargetId}>{formatPrice(entry)}</FormulaLink>
+        {') × ('}
+        <span className="tabular-nums text-gray-300">{riskPctText(feeFraction)}%</span>
+        {')'}
+      </>
+    ) : null;
+
   return (
     <AltCard testId="alt-shares-computation">
       <div className="flex flex-col gap-2 text-sm">
         <p className="text-gray-400">
           ({t('tiered.alt.f.capital')}) × ({t('tiered.alt.f.risk')})
-          {multiplier !== null ? <> × ({t('tiered.alt.f.multiplier')})</> : null} / (
-          {t('tiered.alt.f.loss')})
+          {multiplier !== null ? <> × ({t('tiered.alt.f.multiplier')})</> : null} / ((
+          {t('tiered.alt.f.entry')}) − ({t('tiered.alt.f.stop')})
+          {feeFraction > 0 ? <> + ({t('tiered.alt.f.entry')}) × ({t('tiered.alt.f.fee')})</> : null}
+          {')'}
         </p>
         <p className="text-gray-400" data-testid="alt-shares-formula">
           {'= ('}
@@ -133,8 +166,12 @@ const AltSharesComputation = ({ sizing, taskId }: AltSharesComputationProps) => 
               {')'}
             </>
           ) : null}
-          {' / ('}
-          <FormulaLink targetId="alt-tier1-levels">{formatPrice(lossPerShare)}</FormulaLink>
+          {' / (('}
+          <FormulaLink targetId={entryTargetId}>{formatPrice(entry)}</FormulaLink>
+          {') − ('}
+          <FormulaLink targetId={stopTargetId}>{formatPrice(stopLoss)}</FormulaLink>
+          {')'}
+          {feeTerm}
           {')'}
         </p>
         <p className="font-semibold text-gray-300">
@@ -163,21 +200,27 @@ const TierScore = ({ value, helpKey }: { value: number; helpKey: UiTextKey }) =>
 interface TierHeaderProps {
   section: Pick<TieredTierSection, 'direction' | 'coverage'>;
   notes?: string[];
-  extra?: ReactNode;
+  score?: number | null;
+  scoreHelpKey?: UiTextKey;
+  side?: ReactNode;
 }
 
-// The card's title lives above the card (AltBlock); inside, the header row
-// is just the verdict tag, any extra chip, and the data-notes mark pinned
-// top-right: nothing when the data was complete, ⚠ when partial, a red X
-// when unavailable.
-const TierHeader = ({ section, notes, extra }: TierHeaderProps) => {
+// The card's title lives above the card (AltBlock); inside, the header is
+// the verdict tag with its score on a new line beneath, any side content
+// (tier 3 puts the multiplier and stop advice there) next to the tag, and
+// the data-notes mark pinned top-right: nothing when the data was
+// complete, ⚠ when partial, a red X when unavailable.
+const TierHeader = ({ section, notes, score, scoreHelpKey, side }: TierHeaderProps) => {
   const { t } = useUiLanguage();
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
-      <AltTag tone={DIRECTION_TAG[section.direction]}>
-        {t(`tiered.direction.${section.direction}` as UiTextKey)}
-      </AltTag>
-      {extra}
+    <div className="mb-3 flex flex-wrap items-start gap-x-6 gap-y-2">
+      <div className="flex flex-col items-start gap-1">
+        <AltTag tone={DIRECTION_TAG[section.direction]}>
+          {t(`tiered.direction.${section.direction}` as UiTextKey)}
+        </AltTag>
+        {score != null && scoreHelpKey ? <TierScore value={score} helpKey={scoreHelpKey} /> : null}
+      </div>
+      {side}
       <span className="ml-auto">
         <AltNotesButton notes={notes ?? []} coverage={section.coverage} />
       </span>
@@ -190,30 +233,17 @@ interface AltTierOneProps {
   citations: TieredCitation[];
 }
 
-const AltTierOne = ({ result, citations }: AltTierOneProps) => {
-  const { t } = useUiLanguage();
-
-  return (
-    <AltCard testId="alt-tier1">
-      <TierHeader
-        section={{ direction: result.direction, coverage: result.coverage }}
-        notes={result.warnings}
-        extra={
-          result.score !== null ? (
-            <TierScore value={result.score} helpKey="tiered.help.score" />
-          ) : null
-        }
-      />
-
-      <AltSectionLabel>{t('tiered.levels')}</AltSectionLabel>
-      {/* id: the shares-computation formula links its loss-per-share here */}
-      <div id="alt-tier1-levels">
-        <AltLevels levels={result.levels} levelsDetail={result.levels_detail} citations={citations} />
-      </div>
-      <p className="mt-2 text-xs text-gray-500">{t('tiered.levelsNote')}</p>
-    </AltCard>
-  );
-};
+const AltTierOne = ({ result, citations }: AltTierOneProps) => (
+  <AltCard testId="alt-tier1">
+    <TierHeader
+      section={{ direction: result.direction, coverage: result.coverage }}
+      notes={result.warnings}
+      score={result.score}
+      scoreHelpKey="tiered.help.score"
+    />
+    <AltLevels levels={result.levels} levelsDetail={result.levels_detail} citations={citations} />
+  </AltCard>
+);
 
 interface AltTierSectionProps {
   section: TieredTierSection;
@@ -230,11 +260,8 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
       <TierHeader
         section={section}
         notes={section.warnings}
-        extra={
-          verdict?.confidence != null ? (
-            <TierScore value={verdict.confidence * 100} helpKey="tiered.help.judgeScore" />
-          ) : null
-        }
+        score={verdict?.confidence != null ? verdict.confidence * 100 : null}
+        scoreHelpKey="tiered.help.judgeScore"
       />
 
       {section.narrative ? (
@@ -319,16 +346,6 @@ const PERSONA_LABEL_KEYS: Record<string, UiTextKey> = {
   neutral: 'tiered.risk.persona.neutral',
 };
 
-function multiplierLabelKey(multiplier: number): UiTextKey {
-  if (multiplier === 0) {
-    return 'tiered.risk.multiplier.zero';
-  }
-  if (multiplier === 0.5) {
-    return 'tiered.risk.multiplier.half';
-  }
-  return 'tiered.risk.multiplier.full';
-}
-
 const AltRisk = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
   const detail = section.risk_detail;
@@ -339,44 +356,43 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
       <TierHeader
         section={section}
         notes={section.warnings}
-        extra={
-          verdict?.confidence != null ? (
-            <TierScore value={verdict.confidence * 100} helpKey="tiered.help.riskScore" />
+        score={verdict?.confidence != null ? verdict.confidence * 100 : null}
+        scoreHelpKey="tiered.help.riskScore"
+        side={
+          verdict ? (
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+              <span>
+                <HelpTerm label={t('tiered.risk.multiplier')} helpKey="tiered.help.multiplier" />
+                {': '}
+                {/* id: the shares-computation formula links its multiplier here */}
+                <span id="alt-risk-multiplier" className="tabular-nums text-gray-300">
+                  {verdict.size_multiplier}×
+                </span>
+              </span>
+              <span>
+                <HelpTerm label={t('tiered.risk.stopAdvice')} helpKey="tiered.help.stopAdvice" />
+                {': '}
+                <span className="text-gray-300">
+                  {t(
+                    (verdict.stop_advice === 'tighten'
+                      ? 'tiered.risk.stopAdvice.tighten'
+                      : 'tiered.risk.stopAdvice.keep') as UiTextKey,
+                  )}
+                </span>
+                {verdict.tightened_stop !== null ? (
+                  // id: when the stop was tightened, this is the number the
+                  // shares-computation formula actually used — it links here.
+                  <span id="alt-tightened-stop" className="ml-1 tabular-nums text-gray-300">
+                    → {formatPrice(verdict.tightened_stop)}
+                  </span>
+                ) : null}
+              </span>
+            </div>
           ) : null
         }
       />
 
-      {verdict ? (
-        <div className="mb-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          <span>
-            <HelpTerm label={t('tiered.risk.multiplier')} helpKey="tiered.help.multiplier" />
-            {': '}
-            {/* id: the shares-computation formula links its multiplier here */}
-            <span id="alt-risk-multiplier" className="tabular-nums text-gray-300">
-              {verdict.size_multiplier}×
-            </span>{' '}
-            <span className="text-gray-500">({t(multiplierLabelKey(verdict.size_multiplier))})</span>
-          </span>
-          <span>
-            <HelpTerm label={t('tiered.risk.stopAdvice')} helpKey="tiered.help.stopAdvice" />
-            {': '}
-            <span className="text-gray-300">
-              {t(
-                (verdict.stop_advice === 'tighten'
-                  ? 'tiered.risk.stopAdvice.tighten'
-                  : 'tiered.risk.stopAdvice.keep') as UiTextKey,
-              )}
-            </span>
-            {verdict.tightened_stop !== null ? (
-              <span className="ml-1 tabular-nums text-gray-300">
-                → {formatPrice(verdict.tightened_stop)}
-              </span>
-            ) : null}
-          </span>
-        </div>
-      ) : (
-        <p className="mb-4 text-sm text-amber-300">{t('tiered.risk.noVerdict')}</p>
-      )}
+      {!verdict ? <p className="mb-4 text-sm text-amber-300">{t('tiered.risk.noVerdict')}</p> : null}
 
       {section.narrative ? (
         <p className="mb-4 text-sm leading-relaxed">{section.narrative}</p>
@@ -401,7 +417,7 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
       ) : null}
 
       {detail && detail.takes.length > 0 ? (
-        <AltFold title={t('tiered.risk.personas')}>
+        <AltFold title={t('tiered.debate.transcript')}>
           {detail.takes.map((take, index) => (
             <div key={index}>
               <div className="mb-0.5 text-xs font-semibold text-gray-300">
@@ -433,6 +449,21 @@ export const AltResult = ({ result, taskId }: AltResultProps) => {
   const citations = sentimentCitations(result.dimensions);
   const usage = result.llm_usage ?? null;
 
+  // Where the sizing formula's entry / stop-loss numbers already appear:
+  // the levels table's adjusted cell when the AI moved the level, its
+  // computed cell otherwise — except a tier-3 tightened stop, which is the
+  // number next to the tier-3 stop advice.
+  const levelTargetId = (key: 'entry' | 'stop_loss'): string | null => {
+    const detail = result.levels_detail?.levels?.[key];
+    if (!detail || detail.base === null) {
+      return null;
+    }
+    return detail.adjusted !== null ? adjustedCellId(key) : computedCellId(key);
+  };
+  const tightenedStop = result.tier3?.risk_detail?.verdict?.tightened_stop ?? null;
+  const entryTargetId = levelTargetId('entry');
+  const stopTargetId = tightenedStop !== null ? 'alt-tightened-stop' : levelTargetId('stop_loss');
+
   return (
     <div className="flex flex-col gap-6">
       <AltBlock title={t('tiered.alt.dimensionsTitle')}>
@@ -453,19 +484,26 @@ export const AltResult = ({ result, taskId }: AltResultProps) => {
       ) : null}
       {result.sizing ? (
         <AltBlock title={t('tiered.alt.sharesTitle')} helpKey="tiered.help.sizing">
-          <AltSharesComputation sizing={result.sizing} taskId={taskId} />
+          <AltSharesComputation
+            sizing={result.sizing}
+            taskId={taskId}
+            entryTargetId={entryTargetId}
+            stopTargetId={stopTargetId}
+          />
         </AltBlock>
       ) : null}
       <div className="flex flex-col gap-1 text-xs">
-        {result.signal?.logged ? (
-          <p className="flex flex-wrap items-center gap-x-3">
-            <span className="text-emerald-300">
-              {t('tiered.signalSaved', { id: result.signal.signal_id ?? '—' })}
-            </span>
-            <Link to="/decision-signals" className={ALT_LINK}>
-              {t('tiered.viewSignals')}
+        {result.signal?.logged && result.signal.signal_id != null ? (
+          <p>
+            <Link
+              to={`/decision-signals?signal=${result.signal.signal_id}`}
+              className={ALT_LINK}
+            >
+              {t('tiered.alt.signalSaved', { id: result.signal.signal_id })}
             </Link>
           </p>
+        ) : result.signal?.logged ? (
+          <p className="text-emerald-300">{t('tiered.alt.signalSaved', { id: '—' })}</p>
         ) : result.signal ? (
           <p className="text-amber-300">
             {t('tiered.signalSkipped', { reason: result.signal.reason ?? '' })}

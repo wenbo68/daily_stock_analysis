@@ -288,12 +288,9 @@ export interface AltPageSelectorProps {
 }
 
 // The showplayer pager: first / previous / up to five page numbers around
-// the current one / next / last. Renders nothing with a single page.
+// the current one / next / last. Always rendered — a single page shows an
+// active "1" with the arrows disabled.
 export const AltPageSelector = ({ page, pageCount, onPage, labels }: AltPageSelectorProps) => {
-  if (pageCount <= 1) {
-    return null;
-  }
-
   const pagesToShow = 5;
   let startPage = Math.max(1, page - Math.floor(pagesToShow / 2));
   const endPage = Math.min(pageCount, startPage + pagesToShow - 1);

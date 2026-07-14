@@ -101,7 +101,9 @@ type PendingStatusChange = {
 
 type SelectedSignal = {
   item: DecisionSignalItem;
-  source: 'list' | 'latest' | 'timeline';
+  // 'link' = opened via a ?signal=<id> deep link (e.g. from a tiered-alt
+  // report); it belongs to no list, so list refreshes never clobber it.
+  source: 'list' | 'latest' | 'timeline' | 'link';
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -407,6 +409,24 @@ const DecisionSignalsPage: React.FC = () => {
   useEffect(() => {
     document.title = t('decisionSignals.pageTitle');
   }, [t]);
+
+  // Deep link: ?signal=<id> opens that signal's detail drawer directly.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const signalId = Number(params.get('signal'));
+    if (!Number.isInteger(signalId) || signalId <= 0) return;
+    let mounted = true;
+    void decisionSignalsApi.get(signalId)
+      .then((item) => {
+        if (mounted) setSelected({ source: 'link', item });
+      })
+      .catch((err) => {
+        if (mounted) setError(getParsedApiError(err));
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;

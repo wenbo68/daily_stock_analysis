@@ -7,3 +7,9 @@ export const riskPctText = (fraction: number): string =>
 
 // 100000.0 -> '100000' — a capital amount as the plain number it was entered as.
 export const plainNumber = (value: number): string => String(Number(value));
+
+// Anchor ids of the levels table's cells ('entry', 'secondary_entry',
+// 'stop_loss', 'take_profit'), so formulas elsewhere in the report can
+// scroll-flash the cell a number came from.
+export const computedCellId = (key: string): string => `alt-level-computed-${key}`;
+export const adjustedCellId = (key: string): string => `alt-level-adjusted-${key}`;

@@ -72,6 +72,8 @@ describe('AltRunHistory', () => {
     expect(screen.getByText(/分析中|Running/)).toBeInTheDocument();
     // the running row has no capital/risk/tier/shares yet — four dashes
     expect(screen.getAllByText('—')).toHaveLength(4);
+    // the pager is always there, even when everything fits on one page
+    expect(screen.getByRole('button', { name: '1' })).toBeInTheDocument();
   });
 
   it('filters by capital and risk ranges', () => {
