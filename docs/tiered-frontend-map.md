@@ -148,26 +148,40 @@ the built website at http://localhost:8000) is started **from the repo root**
 
 ```bash
 cd ~/developer/personal/daily_stock_analysis
-nohup .venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8000 >> logs/uvicorn-manual.log 2>&1 &
+.venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-In plain words: `nohup ... &` means "run it in the background and keep it alive
-after the terminal closes"; output is appended to `logs/uvicorn-manual.log`.
+This runs it **in the foreground**: logs print straight to the terminal, and
+**stopping it is just Ctrl+C** in that terminal. The terminal is occupied while
+it runs, and closing the terminal kills the server — for day-to-day use that's
+the simplest setup.
+
+If you instead want it to survive after closing the terminal, use the
+**background** variant (`nohup ... &` = "keep running after the terminal
+closes, in the background"; output goes to `logs/uvicorn-manual.log`):
+
+```bash
+nohup .venv/bin/python -m uvicorn server:app --host 0.0.0.0 --port 8000 >> logs/uvicorn-manual.log 2>&1 &
+```
 
 **Before starting, check whether one is already running** — starting a second
 copy is harmless (it dies with `Exit 3` because port 8000 is taken) but noisy:
 
 ```bash
 pgrep -f "uvicorn server:app"        # is it running? (prints its process id, or nothing)
-tail -20 logs/uvicorn-manual.log     # see its latest log lines
+tail -20 logs/uvicorn-manual.log     # latest log lines (background variant only)
 ```
 
-To **restart** it (needed whenever backend Python code changes — frontend-only
-changes just need `npm run build` + a hard refresh):
+To **stop** a background server (a foreground one is just Ctrl+C):
 
 ```bash
-kill <the id pgrep printed>          # then run the nohup line above again
+pgrep -f "uvicorn server:app"        # get its process id
+kill <that id>                       # ask it to shut down cleanly
 ```
+
+To **restart** (needed whenever backend Python code changes — frontend-only
+changes just need `npm run build` + a hard refresh): stop it, then start it
+again.
 
 > Gotcha: don't use `pkill -f "uvicorn server:app"` inside a combined command —
 > the pattern matches the command you're typing and can kill your own shell.
