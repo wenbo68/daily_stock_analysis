@@ -12,6 +12,10 @@ import { useUiLanguage } from '../contexts/UiLanguageContext';
 
 const POLL_INTERVAL_MS = 5000;
 const DEFAULT_TIER: TieredDepth = 1;
+// Suggestions when nothing was remembered or configured — the user still
+// sees and can remove/replace the pill before starting.
+const DEFAULT_CAPITAL = '100000';
+const DEFAULT_RISK_PCT = '1';
 
 // Shared with the main tiered page so the values carry across both skins.
 const SIZING_CAPITAL_STORAGE_KEY = 'tiered.sizing.capital';
@@ -48,11 +52,14 @@ const TieredAltPage = () => {
   const { t } = useUiLanguage();
   const [ticker, setTicker] = useState<string | null>(null);
   const [tier, setTier] = useState<TieredDepth | null>(DEFAULT_TIER);
-  const [capital, setCapital] = useState<string | null>(() =>
-    readStoredNumber(SIZING_CAPITAL_STORAGE_KEY),
+  // Capital is in the ticker's own currency, so it stays empty until a
+  // ticker is picked; capitalDefault is what it then auto-fills with.
+  const [capital, setCapital] = useState<string | null>(null);
+  const [capitalDefault, setCapitalDefault] = useState<string>(
+    () => readStoredNumber(SIZING_CAPITAL_STORAGE_KEY) ?? DEFAULT_CAPITAL,
   );
-  const [riskPct, setRiskPct] = useState<string | null>(() =>
-    readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY),
+  const [riskPct, setRiskPct] = useState<string | null>(
+    () => readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY) ?? DEFAULT_RISK_PCT,
   );
   const [runs, setRuns] = useState<TieredRunSummary[]>([]);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
@@ -80,23 +87,26 @@ const TieredAltPage = () => {
     void refreshRuns();
   }, [refreshRuns]);
 
-  // Server-side sizing defaults (.env) fill the capital/risk pills on
-  // entry when nothing was picked yet, so what a run would actually use
-  // is visible up front.
+  // Server-side sizing defaults (.env) beat the built-in suggestions when
+  // the browser has no remembered values of its own.
   useEffect(() => {
     void (async () => {
       try {
         const defaults = await tieredApi.sizingDefaults();
+        const storedCapital = readStoredNumber(SIZING_CAPITAL_STORAGE_KEY);
         const defaultCapital = defaults.capital;
-        if (defaultCapital != null) {
-          setCapital((prev) => prev ?? String(defaultCapital));
+        if (storedCapital == null && defaultCapital != null) {
+          setCapitalDefault(String(defaultCapital));
         }
+        const storedRisk = readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY);
         const defaultRisk = defaults.risk_fraction;
-        if (defaultRisk != null) {
-          setRiskPct((prev) => prev ?? riskFractionToPct(defaultRisk));
+        if (storedRisk == null && defaultRisk != null) {
+          setRiskPct((prev) =>
+            prev === null || prev === DEFAULT_RISK_PCT ? riskFractionToPct(defaultRisk) : prev,
+          );
         }
       } catch {
-        // no defaults reachable — the fields just start empty
+        // no defaults reachable — the built-in suggestions stand
       }
     })();
   }, []);
@@ -146,18 +156,6 @@ const TieredAltPage = () => {
         if (result) {
           setDetails((prev) => ({ ...prev, [taskId]: result }));
           setDetailError(null);
-          // If capital/risk are still unset (no .env default either),
-          // offer what this run actually used so the numbers on screen
-          // and in the form agree.
-          const inputs = result.sizing?.inputs;
-          if (inputs?.capital != null) {
-            const capitalUsed = String(inputs.capital);
-            setCapital((prev) => prev ?? capitalUsed);
-          }
-          if (inputs?.risk_fraction != null) {
-            const pctUsed = riskFractionToPct(inputs.risk_fraction);
-            setRiskPct((prev) => prev ?? pctUsed);
-          }
         } else {
           setDetailError(run.error || t('tiered.error.title'));
         }
@@ -174,8 +172,24 @@ const TieredAltPage = () => {
     setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
   }, []);
 
+  // Capital follows the ticker: picking a ticker auto-fills capital with
+  // the remembered/default amount; removing the ticker removes capital too
+  // (the amount's currency belongs to that ticker's market).
+  const handleTicker = useCallback(
+    (value: string | null) => {
+      setTicker(value);
+      if (value === null) {
+        setCapital(null);
+      } else {
+        setCapital((prev) => prev ?? capitalDefault);
+      }
+    },
+    [capitalDefault],
+  );
+
   const handleStart = useCallback(async () => {
-    if (!ticker || submitting) {
+    // The form popup enforces all four fields; this is the last-line guard.
+    if (!ticker || tier === null || !capital || !riskPct || submitting) {
       return;
     }
     setSubmitError(null);
@@ -198,7 +212,9 @@ const TieredAltPage = () => {
       );
       storeNumber(SIZING_CAPITAL_STORAGE_KEY, capital);
       storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPct);
+      setCapitalDefault(capital);
       setTicker(null);
+      setCapital(null);
       setPendingTiers((prev) => ({ ...prev, [started.task_id]: tierUsed }));
       // The new run is already in the backend list as Running; show it at
       // the top of the history, expanded, until polling flips it to done.
@@ -218,7 +234,7 @@ const TieredAltPage = () => {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
           {t('tiered.altForm.title')}
         </h2>
-        <div className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6">
+        <div className="rounded bg-gray-900 p-4 text-gray-400 sm:p-6">
           <AltRunForm
             ticker={ticker}
             tier={tier}
@@ -226,7 +242,7 @@ const TieredAltPage = () => {
             riskPct={riskPct}
             submitting={submitting}
             error={submitError}
-            onTicker={setTicker}
+            onTicker={handleTicker}
             onTier={setTier}
             onCapital={setCapital}
             onRiskPct={setRiskPct}
@@ -239,7 +255,7 @@ const TieredAltPage = () => {
         <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
           {t('tiered.history')}
         </h2>
-        <div className="rounded-lg bg-gray-900 p-4 text-gray-400 sm:p-6">
+        <div className="rounded bg-gray-900 p-4 text-gray-400 sm:p-6">
           <AltRunHistory
             runs={annotatedRuns}
             expandedTaskId={expandedTaskId}

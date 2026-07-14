@@ -20,8 +20,8 @@ const FAILED_TAG = 'bg-red-500/20 text-red-300 ring-red-500/30';
 const TONE = {
   ticker: ALT_COLOR[1],
   date: ALT_COLOR[2],
-  verdict: ALT_COLOR[3],
-  tier: ALT_COLOR[4],
+  tier: ALT_COLOR[3],
+  verdict: ALT_COLOR[4],
   shares: ALT_COLOR[5],
 };
 
@@ -193,6 +193,14 @@ export const AltRunHistory = ({
       onRemove: () => updateFilters({ dateMax: null }),
     });
   }
+  filters.tiers.forEach((tier) => {
+    pills.push({
+      key: `tier-${tier}`,
+      tone: TONE.tier,
+      label: t('tiered.pill.tier', { value: tier }),
+      onRemove: () => updateFilters({ tiers: toggled(filters.tiers, tier) }),
+    });
+  });
   filters.directions.forEach((direction) => {
     pills.push({
       key: `direction-${direction}`,
@@ -201,14 +209,6 @@ export const AltRunHistory = ({
         value: t(`tiered.direction.${direction}` as UiTextKey),
       }),
       onRemove: () => updateFilters({ directions: toggled(filters.directions, direction) }),
-    });
-  });
-  filters.tiers.forEach((tier) => {
-    pills.push({
-      key: `tier-${tier}`,
-      tone: TONE.tier,
-      label: t('tiered.pill.tier', { value: tier }),
-      onRemove: () => updateFilters({ tiers: toggled(filters.tiers, tier) }),
     });
   });
   if (filters.sharesMin) {
@@ -253,6 +253,14 @@ export const AltRunHistory = ({
           }}
         />
         <AltSelect
+          label={t('tiered.altFilter.tier')}
+          options={FILTER_TIERS.map((value) => ({ value, label: value }))}
+          selected={filters.tiers}
+          placeholder={t('tiered.altFilter.tierPh')}
+          multi
+          onCommit={(value) => updateFilters({ tiers: toggled(filters.tiers, value) })}
+        />
+        <AltSelect
           label={t('tiered.altFilter.direction')}
           options={FILTER_DIRECTIONS.map((value) => ({
             value,
@@ -262,14 +270,6 @@ export const AltRunHistory = ({
           placeholder={t('tiered.altFilter.directionPh')}
           multi
           onCommit={(value) => updateFilters({ directions: toggled(filters.directions, value) })}
-        />
-        <AltSelect
-          label={t('tiered.altFilter.tier')}
-          options={FILTER_TIERS.map((value) => ({ value, label: value }))}
-          selected={filters.tiers}
-          placeholder={t('tiered.altFilter.tierPh')}
-          multi
-          onCommit={(value) => updateFilters({ tiers: toggled(filters.tiers, value) })}
         />
         <AltPairField
           label={t('tiered.altFilter.shares')}
@@ -323,18 +323,22 @@ export const AltRunHistory = ({
                     {run.stock_code}
                   </span>
                   <span className="flex-1 text-xs tabular-nums text-gray-500">{formatTime(run)}</span>
-                  <span className="w-12 shrink-0 text-xs text-gray-500 sm:w-14">
+                  <span className="w-12 shrink-0 text-right text-xs text-gray-500 sm:w-14">
                     {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
                   </span>
-                  {run.status === 'running' ? (
-                    <AltTag tone={RUNNING_TAG}>{t('tiered.status.running')}</AltTag>
-                  ) : run.status === 'failed' ? (
-                    <AltTag tone={FAILED_TAG}>{t('tiered.status.failed')}</AltTag>
-                  ) : (
-                    <AltTag tone={DIRECTION_TAG[run.direction ?? 'unknown']}>
-                      {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
-                    </AltTag>
-                  )}
+                  {/* fixed-width tag column: variable tag widths must not
+                      shift the tier column to its left */}
+                  <span className="flex w-16 shrink-0 justify-start sm:w-20">
+                    {run.status === 'running' ? (
+                      <AltTag tone={RUNNING_TAG}>{t('tiered.status.running')}</AltTag>
+                    ) : run.status === 'failed' ? (
+                      <AltTag tone={FAILED_TAG}>{t('tiered.status.failed')}</AltTag>
+                    ) : (
+                      <AltTag tone={DIRECTION_TAG[run.direction ?? 'unknown']}>
+                        {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
+                      </AltTag>
+                    )}
+                  </span>
                   <span className="w-20 shrink-0 text-right text-xs tabular-nums text-gray-400 sm:w-24">
                     {run.shares == null ? '—' : t('tiered.altHistory.shares', { value: run.shares })}
                   </span>

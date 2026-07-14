@@ -50,27 +50,53 @@ describe('AltRunForm', () => {
     expect(props.onTicker).toHaveBeenCalledWith('AAPL');
   });
 
-  it('keeps Start disabled until a ticker pill exists, then starts on click', () => {
-    renderForm();
-    expect(screen.getByRole('button', { name: /开始|Start/ })).toBeDisabled();
+  it('refuses to start with fields missing and explains in a popup', () => {
+    const props = renderForm({ ticker: 'AAPL', tier: 1, capital: null, riskPct: '1' });
+
+    fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
+
+    expect(props.onStart).not.toHaveBeenCalled();
+    expect(screen.getByText(/四项都需要填写|All four fields are required/)).toBeInTheDocument();
   });
 
   it('shows selections as Label: value pills; clicking a pill removes it', () => {
-    const props = renderForm({ ticker: 'AAPL', tier: 1, capital: '100000' });
+    const props = renderForm({ ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1' });
 
-    const start = screen.getByRole('button', { name: /开始|Start/ });
-    expect(start).toBeEnabled();
-    fireEvent.click(start);
+    fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
     expect(props.onStart).toHaveBeenCalled();
+
+    // capital carries the ticker's market currency; risk carries the % sign
+    fireEvent.click(screen.getByRole('button', { name: /(Capital|本金): 100000 USD/ }));
+    expect(props.onCapital).toHaveBeenCalledWith(null);
+
+    fireEvent.click(screen.getByRole('button', { name: /(Risk|单笔风险): 1%/ }));
+    expect(props.onRiskPct).toHaveBeenCalledWith(null);
 
     fireEvent.click(screen.getByRole('button', { name: /(Ticker|代码): AAPL/ }));
     expect(props.onTicker).toHaveBeenCalledWith(null);
 
     fireEvent.click(screen.getByRole('button', { name: /(Tier|层级): 1/ }));
     expect(props.onTier).toHaveBeenCalledWith(null);
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: /(Capital|本金): 100000/ }));
-    expect(props.onCapital).toHaveBeenCalledWith(null);
+  it('blocks picking a capital before a ticker and explains in a popup', () => {
+    const props = renderForm();
+    const capitalBox = screen.getByPlaceholderText(/输入本金|Enter capital/);
+
+    fireEvent.change(capitalBox, { target: { value: '50000' } });
+    fireEvent.keyDown(capitalBox, { key: 'Enter' });
+
+    expect(props.onCapital).not.toHaveBeenCalled();
+    expect(screen.getByText(/请先选择股票代码|Pick a ticker first/)).toBeInTheDocument();
+  });
+
+  it("labels capital with the ticker market's currency", () => {
+    renderForm({ ticker: 'hk00700', capital: '50000' });
+
+    expect(screen.getByText(/(Capital|本金): HKD/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /(Capital|本金): 50000 HKD/ }),
+    ).toBeInTheDocument();
   });
 
   it('clears a selection when its dropdown option is picked again', () => {

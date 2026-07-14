@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { Play } from 'lucide-react';
 import type { TieredDepth } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { HelpTerm } from '../tiered/terms';
-import { ALT_COLOR, TAG_BASE } from './altStyles';
+import { tickerCurrency } from './altCurrency';
+import { ALT_COLOR } from './altStyles';
 import { AltPill, AltPillRow, AltSelect } from './AltFields';
+import { AltModal } from './AltUi';
 
 const TIERS: TieredDepth[] = [1, 2, 3];
 
@@ -45,9 +48,11 @@ export interface AltRunFormProps {
 }
 
 // Section 1: the new-run form. Fields are write-only — every choice lands
-// as a removable pill below; the Start pill launches the run. Nothing runs
-// on change or select. Picking an already-picked option clears it, same as
-// clicking its pill.
+// as a removable pill below; the Start pill launches the run only when all
+// four fields are picked (a popup explains otherwise). Capital is in the
+// ticker's own trading currency, so it can't be picked before the ticker.
+// Picking an already-picked dropdown option clears it, same as clicking
+// its pill.
 export const AltRunForm = ({
   ticker,
   tier,
@@ -62,6 +67,25 @@ export const AltRunForm = ({
   onStart,
 }: AltRunFormProps) => {
   const { t } = useUiLanguage();
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const currency = ticker ? tickerCurrency(ticker) : null;
+
+  const commitCapital = (value: string) => {
+    if (!ticker) {
+      setNotice(t('tiered.altForm.needTickerFirst'));
+      return;
+    }
+    onCapital(value === capital ? null : value);
+  };
+
+  const handleStart = () => {
+    if (!ticker || tier === null || !capital || !riskPct) {
+      setNotice(t('tiered.altForm.allRequired'));
+      return;
+    }
+    onStart();
+  };
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -88,7 +112,11 @@ export const AltRunForm = ({
         <AltSelect
           label={
             <HelpTerm
-              label={t('tiered.altForm.capital')}
+              label={
+                currency
+                  ? t('tiered.altForm.capitalCurrency', { currency })
+                  : t('tiered.altForm.capital')
+              }
               helpKey="tiered.help.sizingForm"
               underline={false}
             />
@@ -99,7 +127,7 @@ export const AltRunForm = ({
           inputMode="decimal"
           freeText
           validate={isPositiveNumber}
-          onCommit={(value) => onCapital(value === capital ? null : value)}
+          onCommit={commitCapital}
         />
         <AltSelect
           label={
@@ -124,9 +152,7 @@ export const AltRunForm = ({
           <AltPill tone={TONE.ticker} onRemove={() => onTicker(null)}>
             {t('tiered.pill.ticker', { value: ticker })}
           </AltPill>
-        ) : (
-          <span className={`${TAG_BASE} ${ALT_COLOR.gray}`}>{t('tiered.altForm.emptyHint')}</span>
-        )}
+        ) : null}
         {tier !== null ? (
           <AltPill tone={TONE.tier} onRemove={() => onTier(null)}>
             {t('tiered.pill.tier', { value: tier })}
@@ -134,7 +160,7 @@ export const AltRunForm = ({
         ) : null}
         {capital ? (
           <AltPill tone={TONE.capital} onRemove={() => onCapital(null)}>
-            {t('tiered.pill.capital', { value: capital })}
+            {t('tiered.pill.capital', { value: capital, currency: currency ?? '' }).trim()}
           </AltPill>
         ) : null}
         {riskPct ? (
@@ -144,8 +170,8 @@ export const AltRunForm = ({
         ) : null}
         <button
           type="button"
-          onClick={onStart}
-          disabled={!ticker || submitting}
+          onClick={handleStart}
+          disabled={submitting}
           className="inline-flex cursor-pointer items-center gap-1.5 rounded bg-indigo-600 px-[9px] py-0.5 text-xs font-semibold text-gray-200 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Play className="h-3 w-3" />
@@ -154,6 +180,14 @@ export const AltRunForm = ({
       </AltPillRow>
 
       {error ? <p className="text-sm text-red-300">{error}</p> : null}
+
+      <AltModal
+        isOpen={notice !== null}
+        title={t('tiered.altForm.noticeTitle')}
+        onClose={() => setNotice(null)}
+      >
+        <p className="text-sm leading-relaxed">{notice}</p>
+      </AltModal>
     </div>
   );
 };

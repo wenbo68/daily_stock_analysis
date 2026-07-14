@@ -26,7 +26,7 @@ interface AltCardProps {
 // The only surface on the alt page: flat gray-800, small radius, no border,
 // no shadow — separation comes from the gray-900 canvas and whitespace.
 export const AltCard = ({ children, className, testId }: AltCardProps) => (
-  <section data-testid={testId} className={cn('rounded-lg bg-gray-800 p-5', className)}>
+  <section data-testid={testId} className={cn('rounded bg-gray-800 p-5', className)}>
     {children}
   </section>
 );
@@ -65,7 +65,7 @@ export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) =>
       <div
         role="dialog"
         aria-modal="true"
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-lg bg-gray-800 p-5 text-sm text-gray-400"
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded bg-gray-800 p-5 text-sm text-gray-400"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
