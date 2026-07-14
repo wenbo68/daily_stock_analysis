@@ -15,6 +15,8 @@ function makeRun(id: string, overrides: Partial<TieredRunSummary> = {}): TieredR
     direction: 'buy',
     shares: 41,
     tier: 1,
+    capital: 100000,
+    risk_fraction: 0.01,
     ...overrides,
   };
 }
@@ -36,28 +38,63 @@ function renderHistory(overrides: Partial<AltRunHistoryProps> = {}) {
   return props;
 }
 
-// The date pair renders before the shares pair, and both use Min/Max
-// placeholders — index 0 is the date box, index 1 the shares box.
+// Min/Max pairs render in filter order — capital, risk, shares, date —
+// so index 0 is the capital box, 1 risk, 2 shares, 3 date.
 const minBoxes = () => screen.getAllByPlaceholderText(/^下限$|^Min$/);
+const DATE_MIN = 3;
+const SHARES_MIN = 2;
 
 describe('AltRunHistory', () => {
-  it('shows ticker, date, tier, verdict and shares per row', () => {
+  it('shows ticker, capital, risk, tier, verdict, shares and date per row', () => {
     renderHistory({
       runs: [
         makeRun('t1', { stock_code: 'MSFT', tier: 3 }),
-        makeRun('t2', { stock_code: 'NVDA', status: 'running', direction: null, shares: null, tier: null }),
+        makeRun('t2', {
+          stock_code: 'NVDA',
+          status: 'running',
+          direction: null,
+          shares: null,
+          tier: null,
+          capital: null,
+          risk_fraction: null,
+        }),
       ],
     });
 
     expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect(screen.getByText('100000')).toBeInTheDocument();
+    expect(screen.getByText('1%')).toBeInTheDocument();
     expect(screen.getAllByText(/^\d{4}\/\d{2}\/\d{2}, \d{2}:\d{2}$/)).toHaveLength(2);
     expect(screen.getByText(/层级 3|Tier 3/)).toBeInTheDocument();
     expect(screen.getByText(/买入|Buy/)).toBeInTheDocument();
     expect(screen.getByText(/41/)).toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
     expect(screen.getByText(/分析中|Running/)).toBeInTheDocument();
-    // the running row has neither tier nor shares yet — two dashes
-    expect(screen.getAllByText('—')).toHaveLength(2);
+    // the running row has no capital/risk/tier/shares yet — four dashes
+    expect(screen.getAllByText('—')).toHaveLength(4);
+  });
+
+  it('filters by capital and risk ranges', () => {
+    renderHistory({
+      runs: [
+        makeRun('t1', { stock_code: 'MSFT', capital: 50000, risk_fraction: 0.005 }),
+        makeRun('t2', { stock_code: 'NVDA', capital: 200000, risk_fraction: 0.02 }),
+      ],
+    });
+
+    const capitalMin = minBoxes()[0];
+    fireEvent.change(capitalMin, { target: { value: '100000' } });
+    fireEvent.keyDown(capitalMin, { key: 'Enter' });
+    expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
+    expect(screen.getByText('NVDA')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /(Capital Min|本金下限): 100000/ }));
+
+    const riskMax = screen.getAllByPlaceholderText(/^上限$|^Max$/)[1];
+    fireEvent.change(riskMax, { target: { value: '1' } });
+    fireEvent.keyDown(riskMax, { key: 'Enter' });
+    expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect(screen.queryByText('NVDA')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /(Risk Max|单笔风险上限): 1%/ })).toBeInTheDocument();
   });
 
   it('offers the tickers seen in history as a multi-pick dropdown filter', () => {
@@ -119,8 +156,8 @@ describe('AltRunHistory', () => {
 
   it('filters by a date range (wide bounds keep the row, a future start drops it)', () => {
     renderHistory({ runs: [makeRun('t1', { stock_code: 'MSFT' })] });
-    const [dateMin] = minBoxes();
-    const [dateMax] = screen.getAllByPlaceholderText(/^上限$|^Max$/);
+    const dateMin = minBoxes()[DATE_MIN];
+    const dateMax = screen.getAllByPlaceholderText(/^上限$|^Max$/)[DATE_MIN];
 
     fireEvent.change(dateMin, { target: { value: '2026/07/01' } });
     fireEvent.keyDown(dateMin, { key: 'Enter' });
@@ -136,7 +173,7 @@ describe('AltRunHistory', () => {
 
   it('rejects an invalid date instead of committing it', () => {
     renderHistory({ runs: [makeRun('t1', { stock_code: 'MSFT' })] });
-    const [dateMin] = minBoxes();
+    const dateMin = minBoxes()[DATE_MIN];
 
     fireEvent.change(dateMin, { target: { value: 'yesterday' } });
     fireEvent.keyDown(dateMin, { key: 'Enter' });
@@ -152,7 +189,7 @@ describe('AltRunHistory', () => {
         makeRun('t2', { stock_code: 'NVDA', shares: 80 }),
       ],
     });
-    const sharesMin = minBoxes()[1];
+    const sharesMin = minBoxes()[SHARES_MIN];
 
     fireEvent.change(sharesMin, { target: { value: '10' } });
     fireEvent.keyDown(sharesMin, { key: 'Enter' });

@@ -6,6 +6,7 @@ import {
   type TieredRunSummary,
   type TieredSizingRequest,
 } from '../api/tiered';
+import { riskPctText } from '../components/tiered-alt/altFormat';
 import { AltRunForm } from '../components/tiered-alt/AltRunForm';
 import { AltRunHistory } from '../components/tiered-alt/AltRunHistory';
 import { useUiLanguage } from '../contexts/UiLanguageContext';
@@ -40,9 +41,6 @@ function storeNumber(key: string, value: string | null): void {
     // storage unavailable (private mode) — the run still works
   }
 }
-
-const riskFractionToPct = (fraction: number): string =>
-  String(Number((fraction * 100).toPrecision(12)));
 
 // Alternate skin for tiered analysis, styled after showplayer.net. Two
 // section cards with their titles sitting above: the new-run form
@@ -102,7 +100,7 @@ const TieredAltPage = () => {
         const defaultRisk = defaults.risk_fraction;
         if (storedRisk == null && defaultRisk != null) {
           setRiskPct((prev) =>
-            prev === null || prev === DEFAULT_RISK_PCT ? riskFractionToPct(defaultRisk) : prev,
+            prev === null || prev === DEFAULT_RISK_PCT ? riskPctText(defaultRisk) : prev,
           );
         }
       } catch {

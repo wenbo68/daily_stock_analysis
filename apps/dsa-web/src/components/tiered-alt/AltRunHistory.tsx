@@ -3,6 +3,7 @@ import type { TieredResult, TieredRunSummary } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
+import { plainNumber, riskPctText } from './altFormat';
 import { ALT_COLOR, DIRECTION_TAG, STATUS_DOT, TAG_BASE } from './altStyles';
 import { AltPageSelector, AltPairField, AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltResult } from './AltResult';
@@ -19,10 +20,12 @@ const FAILED_TAG = 'bg-red-500/20 text-red-300 ring-red-500/30';
 // and Max share one color (ALT_COLOR).
 const TONE = {
   ticker: ALT_COLOR[1],
-  date: ALT_COLOR[2],
-  tier: ALT_COLOR[3],
-  verdict: ALT_COLOR[4],
-  shares: ALT_COLOR[5],
+  capital: ALT_COLOR[2],
+  risk: ALT_COLOR[3],
+  tier: ALT_COLOR[4],
+  verdict: ALT_COLOR[5],
+  shares: ALT_COLOR[6],
+  date: ALT_COLOR[7],
 };
 
 // Accepts 2026/07/14 or 2026-07-14; day boundaries are the viewer's local time.
@@ -41,6 +44,16 @@ function parseDay(raw: string, plusDays = 0): Date {
 }
 
 const isWholeNumber = (raw: string): boolean => /^\d+$/.test(raw);
+
+const isPositiveNumber = (raw: string): boolean => {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0;
+};
+
+const isRiskPct = (raw: string): boolean => {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 && value < 100;
+};
 
 function runTime(run: TieredRunSummary): Date | null {
   if (!run.created_at) {
@@ -63,24 +76,37 @@ function formatTime(run: TieredRunSummary): string {
   );
 }
 
+// The run's risk input as the percent the user typed ('1%'), or a dash.
+function riskCell(run: TieredRunSummary): string {
+  return run.risk_fraction == null ? '—' : `${riskPctText(run.risk_fraction)}%`;
+}
+
 interface HistoryFilters {
   tickers: string[];
-  dateMin: string | null;
-  dateMax: string | null;
-  directions: string[];
+  capitalMin: string | null;
+  capitalMax: string | null;
+  riskMin: string | null;
+  riskMax: string | null;
   tiers: string[];
+  directions: string[];
   sharesMin: string | null;
   sharesMax: string | null;
+  dateMin: string | null;
+  dateMax: string | null;
 }
 
 const NO_FILTERS: HistoryFilters = {
   tickers: [],
-  dateMin: null,
-  dateMax: null,
-  directions: [],
+  capitalMin: null,
+  capitalMax: null,
+  riskMin: null,
+  riskMax: null,
   tiers: [],
+  directions: [],
   sharesMin: null,
   sharesMax: null,
+  dateMin: null,
+  dateMax: null,
 };
 
 // Add the value if absent, remove it if present — how multi-value filters
@@ -93,10 +119,29 @@ function matchesFilters(run: TieredRunSummary, filters: HistoryFilters): boolean
   if (filters.tickers.length > 0 && !filters.tickers.includes(run.stock_code)) {
     return false;
   }
-  if (filters.directions.length > 0 && !filters.directions.includes(run.direction ?? '')) {
+  if (filters.capitalMin && !(run.capital != null && run.capital >= Number(filters.capitalMin))) {
+    return false;
+  }
+  if (filters.capitalMax && !(run.capital != null && run.capital <= Number(filters.capitalMax))) {
+    return false;
+  }
+  const riskPct = run.risk_fraction != null ? run.risk_fraction * 100 : null;
+  if (filters.riskMin && !(riskPct != null && riskPct >= Number(filters.riskMin))) {
+    return false;
+  }
+  if (filters.riskMax && !(riskPct != null && riskPct <= Number(filters.riskMax))) {
     return false;
   }
   if (filters.tiers.length > 0 && !filters.tiers.includes(String(run.tier ?? ''))) {
+    return false;
+  }
+  if (filters.directions.length > 0 && !filters.directions.includes(run.direction ?? '')) {
+    return false;
+  }
+  if (filters.sharesMin && !(run.shares != null && run.shares >= Number(filters.sharesMin))) {
+    return false;
+  }
+  if (filters.sharesMax && !(run.shares != null && run.shares <= Number(filters.sharesMax))) {
     return false;
   }
   const time = runTime(run);
@@ -104,12 +149,6 @@ function matchesFilters(run: TieredRunSummary, filters: HistoryFilters): boolean
     return false;
   }
   if (filters.dateMax && (!time || time >= parseDay(filters.dateMax, 1))) {
-    return false;
-  }
-  if (filters.sharesMin && !(run.shares != null && run.shares >= Number(filters.sharesMin))) {
-    return false;
-  }
-  if (filters.sharesMax && !(run.shares != null && run.shares <= Number(filters.sharesMax))) {
     return false;
   }
   return true;
@@ -125,10 +164,11 @@ export interface AltRunHistoryProps {
 
 // Section 2: run history. Filters at the top apply the moment something is
 // entered or picked — no search button — and show as removable pills
-// (ticker, verdict and tier take several values at once). Below, one row
-// per run (10 per page); clicking a row expands the full report inline. A
-// freshly started run appears at the top as Running and turns into a
-// normal row when it finishes.
+// (ticker, tier and verdict take several values at once). Below, one row
+// per run (10 per page) with its facts spread evenly: ticker, capital,
+// risk, tier, verdict, shares, date. Clicking a row expands the full
+// report inline. A freshly started run appears at the top as Running and
+// turns into a normal row when it finishes.
 export const AltRunHistory = ({
   runs,
   expandedTaskId,
@@ -161,13 +201,18 @@ export const AltRunHistory = ({
 
   const hasFilters =
     filters.tickers.length > 0 ||
-    filters.directions.length > 0 ||
     filters.tiers.length > 0 ||
-    filters.dateMin !== null ||
-    filters.dateMax !== null ||
+    filters.directions.length > 0 ||
+    filters.capitalMin !== null ||
+    filters.capitalMax !== null ||
+    filters.riskMin !== null ||
+    filters.riskMax !== null ||
     filters.sharesMin !== null ||
-    filters.sharesMax !== null;
+    filters.sharesMax !== null ||
+    filters.dateMin !== null ||
+    filters.dateMax !== null;
 
+  // Pills in filter order: ticker, capital, risk, tier, verdict, shares, date.
   const pills: { key: string; tone: string; label: string; onRemove: () => void }[] = [];
   filters.tickers.forEach((ticker) => {
     pills.push({
@@ -177,22 +222,22 @@ export const AltRunHistory = ({
       onRemove: () => updateFilters({ tickers: toggled(filters.tickers, ticker) }),
     });
   });
-  if (filters.dateMin) {
-    pills.push({
-      key: 'dateMin',
-      tone: TONE.date,
-      label: t('tiered.pill.dateMin', { value: filters.dateMin }),
-      onRemove: () => updateFilters({ dateMin: null }),
-    });
-  }
-  if (filters.dateMax) {
-    pills.push({
-      key: 'dateMax',
-      tone: TONE.date,
-      label: t('tiered.pill.dateMax', { value: filters.dateMax }),
-      onRemove: () => updateFilters({ dateMax: null }),
-    });
-  }
+  ([
+    ['capitalMin', TONE.capital, 'tiered.pill.capitalMin'],
+    ['capitalMax', TONE.capital, 'tiered.pill.capitalMax'],
+    ['riskMin', TONE.risk, 'tiered.pill.riskMin'],
+    ['riskMax', TONE.risk, 'tiered.pill.riskMax'],
+  ] as const).forEach(([field, tone, labelKey]) => {
+    const value = filters[field];
+    if (value) {
+      pills.push({
+        key: field,
+        tone,
+        label: t(labelKey, { value }),
+        onRemove: () => updateFilters({ [field]: null }),
+      });
+    }
+  });
   filters.tiers.forEach((tier) => {
     pills.push({
       key: `tier-${tier}`,
@@ -211,26 +256,26 @@ export const AltRunHistory = ({
       onRemove: () => updateFilters({ directions: toggled(filters.directions, direction) }),
     });
   });
-  if (filters.sharesMin) {
-    pills.push({
-      key: 'sharesMin',
-      tone: TONE.shares,
-      label: t('tiered.pill.sharesMin', { value: filters.sharesMin }),
-      onRemove: () => updateFilters({ sharesMin: null }),
-    });
-  }
-  if (filters.sharesMax) {
-    pills.push({
-      key: 'sharesMax',
-      tone: TONE.shares,
-      label: t('tiered.pill.sharesMax', { value: filters.sharesMax }),
-      onRemove: () => updateFilters({ sharesMax: null }),
-    });
-  }
+  ([
+    ['sharesMin', TONE.shares, 'tiered.pill.sharesMin'],
+    ['sharesMax', TONE.shares, 'tiered.pill.sharesMax'],
+    ['dateMin', TONE.date, 'tiered.pill.dateMin'],
+    ['dateMax', TONE.date, 'tiered.pill.dateMax'],
+  ] as const).forEach(([field, tone, labelKey]) => {
+    const value = filters[field];
+    if (value) {
+      pills.push({
+        key: field,
+        tone,
+        label: t(labelKey, { value }),
+        onRemove: () => updateFilters({ [field]: null }),
+      });
+    }
+  });
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 lg:gap-4">
+      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-7">
         <AltSelect
           label={t('tiered.altForm.ticker')}
           options={knownTickers.map((value) => ({ value, label: value }))}
@@ -240,16 +285,33 @@ export const AltRunHistory = ({
           onCommit={(value) => updateFilters({ tickers: toggled(filters.tickers, value) })}
         />
         <AltPairField
-          label={t('tiered.altFilter.date')}
+          label={t('tiered.altFilter.capital')}
           start={{
             placeholder: t('tiered.altFilter.min'),
-            validate: isValidDay,
-            onCommit: (value) => updateFilters({ dateMin: value }),
+            inputMode: 'decimal',
+            validate: isPositiveNumber,
+            onCommit: (value) => updateFilters({ capitalMin: value }),
           }}
           end={{
             placeholder: t('tiered.altFilter.max'),
-            validate: isValidDay,
-            onCommit: (value) => updateFilters({ dateMax: value }),
+            inputMode: 'decimal',
+            validate: isPositiveNumber,
+            onCommit: (value) => updateFilters({ capitalMax: value }),
+          }}
+        />
+        <AltPairField
+          label={t('tiered.altFilter.risk')}
+          start={{
+            placeholder: t('tiered.altFilter.min'),
+            inputMode: 'decimal',
+            validate: isRiskPct,
+            onCommit: (value) => updateFilters({ riskMin: value }),
+          }}
+          end={{
+            placeholder: t('tiered.altFilter.max'),
+            inputMode: 'decimal',
+            validate: isRiskPct,
+            onCommit: (value) => updateFilters({ riskMax: value }),
           }}
         />
         <AltSelect
@@ -286,6 +348,19 @@ export const AltRunHistory = ({
             onCommit: (value) => updateFilters({ sharesMax: value }),
           }}
         />
+        <AltPairField
+          label={t('tiered.altFilter.date')}
+          start={{
+            placeholder: t('tiered.altFilter.min'),
+            validate: isValidDay,
+            onCommit: (value) => updateFilters({ dateMin: value }),
+          }}
+          end={{
+            placeholder: t('tiered.altFilter.max'),
+            validate: isValidDay,
+            onCommit: (value) => updateFilters({ dateMax: value }),
+          }}
+        />
       </div>
 
       <AltPillRow>
@@ -319,28 +394,41 @@ export const AltRunHistory = ({
                   )}
                 >
                   <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])} />
-                  <span className="w-20 shrink-0 font-semibold text-gray-300 sm:w-24">
-                    {run.stock_code}
-                  </span>
-                  <span className="flex-1 text-xs tabular-nums text-gray-500">{formatTime(run)}</span>
-                  <span className="w-12 shrink-0 text-right text-xs text-gray-500 sm:w-14">
-                    {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
-                  </span>
-                  {/* fixed-width tag column: variable tag widths must not
-                      shift the tier column to its left */}
-                  <span className="flex w-16 shrink-0 justify-start sm:w-20">
-                    {run.status === 'running' ? (
-                      <AltTag tone={RUNNING_TAG}>{t('tiered.status.running')}</AltTag>
-                    ) : run.status === 'failed' ? (
-                      <AltTag tone={FAILED_TAG}>{t('tiered.status.failed')}</AltTag>
-                    ) : (
-                      <AltTag tone={DIRECTION_TAG[run.direction ?? 'unknown']}>
-                        {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
-                      </AltTag>
-                    )}
-                  </span>
-                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-gray-400 sm:w-24">
-                    {run.shares == null ? '—' : t('tiered.altHistory.shares', { value: run.shares })}
+                  {/* equal columns spread the facts evenly across the row */}
+                  <span className="grid flex-1 grid-cols-7 items-center gap-2">
+                    <span className="truncate font-semibold text-gray-300">{run.stock_code}</span>
+                    <span
+                      id={`alt-run-${run.task_id}-capital`}
+                      className="text-center text-xs tabular-nums text-gray-400"
+                    >
+                      {run.capital == null ? '—' : plainNumber(run.capital)}
+                    </span>
+                    <span
+                      id={`alt-run-${run.task_id}-risk`}
+                      className="text-center text-xs tabular-nums text-gray-400"
+                    >
+                      {riskCell(run)}
+                    </span>
+                    <span className="text-center text-xs text-gray-500">
+                      {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
+                    </span>
+                    <span className="flex justify-center">
+                      {run.status === 'running' ? (
+                        <AltTag tone={RUNNING_TAG}>{t('tiered.status.running')}</AltTag>
+                      ) : run.status === 'failed' ? (
+                        <AltTag tone={FAILED_TAG}>{t('tiered.status.failed')}</AltTag>
+                      ) : (
+                        <AltTag tone={DIRECTION_TAG[run.direction ?? 'unknown']}>
+                          {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
+                        </AltTag>
+                      )}
+                    </span>
+                    <span className="text-center text-xs tabular-nums text-gray-400">
+                      {run.shares == null ? '—' : t('tiered.altHistory.shares', { value: run.shares })}
+                    </span>
+                    <span className="truncate text-right text-xs tabular-nums text-gray-500">
+                      {formatTime(run)}
+                    </span>
                   </span>
                 </button>
                 {isExpanded ? (
@@ -352,7 +440,7 @@ export const AltRunHistory = ({
                     ) : run.status === 'running' ? (
                       <p className="text-sm text-gray-500">{t('tiered.running')}</p>
                     ) : expandedResult ? (
-                      <AltResult result={expandedResult} />
+                      <AltResult result={expandedResult} taskId={run.task_id} />
                     ) : expandedError ? (
                       <p className="text-sm text-red-300">{expandedError}</p>
                     ) : (

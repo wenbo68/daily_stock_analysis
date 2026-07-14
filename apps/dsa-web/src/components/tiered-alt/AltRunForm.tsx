@@ -18,10 +18,14 @@ const RISK_IDEAS = ['0.5', '1', '2'];
 // Field colors follow the shared palette in field order (ALT_COLOR).
 const TONE = {
   ticker: ALT_COLOR[1],
-  tier: ALT_COLOR[2],
-  capital: ALT_COLOR[3],
-  risk: ALT_COLOR[4],
+  capital: ALT_COLOR[2],
+  risk: ALT_COLOR[3],
+  tier: ALT_COLOR[4],
 };
+
+// The Start control is a pill like its neighbors, in the next palette slot.
+const START_PILL =
+  'inline-flex cursor-pointer items-center gap-1.5 rounded px-[9px] py-0.5 text-xs font-semibold ring-1 ring-inset transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 bg-indigo-500/20 text-indigo-300 ring-indigo-500/30';
 
 const isPositiveNumber = (raw: string): boolean => {
   const value = Number(raw);
@@ -100,17 +104,6 @@ export const AltRunForm = ({
         />
         <AltSelect
           label={
-            <HelpTerm label={t('tiered.altForm.tier')} helpKey="tiered.help.depth" underline={false} />
-          }
-          options={TIERS.map((value) => ({ value: String(value), label: String(value) }))}
-          selected={tier !== null ? [String(tier)] : undefined}
-          placeholder={t('tiered.altForm.tierPh')}
-          onCommit={(value) =>
-            onTier(Number(value) === tier ? null : (Number(value) as TieredDepth))
-          }
-        />
-        <AltSelect
-          label={
             <HelpTerm
               label={
                 currency
@@ -145,17 +138,23 @@ export const AltRunForm = ({
           validate={isRiskPct}
           onCommit={(value) => onRiskPct(value === riskPct ? null : value)}
         />
+        <AltSelect
+          label={
+            <HelpTerm label={t('tiered.altForm.tier')} helpKey="tiered.help.depth" underline={false} />
+          }
+          options={TIERS.map((value) => ({ value: String(value), label: String(value) }))}
+          selected={tier !== null ? [String(tier)] : undefined}
+          placeholder={t('tiered.altForm.tierPh')}
+          onCommit={(value) =>
+            onTier(Number(value) === tier ? null : (Number(value) as TieredDepth))
+          }
+        />
       </div>
 
       <AltPillRow>
         {ticker ? (
           <AltPill tone={TONE.ticker} onRemove={() => onTicker(null)}>
             {t('tiered.pill.ticker', { value: ticker })}
-          </AltPill>
-        ) : null}
-        {tier !== null ? (
-          <AltPill tone={TONE.tier} onRemove={() => onTier(null)}>
-            {t('tiered.pill.tier', { value: tier })}
           </AltPill>
         ) : null}
         {capital ? (
@@ -168,12 +167,12 @@ export const AltRunForm = ({
             {t('tiered.pill.risk', { value: riskPct })}
           </AltPill>
         ) : null}
-        <button
-          type="button"
-          onClick={handleStart}
-          disabled={submitting}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded bg-indigo-600 px-[9px] py-0.5 text-xs font-semibold text-gray-200 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        {tier !== null ? (
+          <AltPill tone={TONE.tier} onRemove={() => onTier(null)}>
+            {t('tiered.pill.tier', { value: tier })}
+          </AltPill>
+        ) : null}
+        <button type="button" onClick={handleStart} disabled={submitting} className={START_PILL}>
           <Play className="h-3 w-3" />
           {t('tiered.altForm.start')}
         </button>

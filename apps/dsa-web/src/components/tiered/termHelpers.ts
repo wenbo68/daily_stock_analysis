@@ -69,8 +69,11 @@ export function metricAnchorId(refPath: string): string {
 const FLASH_CLASSES = ['ring-2', 'ring-cyan', 'rounded-md'];
 const FLASH_DURATION_MS = 1800;
 
-export function jumpToMetric(refPath: string): boolean {
-  const element = document.getElementById(metricAnchorId(refPath));
+// Scroll to any element by id and flash it — the metric jump, generalized
+// so other in-report links (e.g. the shares-computation numbers) can
+// anchor-jump the same way.
+export function flashElement(id: string): boolean {
+  const element = document.getElementById(id);
   if (!element) {
     return false;
   }
@@ -78,4 +81,8 @@ export function jumpToMetric(refPath: string): boolean {
   element.classList.add(...FLASH_CLASSES);
   window.setTimeout(() => element.classList.remove(...FLASH_CLASSES), FLASH_DURATION_MS);
   return true;
+}
+
+export function jumpToMetric(refPath: string): boolean {
+  return flashElement(metricAnchorId(refPath));
 }

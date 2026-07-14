@@ -81,9 +81,16 @@ def _result_digest(row: Any) -> Dict[str, Any]:
     but bought nothing, None (shown as a dash) when the run has no sizing
     block at all. ``tier`` is the requested depth; old runs stored before
     depth existed fall back to the deepest tier that reported (v1 runs were
-    tier 1 only). Anything unreadable degrades to None rather than
-    breaking the list."""
-    digest: Dict[str, Any] = {"direction": None, "shares": None, "tier": None}
+    tier 1 only). ``capital``/``risk_fraction`` are the sizing inputs the
+    run used, for the row's capital and risk columns. Anything unreadable
+    degrades to None rather than breaking the list."""
+    digest: Dict[str, Any] = {
+        "direction": None,
+        "shares": None,
+        "tier": None,
+        "capital": None,
+        "risk_fraction": None,
+    }
     if row.status != "done" or not row.result_json:
         return digest
     try:
@@ -107,6 +114,10 @@ def _result_digest(row: Any) -> Dict[str, Any]:
         if isinstance(tier_source, int):
             digest["tier"] = tier_source
             break
+    if isinstance(sizing, dict) and isinstance(sizing.get("inputs"), dict):
+        inputs = sizing["inputs"]
+        digest["capital"] = inputs.get("capital")
+        digest["risk_fraction"] = inputs.get("risk_fraction")
     return digest
 
 

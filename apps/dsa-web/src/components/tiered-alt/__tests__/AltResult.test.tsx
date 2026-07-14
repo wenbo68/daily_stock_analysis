@@ -84,56 +84,60 @@ function makeDeepResult(): TieredResult {
 function renderResult(result: TieredResult) {
   render(
     <UiLanguageProvider>
-      <AltResult result={result} />
+      <AltResult result={result} taskId="task-9" />
     </UiLanguageProvider>,
   );
 }
 
 describe('AltResult', () => {
-  it('renders the same skeleton for a depth-1 (old) run: final verdict, order size, tier 1, dimensions', () => {
+  it('renders a depth-1 (old) run: dimensions and tier 1 only, no shares block', () => {
     renderResult(makeV1Result());
-    expect(screen.getByTestId('alt-final-verdict')).toBeInTheDocument();
-    expect(screen.getByTestId('alt-order-size')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/alt-dimension-/)).toHaveLength(4);
     expect(screen.getByTestId('alt-tier1')).toBeInTheDocument();
     expect(screen.queryByTestId('alt-tier2')).not.toBeInTheDocument();
     expect(screen.queryByTestId('alt-tier3')).not.toBeInTheDocument();
-    expect(screen.getAllByTestId(/alt-dimension-/)).toHaveLength(4);
-    // no sizing block recorded → dash plus the explanation, never a missing card
-    expect(screen.getByTestId('alt-order-size-shares').textContent).toContain('—');
+    // no sizing block recorded → no shares-computation block at all
+    expect(screen.queryByTestId('alt-shares-computation')).not.toBeInTheDocument();
+    // the obsolete symbol/verdict hero is gone — the row already says both
+    expect(screen.queryByText('AAPL')).not.toBeInTheDocument();
   });
 
-  it('adds tier 2 and tier 3 cards on a deep run without changing the rest', () => {
-    renderResult(makeDeepResult());
-    expect(screen.getByTestId('alt-final-verdict')).toBeInTheDocument();
-    expect(screen.getByTestId('alt-order-size')).toBeInTheDocument();
-    expect(screen.getByTestId('alt-tier1')).toBeInTheDocument();
-    expect(screen.getByTestId('alt-tier2')).toBeInTheDocument();
-    expect(screen.getByTestId('alt-tier3')).toBeInTheDocument();
-    expect(screen.getAllByTestId(/alt-dimension-/)).toHaveLength(4);
-    expect(screen.getByTestId('alt-order-size-shares').textContent).toContain('83');
-  });
-
-  it('keeps the cards in the fixed order: verdict, size, dimensions, tier 1, tier 2, tier 3', () => {
+  it('keeps the blocks in the fixed order with their titles above the cards', () => {
     renderResult(makeDeepResult());
     const ids = Array.from(document.querySelectorAll('[data-testid]'))
       .map((el) => el.getAttribute('data-testid') ?? '')
       .filter(
         (id) =>
-          ['alt-final-verdict', 'alt-order-size', 'alt-tier1', 'alt-tier2', 'alt-tier3'].includes(
-            id,
-          ) || id === 'alt-dimension-technicals',
+          ['alt-tier1', 'alt-tier2', 'alt-tier3', 'alt-shares-computation'].includes(id) ||
+          id === 'alt-dimension-technicals',
       );
     expect(ids).toEqual([
-      'alt-final-verdict',
-      'alt-order-size',
       'alt-dimension-technicals',
       'alt-tier1',
       'alt-tier2',
       'alt-tier3',
+      'alt-shares-computation',
     ]);
+    expect(screen.getByText(/四维数据报告|Four-dimension reports/)).toBeInTheDocument();
+    expect(screen.getByText(/层级 1：初步立场|Tier 1: preliminary stance/)).toBeInTheDocument();
+    expect(screen.getByText(/层级 2：立场辩论|Tier 2: position debate/)).toBeInTheDocument();
+    expect(screen.getByText(/层级 3：仓位辩论|Tier 3: sizing debate/)).toBeInTheDocument();
+    expect(screen.getByText(/股数计算|Shares computation/)).toBeInTheDocument();
   });
 
-  it('shows 0 shares (not a dash) when the run decided not to buy', () => {
+  it('shows the shares computation as a formula whose numbers are links', () => {
+    renderResult(makeDeepResult());
+    const formula = screen.getByTestId('alt-shares-formula');
+    expect(formula.textContent).toBe('= (100000) × (1%) × (0.5) / (6)');
+    // each number links back to where it came from within this run entry
+    expect(screen.getByRole('button', { name: '100000' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1%' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '0.5' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '6' })).toBeInTheDocument();
+    expect(screen.getByText(/= 83/)).toBeInTheDocument();
+  });
+
+  it('shows the refusal reason instead of a formula when nothing was computed', () => {
     const deep = makeDeepResult();
     renderResult({
       ...deep,
@@ -146,9 +150,8 @@ describe('AltResult', () => {
         refusal_reason: "Sizing only applies when opening a position (direction is 'hold', not 'buy').",
       },
     });
-    const hero = screen.getByTestId('alt-order-size-shares').textContent ?? '';
-    expect(hero).toContain('0');
-    expect(hero).not.toContain('—');
+    expect(screen.queryByTestId('alt-shares-formula')).not.toBeInTheDocument();
+    expect(screen.getByTestId('alt-shares-computation').textContent).not.toBe('');
   });
 
   it('tucks data notes behind an exclamation mark that opens a plain-English modal', () => {

@@ -179,6 +179,10 @@ export type TieredRunSummary = {
   shares?: number | null;
   // The tier the run went to (1-3); null while running/failed.
   tier?: number | null;
+  // The sizing inputs the run used (capital in the ticker's own currency,
+  // risk as a 0-1 fraction); null when the run had no sizing block.
+  capital?: number | null;
+  risk_fraction?: number | null;
 };
 
 export type TieredRun = TieredRunSummary & {
