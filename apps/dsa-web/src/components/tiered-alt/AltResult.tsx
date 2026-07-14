@@ -12,8 +12,8 @@ import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
-import { ALT_LINK, DIRECTION_TAG } from './altStyles';
-import { AltCard, AltEvidenceRefs, AltNotesButton, AltTag } from './AltUi';
+import { ALT_LINK } from './altStyles';
+import { AltCard, AltEvidenceRefs, AltNotesButton } from './AltUi';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -184,16 +184,32 @@ const AltSharesComputation = ({
 
 // ---------- tier cards ----------
 
-// The unified per-tier "Score" chip: always 0-100, whatever scale the
-// backend spoke (tier 1 is already 0-100; the tier-2/3 judges report 0-1).
+// One header fact — `Label: value` in the same quiet styling for verdict,
+// size, stop loss and score alike.
+const AltFact = ({
+  label,
+  helpKey,
+  children,
+}: {
+  label: string;
+  helpKey?: UiTextKey;
+  children: ReactNode;
+}) => (
+  <span className="text-xs text-gray-500">
+    {helpKey ? <HelpTerm label={label} helpKey={helpKey} /> : label}
+    {': '}
+    <span className="text-gray-300">{children}</span>
+  </span>
+);
+
+// The unified per-tier "Score": always 0-100, whatever scale the backend
+// spoke (tier 1 is already 0-100; the tier-2/3 judges report 0-1).
 const TierScore = ({ value, helpKey }: { value: number; helpKey: UiTextKey }) => {
   const { t } = useUiLanguage();
   return (
-    <span className="text-xs text-gray-500">
-      <HelpTerm label={t('tiered.score')} helpKey={helpKey} />
-      {': '}
-      <span className="tabular-nums text-gray-300">{Math.round(value)}</span>
-    </span>
+    <AltFact label={t('tiered.score')} helpKey={helpKey}>
+      <span className="tabular-nums">{Math.round(value)}</span>
+    </AltFact>
   );
 };
 
@@ -206,21 +222,19 @@ interface TierHeaderProps {
 }
 
 // The card's title lives above the card (AltBlock); inside, the header is
-// the verdict tag with its score on a new line beneath, any side content
-// (tier 3 puts the multiplier and stop advice there) next to the tag, and
-// the data-notes mark pinned top-right: nothing when the data was
-// complete, ⚠ when partial, a red X when unavailable.
+// one row of `Label: value` facts — Verdict first, any side facts (tier 3
+// puts Size and Stop loss there), Score last — and the data-notes mark
+// pinned top-right: nothing when the data was complete, ⚠ when partial, a
+// red X when unavailable.
 const TierHeader = ({ section, notes, score, scoreHelpKey, side }: TierHeaderProps) => {
   const { t } = useUiLanguage();
   return (
-    <div className="mb-3 flex flex-wrap items-start gap-x-6 gap-y-2">
-      <div className="flex flex-col items-start gap-1">
-        <AltTag tone={DIRECTION_TAG[section.direction]}>
-          {t(`tiered.direction.${section.direction}` as UiTextKey)}
-        </AltTag>
-        {score != null && scoreHelpKey ? <TierScore value={score} helpKey={scoreHelpKey} /> : null}
-      </div>
+    <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1">
+      <AltFact label={t('tiered.alt.verdict')}>
+        {t(`tiered.direction.${section.direction}` as UiTextKey)}
+      </AltFact>
       {side}
+      {score != null && scoreHelpKey ? <TierScore value={score} helpKey={scoreHelpKey} /> : null}
       <span className="ml-auto">
         <AltNotesButton notes={notes ?? []} coverage={section.coverage} />
       </span>
@@ -360,34 +374,25 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
         scoreHelpKey="tiered.help.riskScore"
         side={
           verdict ? (
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-              <span>
-                <HelpTerm label={t('tiered.risk.multiplier')} helpKey="tiered.help.multiplier" />
-                {': '}
+            <>
+              <AltFact label={t('tiered.alt.size')} helpKey="tiered.help.multiplier">
                 {/* id: the shares-computation formula links its multiplier here */}
-                <span id="alt-risk-multiplier" className="tabular-nums text-gray-300">
-                  {verdict.size_multiplier}×
+                <span id="alt-risk-multiplier" className="tabular-nums">
+                  {verdict.size_multiplier}x
                 </span>
-              </span>
-              <span>
-                <HelpTerm label={t('tiered.risk.stopAdvice')} helpKey="tiered.help.stopAdvice" />
-                {': '}
-                <span className="text-gray-300">
-                  {t(
-                    (verdict.stop_advice === 'tighten'
-                      ? 'tiered.risk.stopAdvice.tighten'
-                      : 'tiered.risk.stopAdvice.keep') as UiTextKey,
-                  )}
-                </span>
+              </AltFact>
+              <AltFact label={t('tiered.levels.stopLoss')} helpKey="tiered.help.stopAdvice">
                 {verdict.tightened_stop !== null ? (
                   // id: when the stop was tightened, this is the number the
                   // shares-computation formula actually used — it links here.
-                  <span id="alt-tightened-stop" className="ml-1 tabular-nums text-gray-300">
-                    → {formatPrice(verdict.tightened_stop)}
+                  <span id="alt-tightened-stop" className="tabular-nums">
+                    {formatPrice(verdict.tightened_stop)}
                   </span>
-                ) : null}
-              </span>
-            </div>
+                ) : (
+                  t('tiered.risk.stopAdvice.keep')
+                )}
+              </AltFact>
+            </>
           ) : null
         }
       />

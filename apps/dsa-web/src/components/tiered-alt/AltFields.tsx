@@ -249,9 +249,10 @@ interface AltPillRowProps {
   children: ReactNode;
 }
 
-// The pill strip under a form — wraps, keeps pill heights aligned.
+// The pill strip under a form — wraps, keeps pill heights aligned. min-h
+// reserves one pill row of space, so the first pill causes no layout shift.
 export const AltPillRow = ({ children }: AltPillRowProps) => (
-  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">{children}</div>
+  <div className="flex min-h-5 flex-wrap items-center gap-2 text-xs font-semibold">{children}</div>
 );
 
 interface AltNavButtonProps {

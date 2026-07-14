@@ -4,17 +4,17 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { plainNumber, riskPctText } from './altFormat';
-import { ALT_COLOR, DIRECTION_TAG, STATUS_DOT, TAG_BASE } from './altStyles';
+import { ALT_COLOR, DIRECTION_TEXT, STATUS_DOT } from './altStyles';
 import { AltPageSelector, AltPairField, AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltResult } from './AltResult';
-import { AltTag } from './AltUi';
 
 const PAGE_SIZE = 10;
 const FILTER_DIRECTIONS = ['buy', 'hold', 'sell'] as const;
 const FILTER_TIERS = ['1', '2', '3'] as const;
 
-const RUNNING_TAG = 'bg-sky-500/20 text-sky-300 ring-sky-500/30';
-const FAILED_TAG = 'bg-red-500/20 text-red-300 ring-red-500/30';
+// The filter grid and every run row share this template, so each row value
+// sits exactly under its filter column.
+const ROW_GRID = 'grid w-full grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-7';
 
 // Filter colors follow the shared palette in field order; a range's Min
 // and Max share one color (ALT_COLOR).
@@ -165,10 +165,10 @@ export interface AltRunHistoryProps {
 // Section 2: run history. Filters at the top apply the moment something is
 // entered or picked — no search button — and show as removable pills
 // (ticker, tier and verdict take several values at once). Below, one row
-// per run (10 per page) with its facts spread evenly: ticker, capital,
-// risk, tier, verdict, shares, date. Clicking a row expands the full
-// report inline. A freshly started run appears at the top as Running and
-// turns into a normal row when it finishes.
+// per run (10 per page), each fact sitting directly under its filter:
+// ticker, capital, risk, tier, verdict, shares, date. Clicking a row
+// expands the full report inline. A freshly started run appears at the top
+// as Running and turns into a normal row when it finishes.
 export const AltRunHistory = ({
   runs,
   expandedTaskId,
@@ -275,7 +275,7 @@ export const AltRunHistory = ({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-7">
+      <div className={cn(ROW_GRID, 'text-sm')}>
         <AltSelect
           label={t('tiered.altForm.ticker')}
           options={knownTickers.map((value) => ({ value, label: value }))}
@@ -363,16 +363,13 @@ export const AltRunHistory = ({
         />
       </div>
 
+      {/* the row keeps its height when empty so pills cause no layout shift */}
       <AltPillRow>
-        {pills.length === 0 ? (
-          <span className={`${TAG_BASE} ${ALT_COLOR.gray}`}>{t('tiered.altFilter.empty')}</span>
-        ) : (
-          pills.map((pill) => (
-            <AltPill key={pill.key} tone={pill.tone} onRemove={pill.onRemove}>
-              {pill.label}
-            </AltPill>
-          ))
-        )}
+        {pills.map((pill) => (
+          <AltPill key={pill.key} tone={pill.tone} onRemove={pill.onRemove}>
+            {pill.label}
+          </AltPill>
+        ))}
       </AltPillRow>
 
       {visible.length === 0 ? (
@@ -389,50 +386,50 @@ export const AltRunHistory = ({
                   type="button"
                   onClick={() => onToggle(run.task_id)}
                   className={cn(
-                    'flex w-full cursor-pointer items-center gap-3 rounded px-2 py-2.5 text-start text-sm hover:bg-gray-800/60',
+                    ROW_GRID,
+                    'cursor-pointer items-center rounded py-2.5 text-start text-sm hover:bg-gray-800/60',
                     isExpanded ? 'bg-gray-800/40' : '',
                   )}
                 >
-                  <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])} />
-                  {/* equal columns spread the facts evenly across the row */}
-                  <span className="grid flex-1 grid-cols-7 items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span
+                      className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[run.status])}
+                    />
                     <span className="truncate font-semibold text-gray-300">{run.stock_code}</span>
-                    <span
-                      id={`alt-run-${run.task_id}-capital`}
-                      className="text-center text-xs tabular-nums text-gray-400"
-                    >
-                      {run.capital == null ? '—' : plainNumber(run.capital)}
+                  </span>
+                  <span
+                    id={`alt-run-${run.task_id}-capital`}
+                    className="text-xs tabular-nums text-gray-400"
+                  >
+                    {run.capital == null ? '—' : plainNumber(run.capital)}
+                  </span>
+                  <span
+                    id={`alt-run-${run.task_id}-risk`}
+                    className="text-xs tabular-nums text-gray-400"
+                  >
+                    {riskCell(run)}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
+                  </span>
+                  {run.status === 'running' ? (
+                    <span className="text-xs text-sky-300">{t('tiered.status.running')}</span>
+                  ) : run.status === 'failed' ? (
+                    <span className="text-xs text-red-300">{t('tiered.status.failed')}</span>
+                  ) : (
+                    <span className={cn('text-xs', DIRECTION_TEXT[run.direction ?? 'unknown'])}>
+                      {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
                     </span>
-                    <span
-                      id={`alt-run-${run.task_id}-risk`}
-                      className="text-center text-xs tabular-nums text-gray-400"
-                    >
-                      {riskCell(run)}
-                    </span>
-                    <span className="text-center text-xs text-gray-500">
-                      {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
-                    </span>
-                    <span className="flex justify-center">
-                      {run.status === 'running' ? (
-                        <AltTag tone={RUNNING_TAG}>{t('tiered.status.running')}</AltTag>
-                      ) : run.status === 'failed' ? (
-                        <AltTag tone={FAILED_TAG}>{t('tiered.status.failed')}</AltTag>
-                      ) : (
-                        <AltTag tone={DIRECTION_TAG[run.direction ?? 'unknown']}>
-                          {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
-                        </AltTag>
-                      )}
-                    </span>
-                    <span className="text-center text-xs tabular-nums text-gray-400">
-                      {run.shares == null ? '—' : t('tiered.altHistory.shares', { value: run.shares })}
-                    </span>
-                    <span className="truncate text-right text-xs tabular-nums text-gray-500">
-                      {formatTime(run)}
-                    </span>
+                  )}
+                  <span className="text-xs tabular-nums text-gray-400">
+                    {run.shares == null ? '—' : t('tiered.altHistory.shares', { value: run.shares })}
+                  </span>
+                  <span className="truncate text-xs tabular-nums text-gray-500">
+                    {formatTime(run)}
                   </span>
                 </button>
                 {isExpanded ? (
-                  <div className="px-2 pb-5 pt-3">
+                  <div className="pb-5 pt-3">
                     {run.status === 'failed' ? (
                       <p className="text-sm text-red-300">
                         {run.error ?? expandedError ?? t('tiered.error.title')}

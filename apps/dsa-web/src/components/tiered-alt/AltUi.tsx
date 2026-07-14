@@ -5,17 +5,8 @@ import type { TieredCitation, TieredCoverage } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
 import { jumpToMetric } from '../tiered/termHelpers';
-import { ALT_LINK, TAG_BASE } from './altStyles';
+import { ALT_LINK } from './altStyles';
 import { friendlyWarning } from './altWarningText';
-
-interface AltTagProps {
-  tone: string;
-  children: ReactNode;
-}
-
-export const AltTag = ({ tone, children }: AltTagProps) => (
-  <span className={cn(TAG_BASE, tone)}>{children}</span>
-);
 
 interface AltCardProps {
   children: ReactNode;

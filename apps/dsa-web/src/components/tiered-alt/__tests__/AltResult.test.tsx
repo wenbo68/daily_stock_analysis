@@ -294,7 +294,22 @@ describe('AltResult', () => {
     expect(within(card).getByText(/^(来源|Sources)$/)).toBeInTheDocument();
     const items = within(card).getAllByRole('listitem');
     expect(items[0]).toHaveTextContent('Yahoo Finance summary (yfinance)');
-    expect(items[1]).toHaveTextContent('SEC EDGAR companyfacts');
+    // link sources are listed as their URL, not their headline
+    expect(items[1]).toHaveTextContent('https://sec.gov/x');
+    expect(items[1]).not.toHaveTextContent('SEC EDGAR companyfacts');
+  });
+
+  it('shows verdict, size, stop loss and score as plain Label: value facts', () => {
+    renderResult(makeDeepResult());
+    const tier3 = screen.getByTestId('alt-tier3');
+    // no pill anymore — the verdict is text like every other fact
+    expect(tier3).toHaveTextContent(/(结论|Verdict): (持有|Hold)/);
+    expect(tier3).toHaveTextContent(/(仓位|Size): 0.5x/);
+    expect(tier3).toHaveTextContent(/(止损|Stop loss): (维持|keep)/);
+    expect(tier3).toHaveTextContent(/(评分|Score): 70/);
+    const tier1 = screen.getByTestId('alt-tier1');
+    expect(tier1).toHaveTextContent(/(结论|Verdict): (买入|Buy)/);
+    expect(tier1).toHaveTextContent(/(评分|Score): 72/);
   });
 
   it('links the recorded signal number straight to that signal', () => {

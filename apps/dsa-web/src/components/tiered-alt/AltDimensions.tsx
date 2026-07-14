@@ -196,7 +196,7 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
                     rel="noreferrer"
                     className={`truncate ${ALT_LINK}`}
                   >
-                    {citation.title || citation.url}
+                    {citation.url}
                   </a>
                 ) : (
                   <span className="truncate">{citation.source_name}</span>
