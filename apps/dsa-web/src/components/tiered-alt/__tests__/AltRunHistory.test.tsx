@@ -14,6 +14,7 @@ function makeRun(id: string, overrides: Partial<TieredRunSummary> = {}): TieredR
     updated_at: null,
     direction: 'buy',
     shares: 41,
+    tier: 1,
     ...overrides,
   };
 }
@@ -35,40 +36,55 @@ function renderHistory(overrides: Partial<AltRunHistoryProps> = {}) {
   return props;
 }
 
+// The date pair renders before the shares pair, and both use Min/Max
+// placeholders — index 0 is the date box, index 1 the shares box.
+const minBoxes = () => screen.getAllByPlaceholderText(/^下限$|^Min$/);
+
 describe('AltRunHistory', () => {
-  it('shows ticker, verdict and shares per row; running rows show a status tag and a dash', () => {
+  it('shows ticker, date, tier, verdict and shares per row', () => {
     renderHistory({
       runs: [
-        makeRun('t1', { stock_code: 'MSFT' }),
-        makeRun('t2', { stock_code: 'NVDA', status: 'running', direction: null, shares: null }),
+        makeRun('t1', { stock_code: 'MSFT', tier: 3 }),
+        makeRun('t2', { stock_code: 'NVDA', status: 'running', direction: null, shares: null, tier: null }),
       ],
     });
 
     expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect(screen.getAllByText(/^\d{4}\/\d{2}\/\d{2}, \d{2}:\d{2}$/)).toHaveLength(2);
+    expect(screen.getByText(/层级 3|Tier 3/)).toBeInTheDocument();
     expect(screen.getByText(/买入|Buy/)).toBeInTheDocument();
     expect(screen.getByText(/41/)).toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
     expect(screen.getByText(/分析中|Running/)).toBeInTheDocument();
-    expect(screen.getByText('—')).toBeInTheDocument();
+    // the running row has neither tier nor shares yet — two dashes
+    expect(screen.getAllByText('—')).toHaveLength(2);
   });
 
-  it('filters by ticker the moment the text is entered, and the pill removes it', () => {
+  it('offers the tickers seen in history as a multi-pick dropdown filter', () => {
     renderHistory({
       runs: [makeRun('t1', { stock_code: 'MSFT' }), makeRun('t2', { stock_code: 'NVDA' })],
     });
-    const input = screen.getByPlaceholderText(/hk00700/);
 
-    fireEvent.change(input, { target: { value: 'nv' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
-
+    const tickerBox = screen.getByPlaceholderText(/筛选代码|Filter ticker/);
+    fireEvent.focus(tickerBox);
+    fireEvent.click(screen.getByRole('button', { name: 'NVDA' }));
+    // close the still-open multi-pick dropdown so only rows remain
+    fireEvent.mouseDown(document.body);
     expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
-    expect(screen.getByText('NVDA')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'nv' }));
+    // multi-pick: adding the second ticker brings the other row back
+    fireEvent.focus(tickerBox);
+    fireEvent.click(screen.getByRole('button', { name: 'MSFT' }));
+    fireEvent.mouseDown(document.body);
     expect(screen.getByText('MSFT')).toBeInTheDocument();
+
+    // pills read Label: value and remove on click
+    fireEvent.click(screen.getByRole('button', { name: /(Ticker|代码): NVDA/ }));
+    fireEvent.click(screen.getByRole('button', { name: /(Ticker|代码): MSFT/ }));
+    expect(screen.getByText('NVDA')).toBeInTheDocument();
   });
 
-  it('filters by verdict from the dropdown', () => {
+  it('clears a verdict filter by picking the same option again', () => {
     renderHistory({
       runs: [
         makeRun('t1', { stock_code: 'MSFT', direction: 'buy' }),
@@ -76,38 +92,56 @@ describe('AltRunHistory', () => {
       ],
     });
 
-    fireEvent.focus(screen.getByLabelText(/结论|Verdict/));
+    fireEvent.focus(screen.getByPlaceholderText(/筛选结论|Filter verdict/));
     fireEvent.click(screen.getAllByText(/持有|Hold/)[0]);
+    expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
+
+    // the dropdown stays open for multi-pick filters — same option clears
+    fireEvent.click(screen.getAllByText(/持有|Hold/)[0]);
+    expect(screen.getByText('MSFT')).toBeInTheDocument();
+  });
+
+  it('filters by tier from the dropdown', () => {
+    renderHistory({
+      runs: [
+        makeRun('t1', { stock_code: 'MSFT', tier: 1 }),
+        makeRun('t2', { stock_code: 'NVDA', tier: 3 }),
+      ],
+    });
+
+    fireEvent.focus(screen.getByPlaceholderText(/筛选层级|Filter tier/));
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
 
     expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /(Tier|层级): 3/ })).toBeInTheDocument();
   });
 
   it('filters by a date range (wide bounds keep the row, a future start drops it)', () => {
     renderHistory({ runs: [makeRun('t1', { stock_code: 'MSFT' })] });
-    const startInput = screen.getByPlaceholderText(/^开始$|^Start$/);
-    const endInput = screen.getByPlaceholderText(/^结束$|^End$/);
+    const [dateMin] = minBoxes();
+    const [dateMax] = screen.getAllByPlaceholderText(/^上限$|^Max$/);
 
-    fireEvent.change(startInput, { target: { value: '2026/07/01' } });
-    fireEvent.keyDown(startInput, { key: 'Enter' });
-    fireEvent.change(endInput, { target: { value: '2026/07/31' } });
-    fireEvent.keyDown(endInput, { key: 'Enter' });
+    fireEvent.change(dateMin, { target: { value: '2026/07/01' } });
+    fireEvent.keyDown(dateMin, { key: 'Enter' });
+    fireEvent.change(dateMax, { target: { value: '2026/07/31' } });
+    fireEvent.keyDown(dateMax, { key: 'Enter' });
     expect(screen.getByText('MSFT')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /2026\/07\/01/ }));
-    fireEvent.change(startInput, { target: { value: '2027/01/01' } });
-    fireEvent.keyDown(startInput, { key: 'Enter' });
+    fireEvent.change(dateMin, { target: { value: '2027/01/01' } });
+    fireEvent.keyDown(dateMin, { key: 'Enter' });
     expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
   });
 
   it('rejects an invalid date instead of committing it', () => {
     renderHistory({ runs: [makeRun('t1', { stock_code: 'MSFT' })] });
-    const startInput = screen.getByPlaceholderText(/^开始$|^Start$/);
+    const [dateMin] = minBoxes();
 
-    fireEvent.change(startInput, { target: { value: 'yesterday' } });
-    fireEvent.keyDown(startInput, { key: 'Enter' });
+    fireEvent.change(dateMin, { target: { value: 'yesterday' } });
+    fireEvent.keyDown(dateMin, { key: 'Enter' });
 
-    expect(startInput).toHaveValue('yesterday');
+    expect(dateMin).toHaveValue('yesterday');
     expect(screen.getByText('MSFT')).toBeInTheDocument();
   });
 
@@ -118,23 +152,26 @@ describe('AltRunHistory', () => {
         makeRun('t2', { stock_code: 'NVDA', shares: 80 }),
       ],
     });
-    const minInput = screen.getByPlaceholderText(/最少|Min/);
+    const sharesMin = minBoxes()[1];
 
-    fireEvent.change(minInput, { target: { value: '10' } });
-    fireEvent.keyDown(minInput, { key: 'Enter' });
+    fireEvent.change(sharesMin, { target: { value: '10' } });
+    fireEvent.keyDown(sharesMin, { key: 'Enter' });
 
     expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /(Shares Min|股数下限): 10/ })).toBeInTheDocument();
   });
 
-  it('pages the list 15 rows at a time', () => {
+  it('pages the list 10 rows at a time with numbered page buttons', () => {
     renderHistory({
-      runs: Array.from({ length: 20 }, (_, index) => makeRun(`t${index}`)),
+      runs: Array.from({ length: 12 }, (_, index) => makeRun(`t${index}`)),
     });
 
-    expect(screen.getAllByText('AAPL')).toHaveLength(15);
-    fireEvent.click(screen.getByRole('button', { name: /下一页|Next page/ }));
-    expect(screen.getAllByText('AAPL')).toHaveLength(5);
+    expect(screen.getAllByText('AAPL')).toHaveLength(10);
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    expect(screen.getAllByText('AAPL')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /第一页|First page/ }));
+    expect(screen.getAllByText('AAPL')).toHaveLength(10);
   });
 
   it('clicking a row asks to expand it; a failed expanded row shows its error', () => {
@@ -146,6 +183,7 @@ describe('AltRunHistory', () => {
           status: 'failed',
           direction: null,
           shares: null,
+          tier: null,
           error: 'LLM quota exhausted',
         }),
       ],

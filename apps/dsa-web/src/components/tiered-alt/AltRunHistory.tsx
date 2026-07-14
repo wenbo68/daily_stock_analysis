@@ -1,19 +1,29 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { TieredResult, TieredRunSummary } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
-import type { UiLanguage, UiTextKey } from '../../i18n/uiText';
+import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
-import { DIRECTION_TAG, PILL_TONE, STATUS_DOT, TAG_BASE } from './altStyles';
-import { AltPairField, AltPill, AltPillRow, AltSelect, AltTextField } from './AltFields';
+import { ALT_COLOR, DIRECTION_TAG, STATUS_DOT, TAG_BASE } from './altStyles';
+import { AltPageSelector, AltPairField, AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltResult } from './AltResult';
 import { AltTag } from './AltUi';
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 10;
 const FILTER_DIRECTIONS = ['buy', 'hold', 'sell'] as const;
+const FILTER_TIERS = ['1', '2', '3'] as const;
 
 const RUNNING_TAG = 'bg-sky-500/20 text-sky-300 ring-sky-500/30';
 const FAILED_TAG = 'bg-red-500/20 text-red-300 ring-red-500/30';
+
+// Filter colors follow the shared palette in field order; a range's Min
+// and Max share one color (ALT_COLOR).
+const TONE = {
+  ticker: ALT_COLOR[1],
+  date: ALT_COLOR[2],
+  verdict: ALT_COLOR[3],
+  tier: ALT_COLOR[4],
+  shares: ALT_COLOR[5],
+};
 
 // Accepts 2026/07/14 or 2026-07-14; day boundaries are the viewer's local time.
 const DAY_RE = /^\d{4}[/-]\d{2}[/-]\d{2}$/;
@@ -40,49 +50,60 @@ function runTime(run: TieredRunSummary): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function formatTime(run: TieredRunSummary, language: UiLanguage): string {
+// yyyy/mm/dd, hh:mm in the viewer's local time, 24-hour clock.
+function formatTime(run: TieredRunSummary): string {
   const date = runTime(run);
   if (!date) {
     return '—';
   }
-  return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return (
+    `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}, ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
 }
 
 interface HistoryFilters {
-  ticker: string | null;
-  dateStart: string | null;
-  dateEnd: string | null;
-  direction: string | null;
+  tickers: string[];
+  dateMin: string | null;
+  dateMax: string | null;
+  directions: string[];
+  tiers: string[];
   sharesMin: string | null;
   sharesMax: string | null;
 }
 
 const NO_FILTERS: HistoryFilters = {
-  ticker: null,
-  dateStart: null,
-  dateEnd: null,
-  direction: null,
+  tickers: [],
+  dateMin: null,
+  dateMax: null,
+  directions: [],
+  tiers: [],
   sharesMin: null,
   sharesMax: null,
 };
 
+// Add the value if absent, remove it if present — how multi-value filters
+// clear from the dropdown as well as from the pill.
+function toggled(list: string[], value: string): string[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
 function matchesFilters(run: TieredRunSummary, filters: HistoryFilters): boolean {
-  if (filters.ticker && !run.stock_code.toUpperCase().includes(filters.ticker.toUpperCase())) {
+  if (filters.tickers.length > 0 && !filters.tickers.includes(run.stock_code)) {
     return false;
   }
-  if (filters.direction && run.direction !== filters.direction) {
+  if (filters.directions.length > 0 && !filters.directions.includes(run.direction ?? '')) {
+    return false;
+  }
+  if (filters.tiers.length > 0 && !filters.tiers.includes(String(run.tier ?? ''))) {
     return false;
   }
   const time = runTime(run);
-  if (filters.dateStart && (!time || time < parseDay(filters.dateStart))) {
+  if (filters.dateMin && (!time || time < parseDay(filters.dateMin))) {
     return false;
   }
-  if (filters.dateEnd && (!time || time >= parseDay(filters.dateEnd, 1))) {
+  if (filters.dateMax && (!time || time >= parseDay(filters.dateMax, 1))) {
     return false;
   }
   if (filters.sharesMin && !(run.shares != null && run.shares >= Number(filters.sharesMin))) {
@@ -103,10 +124,11 @@ export interface AltRunHistoryProps {
 }
 
 // Section 2: run history. Filters at the top apply the moment something is
-// entered or picked — no search button — and show as removable pills.
-// Below, one row per run (15 per page); clicking a row expands the full
-// report inline. A freshly started run appears at the top as Running and
-// turns into a normal row when it finishes.
+// entered or picked — no search button — and show as removable pills
+// (ticker, verdict and tier take several values at once). Below, one row
+// per run (10 per page); clicking a row expands the full report inline. A
+// freshly started run appears at the top as Running and turns into a
+// normal row when it finishes.
 export const AltRunHistory = ({
   runs,
   expandedTaskId,
@@ -114,7 +136,7 @@ export const AltRunHistory = ({
   expandedError,
   onToggle,
 }: AltRunHistoryProps) => {
-  const { t, language } = useUiLanguage();
+  const { t } = useUiLanguage();
   const [filters, setFilters] = useState<HistoryFilters>(NO_FILTERS);
   const [page, setPage] = useState(1);
 
@@ -122,6 +144,12 @@ export const AltRunHistory = ({
     setFilters((prev) => ({ ...prev, ...patch }));
     setPage(1);
   };
+
+  // Every ticker that has ever been run, for the ticker filter's dropdown.
+  const knownTickers = useMemo(
+    () => Array.from(new Set(runs.map((run) => run.stock_code))).sort(),
+    [runs],
+  );
 
   const filtered = useMemo(
     () => runs.filter((run) => matchesFilters(run, filters)),
@@ -131,74 +159,97 @@ export const AltRunHistory = ({
   const safePage = Math.min(page, pageCount);
   const visible = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
-  const hasFilters = Object.values(filters).some((value) => value !== null);
+  const hasFilters =
+    filters.tickers.length > 0 ||
+    filters.directions.length > 0 ||
+    filters.tiers.length > 0 ||
+    filters.dateMin !== null ||
+    filters.dateMax !== null ||
+    filters.sharesMin !== null ||
+    filters.sharesMax !== null;
 
-  const pills: { key: string; tone: string; label: string; patch: Partial<HistoryFilters> }[] = [];
-  if (filters.ticker) {
-    pills.push({ key: 'ticker', tone: PILL_TONE.ticker, label: filters.ticker, patch: { ticker: null } });
-  }
-  if (filters.dateStart) {
+  const pills: { key: string; tone: string; label: string; onRemove: () => void }[] = [];
+  filters.tickers.forEach((ticker) => {
     pills.push({
-      key: 'dateStart',
-      tone: PILL_TONE.date,
-      label: t('tiered.pill.dateStart', { value: filters.dateStart }),
-      patch: { dateStart: null },
+      key: `ticker-${ticker}`,
+      tone: TONE.ticker,
+      label: t('tiered.pill.ticker', { value: ticker }),
+      onRemove: () => updateFilters({ tickers: toggled(filters.tickers, ticker) }),
+    });
+  });
+  if (filters.dateMin) {
+    pills.push({
+      key: 'dateMin',
+      tone: TONE.date,
+      label: t('tiered.pill.dateMin', { value: filters.dateMin }),
+      onRemove: () => updateFilters({ dateMin: null }),
     });
   }
-  if (filters.dateEnd) {
+  if (filters.dateMax) {
     pills.push({
-      key: 'dateEnd',
-      tone: PILL_TONE.date,
-      label: t('tiered.pill.dateEnd', { value: filters.dateEnd }),
-      patch: { dateEnd: null },
+      key: 'dateMax',
+      tone: TONE.date,
+      label: t('tiered.pill.dateMax', { value: filters.dateMax }),
+      onRemove: () => updateFilters({ dateMax: null }),
     });
   }
-  if (filters.direction) {
+  filters.directions.forEach((direction) => {
     pills.push({
-      key: 'direction',
-      tone: DIRECTION_TAG[filters.direction as keyof typeof DIRECTION_TAG] ?? PILL_TONE.neutral,
-      label: t(`tiered.direction.${filters.direction}` as UiTextKey),
-      patch: { direction: null },
+      key: `direction-${direction}`,
+      tone: TONE.verdict,
+      label: t('tiered.pill.verdict', {
+        value: t(`tiered.direction.${direction}` as UiTextKey),
+      }),
+      onRemove: () => updateFilters({ directions: toggled(filters.directions, direction) }),
     });
-  }
+  });
+  filters.tiers.forEach((tier) => {
+    pills.push({
+      key: `tier-${tier}`,
+      tone: TONE.tier,
+      label: t('tiered.pill.tier', { value: tier }),
+      onRemove: () => updateFilters({ tiers: toggled(filters.tiers, tier) }),
+    });
+  });
   if (filters.sharesMin) {
     pills.push({
       key: 'sharesMin',
-      tone: PILL_TONE.shares,
+      tone: TONE.shares,
       label: t('tiered.pill.sharesMin', { value: filters.sharesMin }),
-      patch: { sharesMin: null },
+      onRemove: () => updateFilters({ sharesMin: null }),
     });
   }
   if (filters.sharesMax) {
     pills.push({
       key: 'sharesMax',
-      tone: PILL_TONE.shares,
+      tone: TONE.shares,
       label: t('tiered.pill.sharesMax', { value: filters.sharesMax }),
-      patch: { sharesMax: null },
+      onRemove: () => updateFilters({ sharesMax: null }),
     });
   }
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <h2 className="font-semibold text-gray-300">{t('tiered.history')}</h2>
-
-      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-4 sm:gap-3 md:gap-4">
-        <AltTextField
+      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-3 sm:gap-3 lg:grid-cols-5 lg:gap-4">
+        <AltSelect
           label={t('tiered.altForm.ticker')}
-          placeholder={t('tiered.inputPlaceholder')}
-          onCommit={(value) => updateFilters({ ticker: value })}
+          options={knownTickers.map((value) => ({ value, label: value }))}
+          selected={filters.tickers}
+          placeholder={t('tiered.altFilter.tickerPh')}
+          multi
+          onCommit={(value) => updateFilters({ tickers: toggled(filters.tickers, value) })}
         />
         <AltPairField
           label={t('tiered.altFilter.date')}
           start={{
-            placeholder: t('tiered.altFilter.dateStart'),
+            placeholder: t('tiered.altFilter.min'),
             validate: isValidDay,
-            onCommit: (value) => updateFilters({ dateStart: value }),
+            onCommit: (value) => updateFilters({ dateMin: value }),
           }}
           end={{
-            placeholder: t('tiered.altFilter.dateEnd'),
+            placeholder: t('tiered.altFilter.max'),
             validate: isValidDay,
-            onCommit: (value) => updateFilters({ dateEnd: value }),
+            onCommit: (value) => updateFilters({ dateMax: value }),
           }}
         />
         <AltSelect
@@ -207,9 +258,18 @@ export const AltRunHistory = ({
             value,
             label: t(`tiered.direction.${value}` as UiTextKey),
           }))}
-          value={filters.direction ?? undefined}
-          placeholder={t('tiered.altFilter.any')}
-          onCommit={(value) => updateFilters({ direction: value })}
+          selected={filters.directions}
+          placeholder={t('tiered.altFilter.directionPh')}
+          multi
+          onCommit={(value) => updateFilters({ directions: toggled(filters.directions, value) })}
+        />
+        <AltSelect
+          label={t('tiered.altFilter.tier')}
+          options={FILTER_TIERS.map((value) => ({ value, label: value }))}
+          selected={filters.tiers}
+          placeholder={t('tiered.altFilter.tierPh')}
+          multi
+          onCommit={(value) => updateFilters({ tiers: toggled(filters.tiers, value) })}
         />
         <AltPairField
           label={t('tiered.altFilter.shares')}
@@ -230,10 +290,10 @@ export const AltRunHistory = ({
 
       <AltPillRow>
         {pills.length === 0 ? (
-          <span className={`${TAG_BASE} ${PILL_TONE.neutral}`}>{t('tiered.altFilter.empty')}</span>
+          <span className={`${TAG_BASE} ${ALT_COLOR.gray}`}>{t('tiered.altFilter.empty')}</span>
         ) : (
           pills.map((pill) => (
-            <AltPill key={pill.key} tone={pill.tone} onRemove={() => updateFilters(pill.patch)}>
+            <AltPill key={pill.key} tone={pill.tone} onRemove={pill.onRemove}>
               {pill.label}
             </AltPill>
           ))
@@ -262,7 +322,10 @@ export const AltRunHistory = ({
                   <span className="w-20 shrink-0 font-semibold text-gray-300 sm:w-24">
                     {run.stock_code}
                   </span>
-                  <span className="flex-1 text-xs text-gray-500">{formatTime(run, language)}</span>
+                  <span className="flex-1 text-xs tabular-nums text-gray-500">{formatTime(run)}</span>
+                  <span className="w-12 shrink-0 text-xs text-gray-500 sm:w-14">
+                    {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
+                  </span>
                   {run.status === 'running' ? (
                     <AltTag tone={RUNNING_TAG}>{t('tiered.status.running')}</AltTag>
                   ) : run.status === 'failed' ? (
@@ -299,29 +362,17 @@ export const AltRunHistory = ({
         </ul>
       )}
 
-      {pageCount > 1 ? (
-        <div className="flex items-center justify-center gap-3 text-xs text-gray-500">
-          <button
-            type="button"
-            aria-label={t('tiered.altHistory.prev')}
-            disabled={safePage <= 1}
-            onClick={() => setPage(safePage - 1)}
-            className="cursor-pointer rounded p-1 hover:text-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span>{t('tiered.altHistory.page', { page: safePage, total: pageCount })}</span>
-          <button
-            type="button"
-            aria-label={t('tiered.altHistory.next')}
-            disabled={safePage >= pageCount}
-            onClick={() => setPage(safePage + 1)}
-            className="cursor-pointer rounded p-1 hover:text-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      ) : null}
+      <AltPageSelector
+        page={safePage}
+        pageCount={pageCount}
+        onPage={setPage}
+        labels={{
+          first: t('tiered.altHistory.first'),
+          prev: t('tiered.altHistory.prev'),
+          next: t('tiered.altHistory.next'),
+          last: t('tiered.altHistory.last'),
+        }}
+      />
     </div>
   );
 };

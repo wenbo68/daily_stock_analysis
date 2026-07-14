@@ -84,29 +84,38 @@ class TestTieredRunHistory:
         # list is lightweight: no full result payloads
         assert all("result" not in r for r in runs)
 
-    def test_list_digest_has_direction_and_shares(self, isolated_db):
+    def test_list_digest_has_direction_shares_and_tier(self, isolated_db):
         create_run("task-1", "AAPL")
         mark_done("task-1", {**RESULT,
-                             "final": {"direction": "buy"},
+                             "depth": 3,
+                             "final": {"direction": "buy", "tier": 3},
                              "sizing": {"shares": 41}})
         create_run("task-2", "NVDA")  # still running — no digest yet
         runs = {r["task_id"]: r for r in list_runs()}
         assert runs["task-1"]["direction"] == "buy"
         assert runs["task-1"]["shares"] == 41
+        assert runs["task-1"]["tier"] == 3
         assert runs["task-2"]["direction"] is None
         assert runs["task-2"]["shares"] is None
+        assert runs["task-2"]["tier"] is None
 
     def test_list_digest_degrades_on_old_or_refused_runs(self, isolated_db):
-        # v1 result: no final/sizing blocks -> top-level direction, dash shares
+        # v1 result: no final/sizing/depth -> top-level direction, dash
+        # shares, and the top-level tier (v1 runs were tier 1 only)
         create_run("task-1", "AAPL")
-        mark_done("task-1", RESULT)
-        # sizing ran but refused to buy (shares None) -> 0, like the report card
+        mark_done("task-1", {**RESULT, "tier": 1})
+        # sizing ran but refused to buy (shares None) -> 0, like the report
+        # card; no depth stored -> tier falls back to final.tier
         create_run("task-2", "MSFT")
-        mark_done("task-2", {**RESULT, "sizing": {"shares": None}})
+        mark_done("task-2", {**RESULT,
+                             "final": {"direction": "hold", "tier": 2},
+                             "sizing": {"shares": None}})
         runs = {r["task_id"]: r for r in list_runs()}
         assert runs["task-1"]["direction"] == "hold"
         assert runs["task-1"]["shares"] is None
+        assert runs["task-1"]["tier"] == 1
         assert runs["task-2"]["shares"] == 0
+        assert runs["task-2"]["tier"] == 2
 
     def test_list_respects_limit(self, isolated_db):
         for index in range(5):

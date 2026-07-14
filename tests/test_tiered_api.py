@@ -197,6 +197,20 @@ class TestTieredAnalyzeEndpoint:
         response = client.get("/tiered/runs/nope")
         assert response.status_code == 404
 
+    def test_sizing_defaults_reflect_env_settings(self, client, monkeypatch):
+        monkeypatch.setenv("TIERED_SIZING_CAPITAL", "100000")
+        monkeypatch.setenv("TIERED_SIZING_RISK_FRACTION", "0.01")
+        response = client.get("/tiered/sizing-defaults")
+        assert response.status_code == 200
+        assert response.json() == {"capital": 100000.0, "risk_fraction": 0.01}
+
+    def test_sizing_defaults_null_when_unconfigured(self, client, monkeypatch):
+        monkeypatch.delenv("TIERED_SIZING_CAPITAL", raising=False)
+        monkeypatch.delenv("TIERED_SIZING_RISK_FRACTION", raising=False)
+        response = client.get("/tiered/sizing-defaults")
+        assert response.status_code == 200
+        assert response.json() == {"capital": None, "risk_fraction": None}
+
 
 class TestTieredDepthAndSizingApi:
     """v2 slice 6: depth parameter, sizing override, new response sections."""

@@ -75,12 +75,15 @@ def _row_summary(row: Any) -> Dict[str, Any]:
 
 
 def _result_digest(row: Any) -> Dict[str, Any]:
-    """The two report facts the run list shows per row — final direction and
-    computed share count — without shipping the full report. ``shares``
-    mirrors the report card: 0 when sizing ran but bought nothing, None
-    (shown as a dash) when the run has no sizing block at all. Anything
-    unreadable degrades to None rather than breaking the list."""
-    digest: Dict[str, Any] = {"direction": None, "shares": None}
+    """The report facts the run list shows per row — final direction,
+    computed share count, and the tier the run went to — without shipping
+    the full report. ``shares`` mirrors the report card: 0 when sizing ran
+    but bought nothing, None (shown as a dash) when the run has no sizing
+    block at all. ``tier`` is the requested depth; old runs stored before
+    depth existed fall back to the deepest tier that reported (v1 runs were
+    tier 1 only). Anything unreadable degrades to None rather than
+    breaking the list."""
+    digest: Dict[str, Any] = {"direction": None, "shares": None, "tier": None}
     if row.status != "done" or not row.result_json:
         return digest
     try:
@@ -96,6 +99,14 @@ def _result_digest(row: Any) -> Dict[str, Any]:
     if isinstance(sizing, dict):
         shares = sizing.get("shares")
         digest["shares"] = shares if shares is not None else 0
+    for tier_source in (
+        result.get("depth"),
+        final.get("tier") if isinstance(final, dict) else None,
+        result.get("tier"),
+    ):
+        if isinstance(tier_source, int):
+            digest["tier"] = tier_source
+            break
     return digest
 
 

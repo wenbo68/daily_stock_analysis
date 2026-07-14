@@ -181,6 +181,18 @@ def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
             "depth": request.depth, "status": "running"}
 
 
+@router.get("/sizing-defaults")
+def get_sizing_defaults() -> Dict[str, Optional[float]]:
+    """Saved sizing settings (.env-backed) — capital and risk fraction —
+    so the run form can show the values a run would use when the user
+    provides none. Both are null when no defaults are configured."""
+    from src.tiered_analysis.settings import load_sizing_settings
+
+    settings = load_sizing_settings()
+    return {"capital": settings.capital,
+            "risk_fraction": settings.risk_fraction}
+
+
 @router.get("/runs")
 def list_tiered_runs(limit: int = 50) -> Dict[str, List[Dict[str, Any]]]:
     """Run history, newest first (summaries only)."""

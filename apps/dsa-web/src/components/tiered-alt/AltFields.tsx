@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { TAG_BASE } from './altStyles';
 
@@ -29,8 +29,10 @@ const AltFieldShell = ({ label, children }: AltFieldShellProps) => (
 interface AltSelectProps {
   label: ReactNode;
   options: AltSelectOption[];
-  /** Committed value — only used to highlight the matching option. */
-  value?: string;
+  /** Committed value(s) — highlighted in the dropdown; clicking a
+   *  highlighted option again is how the parent gets asked to clear it
+   *  (onCommit fires with the same value; the parent toggles). */
+  selected?: string[];
   placeholder?: string;
   inputMode?: 'decimal';
   /**
@@ -38,6 +40,8 @@ interface AltSelectProps {
    * true: Enter commits whatever was typed; options are suggestions.
    */
   freeText?: boolean;
+  /** Keep the dropdown open after a pick, for multi-value filters. */
+  multi?: boolean;
   validate?: (raw: string) => boolean;
   onCommit: (value: string) => void;
 }
@@ -47,10 +51,11 @@ interface AltSelectProps {
 export const AltSelect = ({
   label,
   options,
-  value,
+  selected,
   placeholder,
   inputMode,
   freeText = false,
+  multi = false,
   validate,
   onCommit,
 }: AltSelectProps) => {
@@ -78,7 +83,9 @@ export const AltSelect = ({
   const commit = (raw: string) => {
     onCommit(raw);
     setWritten('');
-    window.setTimeout(() => setIsOpen(false), 50);
+    if (!multi) {
+      window.setTimeout(() => setIsOpen(false), 50);
+    }
   };
 
   const handleEnter = () => {
@@ -135,7 +142,7 @@ export const AltSelect = ({
                 onClick={() => commit(option.value)}
                 className={cn(
                   'w-full cursor-pointer rounded p-2 text-start hover:bg-gray-900 hover:text-blue-400',
-                  option.value === value ? 'text-blue-400' : '',
+                  selected?.includes(option.value) ? 'text-blue-400' : '',
                 )}
               >
                 {option.node ?? option.label}
@@ -246,3 +253,80 @@ interface AltPillRowProps {
 export const AltPillRow = ({ children }: AltPillRowProps) => (
   <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">{children}</div>
 );
+
+interface AltNavButtonProps {
+  isActive?: boolean;
+  isDisabled?: boolean;
+  ariaLabel?: string;
+  onClick: () => void;
+  children: ReactNode;
+}
+
+// One square pagination button (showplayer's PlayerNavButton, button-only).
+const AltNavButton = ({ isActive, isDisabled, ariaLabel, onClick, children }: AltNavButtonProps) => (
+  <button
+    type="button"
+    disabled={isDisabled}
+    aria-label={ariaLabel}
+    onClick={onClick}
+    className={cn(
+      'flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded text-xs font-semibold transition-colors',
+      isActive ? 'bg-gray-800 text-blue-400' : '',
+      !isActive && !isDisabled ? 'text-gray-400 hover:bg-gray-800' : '',
+      isDisabled ? 'pointer-events-none cursor-not-allowed text-gray-600' : '',
+    )}
+  >
+    {children}
+  </button>
+);
+
+export interface AltPageSelectorProps {
+  page: number;
+  pageCount: number;
+  onPage: (page: number) => void;
+  labels: { first: string; prev: string; next: string; last: string };
+}
+
+// The showplayer pager: first / previous / up to five page numbers around
+// the current one / next / last. Renders nothing with a single page.
+export const AltPageSelector = ({ page, pageCount, onPage, labels }: AltPageSelectorProps) => {
+  if (pageCount <= 1) {
+    return null;
+  }
+
+  const pagesToShow = 5;
+  let startPage = Math.max(1, page - Math.floor(pagesToShow / 2));
+  const endPage = Math.min(pageCount, startPage + pagesToShow - 1);
+  if (endPage === pageCount) {
+    startPage = Math.max(1, pageCount - pagesToShow + 1);
+  }
+  const numbers = Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i);
+
+  const go = (target: number) => {
+    if (target >= 1 && target <= pageCount) {
+      onPage(target);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <AltNavButton onClick={() => go(1)} isDisabled={page <= 1} ariaLabel={labels.first}>
+        <ChevronsLeft size={16} />
+      </AltNavButton>
+      <AltNavButton onClick={() => go(page - 1)} isDisabled={page <= 1} ariaLabel={labels.prev}>
+        <ChevronLeft size={16} />
+      </AltNavButton>
+      {numbers.map((number) => (
+        <AltNavButton key={number} onClick={() => go(number)} isActive={number === page}>
+          {number}
+        </AltNavButton>
+      ))}
+      <AltNavButton onClick={() => go(page + 1)} isDisabled={page >= pageCount} ariaLabel={labels.next}>
+        <ChevronRight size={16} />
+      </AltNavButton>
+      <AltNavButton onClick={() => go(pageCount)} isDisabled={page >= pageCount} ariaLabel={labels.last}>
+        <ChevronsRight size={16} />
+      </AltNavButton>
+    </div>
+  );
+};

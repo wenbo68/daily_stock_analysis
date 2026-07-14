@@ -9,13 +9,13 @@ import { AltRunForm, type AltRunFormProps } from '../AltRunForm';
 function renderForm(overrides: Partial<AltRunFormProps> = {}) {
   const props: AltRunFormProps = {
     ticker: null,
-    depth: null,
+    tier: null,
     capital: null,
     riskPct: null,
     submitting: false,
     error: null,
     onTicker: vi.fn(),
-    onDepth: vi.fn(),
+    onTier: vi.fn(),
     onCapital: vi.fn(),
     onRiskPct: vi.fn(),
     onStart: vi.fn(),
@@ -55,18 +55,30 @@ describe('AltRunForm', () => {
     expect(screen.getByRole('button', { name: /开始|Start/ })).toBeDisabled();
   });
 
-  it('shows selections as pills; clicking a pill removes it', () => {
-    const props = renderForm({ ticker: 'AAPL', capital: '100000' });
+  it('shows selections as Label: value pills; clicking a pill removes it', () => {
+    const props = renderForm({ ticker: 'AAPL', tier: 1, capital: '100000' });
 
     const start = screen.getByRole('button', { name: /开始|Start/ });
     expect(start).toBeEnabled();
     fireEvent.click(start);
     expect(props.onStart).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'AAPL' }));
+    fireEvent.click(screen.getByRole('button', { name: /(Ticker|代码): AAPL/ }));
     expect(props.onTicker).toHaveBeenCalledWith(null);
 
-    fireEvent.click(screen.getByRole('button', { name: /100000/ }));
+    fireEvent.click(screen.getByRole('button', { name: /(Tier|层级): 1/ }));
+    expect(props.onTier).toHaveBeenCalledWith(null);
+
+    fireEvent.click(screen.getByRole('button', { name: /(Capital|本金): 100000/ }));
     expect(props.onCapital).toHaveBeenCalledWith(null);
+  });
+
+  it('clears a selection when its dropdown option is picked again', () => {
+    const props = renderForm({ tier: 2 });
+
+    fireEvent.focus(screen.getByPlaceholderText(/选择层级|Select tier/));
+    fireEvent.click(screen.getByRole('button', { name: '2' }));
+
+    expect(props.onTier).toHaveBeenCalledWith(null);
   });
 });

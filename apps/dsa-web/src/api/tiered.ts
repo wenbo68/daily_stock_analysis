@@ -177,6 +177,8 @@ export type TieredRunSummary = {
   // null = the run has no sizing block (shown as a dash).
   direction?: 'buy' | 'hold' | 'sell' | 'unknown' | null;
   shares?: number | null;
+  // The tier the run went to (1-3); null while running/failed.
+  tier?: number | null;
 };
 
 export type TieredRun = TieredRunSummary & {
@@ -214,6 +216,15 @@ export const tieredApi = {
 
   getRun: async (taskId: string): Promise<TieredRun> => {
     const response = await apiClient.get<TieredRun>(`/api/v1/tiered/runs/${taskId}`);
+    return response.data;
+  },
+
+  // Saved sizing settings (.env-backed) — what a run uses when the form
+  // sends nothing. Both null when no defaults are configured.
+  sizingDefaults: async (): Promise<{ capital: number | null; risk_fraction: number | null }> => {
+    const response = await apiClient.get<{ capital: number | null; risk_fraction: number | null }>(
+      '/api/v1/tiered/sizing-defaults',
+    );
     return response.data;
   },
 };
