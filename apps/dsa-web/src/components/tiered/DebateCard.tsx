@@ -112,7 +112,7 @@ export const DebateCard = ({ section, citations }: DebateCardProps) => {
                         : 'tiered.debate.bear') as UiTextKey,
                     )}{' '}
                     <span className="font-normal text-secondary-text">
-                      {t('tiered.debate.round', { round: turn.round })}
+                      {t('tiered.debate.round', { round: turn.round ?? 1 })}
                     </span>
                   </div>
                   <p className="whitespace-pre-wrap text-xs leading-relaxed text-secondary-text">

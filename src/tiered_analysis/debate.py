@@ -1,37 +1,44 @@
 # -*- coding: utf-8 -*-
-"""Tier 2: scored bull/bear debate with a deterministic verdict (v3).
+"""Tier 2: threaded bull/bear debate with a deterministic verdict (v4).
 
-Redesign (owner spec, 2026-07-15). The direction no longer comes from a
-judge's opinion — it is computed by a fixed formula from numbers the LLMs
-produce, so the whole ruling is auditable:
+Redesign (owner spec, 2026-07-16). Two symmetric threads, each shaped like
+a real investment-committee pitch — argue, be attacked, respond:
 
-1. Each debater argues its case and returns JSON: the argument, the
-   evidence refs it leans on, and an honest 0-10 whole-number bullishness
-   score (0 = strongly bearish, 5 = neutral, 10 = strongly bullish).
-2. A grading judge scores each debater on three validity axes, each a
-   whole number 0-5: citation validity (does the cited evidence really say
-   what the debater claims?), knowledge validity (is the financial
-   knowledge correct?), logical validity (do the conclusions follow?).
-3. Code (not the LLM) computes the verdict:
-       weight   = (citation + knowledge + logic) / 15          per debater
-       final    = (w_bull × s_bull + w_bear × s_bear) / (w_bull + w_bear)
-       verdict  = round half-up → 0-3 sell, 4-6 hold, 7-10 buy
-   Weighting by validity keeps role bias from cancelling out: the side
-   that argued better pulls the final number toward itself.
-4. A summary judge then writes the user-facing report AROUND the computed
-   number: corrected bull/bear summaries (invalid claims dropped or fixed)
-   and a decision summary supporting the verdict.
+    thread A: bull argues → bear attacks it → bull responds + position score
+    thread B: bear argues → bull attacks it → bear responds + position score
 
-All tier-2 LLM calls run at temperature 0 so the same evidence produces
-the same grades. Anti-fabrication contract unchanged: debaters may only
-cite the supplied evidence bundle; refs are code-validated
-(``validate_evidence``) and invalid ones dropped. An off-spec number
-(non-whole bullishness, out-of-range grade) voids the verdict — the tier
-then degrades and the tier-1 direction stands.
+The two threads are independent, so each stage runs its two LLM calls in
+parallel (arguments together, attacks together, responses together).
+Attacks are structured along the same three axes the judge grades on:
+citation validity, knowledge validity, logical validity.
+
+The position score (0 = strongly bearish, 5 = neutral, 10 = strongly
+bullish, whole number) is given only in the response turn — after the
+debater has seen and answered the attack on its case.
+
+A grading judge then scores each side 0-5 per axis over EVERYTHING it
+wrote (argument, attack, and response — a lazy or false attack costs the
+attacker points). Any grade below 5 must quote the exact offending
+sentence verbatim plus a plain-English reason; the quote is code-checked
+against the transcript and flagged when it does not match. Code (not the
+LLM) computes the verdict:
+
+    weight   = (citation + knowledge + logic) / 15          per debater
+    final    = (w_bull × s_bull + w_bear × s_bear) / (w_bull + w_bear)
+    verdict  = round half-up → 0-3 sell, 4-6 hold, 7-10 buy
+
+A summary judge writes the user-facing prose AROUND the computed number;
+its failure never voids the verdict. All calls run at temperature 0.
+Anti-fabrication contract unchanged: debaters may only cite the supplied
+evidence bundle; refs are code-validated and invalid ones dropped. An
+off-spec number (non-whole position score, out-of-range grade) voids the
+verdict — the tier degrades and the tier-1 direction stands.
 """
 from __future__ import annotations
 
 import math
+import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -44,14 +51,14 @@ from .llm_support import (
 from .providers.base import DimensionResult
 from .schema import Direction, TierReport
 
-DEFAULT_ROUNDS = 1
-
 #: weight = (citation + knowledge + logic) / this — three 0-5 axes.
 VALIDITY_MAX_TOTAL = 15
 
 #: Verdict thresholds on the rounded final score (owner spec).
 SELL_MAX = 3
 HOLD_MAX = 6
+
+GRADE_AXES = ("citation_validity", "knowledge_validity", "logical_validity")
 
 
 def direction_from_score(rounded: int) -> Direction:
@@ -71,46 +78,89 @@ Collected evidence (the ONLY facts you may use — no outside knowledge):
 {evidence_block}
 """
 
-_DEBATER_FORMAT = """Reply with JSON only:
-{{"argument": "your case in at most 180 words of plain English",
- "citations": ["technicals.rsi_14", "citation:1"],
- "bullishness": <whole number 0-10>}}
-
-Rules:
-- "citations" must list every piece of evidence your argument leans on: a
-  payload key path like "technicals.rsi_14" or "citation:N" for a news
-  source from the evidence above.
-- "bullishness" is your honest overall read of the stock after weighing
-  your own argument: 0 = strongly bearish, 5 = neither, 10 = strongly
-  bullish. Argue your role, but score honestly — a weak case deserves a
-  modest number.
+_CITE_RULES = """- "citations" must list every piece of evidence you lean on: a payload
+  key path like "technicals.rsi_14" or "citation:N" for a news source
+  from the evidence above.
 - Use only the evidence above; do not invent facts."""
 
-_BULL_TEMPLATE = """{context}
-Debate transcript so far:
-{transcript}
+_ROLE_TASK = {
+    "bull": "argue the strongest honest case FOR buying {symbol}",
+    "bear": (
+        "argue the strongest honest case AGAINST buying {symbol} "
+        "(risks, weaknesses, counter-evidence)"
+    ),
+}
 
-You are the BULL analyst: argue the strongest honest case FOR buying
-{symbol}, rebutting the bear's latest points if there are any.
-""" + _DEBATER_FORMAT
+_ARGUMENT_TEMPLATE = """{context}
+You are the {role_upper} analyst: {role_task}.
+Your opponent has not spoken yet — this is your opening argument.
 
-_BEAR_TEMPLATE = """{context}
-Debate transcript so far:
-{transcript}
+Reply with JSON only:
+{{"argument": "your case in at most 180 words of plain English",
+ "citations": ["technicals.rsi_14", "citation:1"]}}
 
-You are the BEAR analyst: argue the strongest honest case AGAINST buying
-{symbol} (risks, weaknesses, counter-evidence), rebutting the bull's
-latest points if there are any.
-""" + _DEBATER_FORMAT
+Rules:
+""" + _CITE_RULES
+
+_ATTACK_TEMPLATE = """{context}
+You are the {role_upper} analyst. Your opponent, the {opponent_upper},
+made this opening argument:
+
+{opponent_block}
+
+Attack that argument on exactly three fronts, quoting your opponent's own
+sentences where you can:
+1. citation validity — does the evidence it cites really say what it
+   claims? Check its citations against the evidence above.
+2. knowledge validity — is its financial knowledge correct?
+3. logical validity — assuming its facts were true, do its conclusions
+   actually follow?
+
+If a front has no real weakness, say so honestly instead of inventing one
+— a false attack will cost you with the judge.
+
+Reply with JSON only:
+{{"argument": "your attack in at most 180 words, covering the three fronts",
+ "citations": ["technicals.rsi_14", "citation:1"]}}
+
+Rules:
+""" + _CITE_RULES
+
+_RESPONSE_TEMPLATE = """{context}
+You are the {role_upper} analyst. Your opening argument was:
+
+{own_block}
+
+The {opponent_upper} attacked it:
+
+{attack_block}
+
+Respond: defend the points you can defend, concede the points you cannot,
+then give your final position score.
+
+Reply with JSON only:
+{{"argument": "your response in at most 150 words",
+ "citations": ["technicals.rsi_14", "citation:1"],
+ "position_score": <whole number 0-10>}}
+
+Rules:
+- "position_score" is your honest overall read of the stock after this
+  exchange: 0 = strongly bearish, 5 = neither, 10 = strongly bullish.
+  Argue your role, but score honestly — if the attack landed, move your
+  number.
+""" + _CITE_RULES
 
 _GRADING_TEMPLATE = """{context}
-Full debate transcript (each turn shows the debater's citations and its
-0-10 bullishness score):
+Full debate transcript — each side wrote an opening argument, an attack
+on the opponent's argument, and a response to the attack on its own:
 {transcript}
 
 You are the research manager grading this debate. Do NOT pick a direction
-— code computes the verdict from your grades. Grade each debater on three
-axes, each a whole number from 0 (worthless) to 5 (flawless):
+— code computes the verdict from your grades. Grade each side on three
+axes, each a whole number from 0 (worthless) to 5 (flawless). The grade
+covers EVERYTHING that side wrote — its argument, its attack, and its
+response. A lazy, false, or invented attack costs the attacker points
+exactly like a bad argument would.
 
 1. citation_validity — does the cited evidence really say what the
    debater claims? Check every citation against the evidence above.
@@ -128,13 +178,18 @@ axes, each a whole number from 0 (worthless) to 5 (flawless):
    strengthening" → sound, 4-5. "the product is popular, so the stock
    will double this quarter" → does not follow, 0-1.
 
+For every axis give a score, and:
+- score 5 → "quote" and "why" must be null (nothing was wrong).
+- score below 5 → "quote" must be ONE exact sentence copied verbatim,
+  character for character, from that side's own turns above, and "why"
+  must explain in plain English what is wrong with it. Never paraphrase
+  the quote — it is checked mechanically against the transcript.
+
 Reply with JSON only:
-{{"bull": {{"citation_validity": <0-5>, "knowledge_validity": <0-5>,
-          "logical_validity": <0-5>,
-          "notes": "1-2 plain-English sentences explaining the grades"}},
- "bear": {{"citation_validity": <0-5>, "knowledge_validity": <0-5>,
-          "logical_validity": <0-5>,
-          "notes": "1-2 plain-English sentences explaining the grades"}}}}"""
+{{"bull": {{"citation_validity": {{"score": <0-5>, "quote": <verbatim sentence or null>, "why": <reason or null>}},
+          "knowledge_validity": {{"score": <0-5>, "quote": ..., "why": ...}},
+          "logical_validity": {{"score": <0-5>, "quote": ..., "why": ...}}}},
+ "bear": {{"citation_validity": {{...}}, "knowledge_validity": {{...}}, "logical_validity": {{...}}}}}}"""
 
 _SUMMARY_TEMPLATE = """{context}
 Full debate transcript:
@@ -143,8 +198,8 @@ Full debate transcript:
 Your validity grades:
 {grades}
 
-Computed result (fixed formula — each debater's bullishness score weighted
-by its validity grades): final bullishness {final} out of 10, rounded to
+Computed result (fixed formula — each side's position score weighted by
+its validity grades): final position score {final} out of 10, rounded to
 {rounded} → verdict {direction} (0-3 sell, 4-6 hold, 7-10 buy).
 
 Write the user-facing report. Reply with JSON only:
@@ -161,11 +216,11 @@ Rules:
 @dataclass(frozen=True)
 class DebateTurn:
     role: str  # "bull" | "bear"
-    round: int
+    kind: str  # "argument" | "attack" | "response"
     argument: str
-    #: The debater's honest 0-10 read; None when the reply was off-spec.
-    bullishness: Optional[int] = None
-    #: Code-validated evidence refs the argument leans on.
+    #: The debater's honest 0-10 read; only response turns carry one.
+    position_score: Optional[int] = None
+    #: Code-validated evidence refs the text leans on.
     citations: Tuple[str, ...] = ()
 
 
@@ -176,26 +231,36 @@ class AnchoredReason:
 
 
 @dataclass(frozen=True)
-class DebaterScore:
-    """One debater's numbers: its own score plus the judge's grades."""
+class AxisGrade:
+    """One judge grade: the score plus, below 5, the offending sentence."""
 
-    bullishness: int
-    citation_validity: int
-    knowledge_validity: int
-    logical_validity: int
-    notes: Optional[str] = None
+    score: int
+    quote: Optional[str] = None
+    why: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DebaterScore:
+    """One side's numbers: its own position score plus the judge's grades."""
+
+    position_score: int
+    citation_validity: AxisGrade
+    knowledge_validity: AxisGrade
+    logical_validity: AxisGrade
 
     @property
     def weight(self) -> float:
         return (
-            self.citation_validity + self.knowledge_validity + self.logical_validity
+            self.citation_validity.score
+            + self.knowledge_validity.score
+            + self.logical_validity.score
         ) / VALIDITY_MAX_TOTAL
 
 
 @dataclass(frozen=True)
 class DebateVerdict:
     direction: Direction
-    #: The validity-weighted average of the two bullishness scores, 0-10.
+    #: The validity-weighted average of the two position scores, 0-10.
     final_score: float
     #: final_score rounded half-up — the number the direction maps from.
     final_score_rounded: int
@@ -203,6 +268,10 @@ class DebateVerdict:
     bull_summary: Optional[str] = None
     bear_summary: Optional[str] = None
     scoring: Optional[Dict[str, DebaterScore]] = None  # keys: "bull", "bear"
+
+
+def _axis_detail(grade: AxisGrade) -> Dict[str, Any]:
+    return {"score": grade.score, "quote": grade.quote, "why": grade.why}
 
 
 @dataclass(frozen=True)
@@ -219,12 +288,13 @@ class DebateResult:
             if self.verdict.scoring is not None:
                 scoring = {
                     side: {
-                        "bullishness": s.bullishness,
-                        "citation_validity": s.citation_validity,
-                        "knowledge_validity": s.knowledge_validity,
-                        "logical_validity": s.logical_validity,
+                        "position_score": s.position_score,
+                        "citation_validity": _axis_detail(s.citation_validity),
+                        "knowledge_validity": _axis_detail(s.knowledge_validity),
+                        "logical_validity": _axis_detail(s.logical_validity),
                         "weight": round(s.weight, 4),
-                        "notes": s.notes,
+                        # Legacy alias kept so v3 readers never crash.
+                        "bullishness": s.position_score,
                     }
                     for side, s in self.verdict.scoring.items()
                 }
@@ -246,10 +316,12 @@ class DebateResult:
             "turns": [
                 {
                     "role": t.role,
-                    "round": t.round,
+                    "kind": t.kind,
                     "argument": t.argument,
-                    "bullishness": t.bullishness,
+                    "position_score": t.position_score,
                     "citations": list(t.citations),
+                    # Legacy alias kept so v3 readers never crash.
+                    "bullishness": t.position_score,
                 }
                 for t in self.turns
             ],
@@ -258,20 +330,29 @@ class DebateResult:
         }
 
 
+def _turn_header(turn: DebateTurn) -> str:
+    if turn.kind == "attack":
+        opponent = "bear" if turn.role == "bull" else "bull"
+        label = f"attack on the {opponent}'s argument"
+    else:
+        label = turn.kind
+    header = f"[{turn.role.upper()} — {label}"
+    if turn.position_score is not None:
+        header += f" — position score {turn.position_score}/10"
+    return header + "]"
+
+
+def _turn_block(turn: DebateTurn) -> str:
+    body = turn.argument
+    if turn.citations:
+        body += "\ncited: " + ", ".join(turn.citations)
+    return f"{_turn_header(turn)}\n{body}"
+
+
 def _transcript(turns: Sequence[DebateTurn]) -> str:
     if not turns:
         return "(the debate is just starting)"
-    blocks: List[str] = []
-    for t in turns:
-        header = f"[{t.role.upper()} — round {t.round}"
-        if t.bullishness is not None:
-            header += f" — bullishness {t.bullishness}/10"
-        header += "]"
-        body = t.argument
-        if t.citations:
-            body += "\ncited: " + ", ".join(t.citations)
-        blocks.append(f"{header}\n{body}")
-    return "\n\n".join(blocks)
+    return "\n\n".join(_turn_block(t) for t in turns)
 
 
 def _whole_number(value: Any, low: int, high: int) -> Optional[int]:
@@ -284,20 +365,19 @@ def _whole_number(value: Any, low: int, high: int) -> Optional[int]:
     return number if low <= number <= high else None
 
 
-class DebateEngine:
-    """Runs the scored debate: debaters → grading judge → code formula →
-    summary judge. Never raises out of run()."""
+def _squash(text: str) -> str:
+    """Whitespace-insensitive form for verbatim-quote checking."""
+    return re.sub(r"\s+", " ", text).strip()
 
-    def __init__(
-        self,
-        summarizer: Optional[Callable[[str], str]] = None,
-        rounds: int = DEFAULT_ROUNDS,
-    ) -> None:
-        if rounds < 1:
-            raise ValueError("rounds must be >= 1")
+
+class DebateEngine:
+    """Runs the threaded debate: argue/attack/respond (stages in parallel)
+    → grading judge → code formula → summary judge. Never raises out of
+    run()."""
+
+    def __init__(self, summarizer: Optional[Callable[[str], str]] = None) -> None:
         # Temperature 0 by default: deterministic grades for the formula.
         self._summarize = summarizer or deterministic_summarizer
-        self._rounds = rounds
 
     def run(
         self,
@@ -320,20 +400,38 @@ class DebateEngine:
         turns: List[DebateTurn] = []
         warnings: List[str] = []
         try:
-            for round_number in range(1, self._rounds + 1):
-                for role, template in (("bull", _BULL_TEMPLATE), ("bear", _BEAR_TEMPLATE)):
-                    raw = self._summarize(
-                        template.format(
-                            context=context,
-                            symbol=symbol,
-                            transcript=_transcript(turns),
-                        )
-                    )
-                    turn, turn_warnings = self._parse_turn(
-                        raw, role, round_number, dimensions
-                    )
-                    turns.append(turn)
-                    warnings.extend(turn_warnings)
+            # Stage 1 — both opening arguments, in parallel.
+            bull_arg, bear_arg = self._stage_pair(
+                self._argument_prompt(context, symbol, "bull"),
+                self._argument_prompt(context, symbol, "bear"),
+                ("bull", "bear"),
+                "argument",
+                dimensions,
+                warnings,
+            )
+            turns = [bull_arg, bear_arg]  # partial transcript if a later stage dies
+            # Stage 2 — each side attacks the other's argument, in parallel.
+            bear_attack, bull_attack = self._stage_pair(
+                self._attack_prompt(context, "bear", bull_arg),
+                self._attack_prompt(context, "bull", bear_arg),
+                ("bear", "bull"),
+                "attack",
+                dimensions,
+                warnings,
+            )
+            turns = [bull_arg, bear_attack, bear_arg, bull_attack]
+            # Stage 3 — each side answers the attack on its own case and
+            # gives its position score, in parallel.
+            bull_resp, bear_resp = self._stage_pair(
+                self._response_prompt(context, "bull", bull_arg, bear_attack),
+                self._response_prompt(context, "bear", bear_arg, bull_attack),
+                ("bull", "bear"),
+                "response",
+                dimensions,
+                warnings,
+            )
+            # Reading order: thread A (bull's case) then thread B (bear's).
+            turns = [bull_arg, bear_attack, bull_resp, bear_arg, bull_attack, bear_resp]
             raw_grades = self._summarize(
                 _GRADING_TEMPLATE.format(context=context, transcript=_transcript(turns))
             )
@@ -343,25 +441,25 @@ class DebateEngine:
                 warnings=warnings + [f"debate LLM call failed: {exc}"],
             )
 
-        scores = {t.role: t.bullishness for t in turns}  # last turn wins
+        scores = {t.role: t.position_score for t in (bull_resp, bear_resp)}
         missing = [role for role in ("bull", "bear") if scores.get(role) is None]
         if missing:
             return DebateResult(
                 turns=turns,
                 warnings=warnings
                 + [
-                    f"no usable bullishness score from {', '.join(missing)} — "
+                    f"no usable position score from {', '.join(missing)} — "
                     "tier-2 verdict voided"
                 ],
             )
 
-        grades, grade_warnings = self._parse_grades(raw_grades)
+        grades, grade_warnings = self._parse_grades(raw_grades, turns)
         warnings.extend(grade_warnings)
         if grades is None:
             return DebateResult(turns=turns, warnings=warnings)
 
         scoring = {
-            side: DebaterScore(bullishness=scores[side], **grades[side])
+            side: DebaterScore(position_score=scores[side], **grades[side])
             for side in ("bull", "bear")
         }
         final, final_warnings = self._final_score(scoring)
@@ -385,33 +483,90 @@ class DebateEngine:
         )
         return DebateResult(turns=turns, verdict=verdict, warnings=warnings)
 
+    # -- prompt builders ---------------------------------------------------
+
+    @staticmethod
+    def _argument_prompt(context: str, symbol: str, role: str) -> str:
+        return _ARGUMENT_TEMPLATE.format(
+            context=context,
+            role_upper=role.upper(),
+            role_task=_ROLE_TASK[role].format(symbol=symbol),
+        )
+
+    @staticmethod
+    def _attack_prompt(context: str, role: str, opponent_argument: DebateTurn) -> str:
+        opponent = opponent_argument.role
+        return _ATTACK_TEMPLATE.format(
+            context=context,
+            role_upper=role.upper(),
+            opponent_upper=opponent.upper(),
+            opponent_block=_turn_block(opponent_argument),
+        )
+
+    @staticmethod
+    def _response_prompt(
+        context: str, role: str, own_argument: DebateTurn, attack: DebateTurn
+    ) -> str:
+        return _RESPONSE_TEMPLATE.format(
+            context=context,
+            role_upper=role.upper(),
+            opponent_upper=attack.role.upper(),
+            own_block=_turn_block(own_argument),
+            attack_block=_turn_block(attack),
+        )
+
+    # -- stage execution ---------------------------------------------------
+
+    def _stage_pair(
+        self,
+        prompt_a: str,
+        prompt_b: str,
+        roles: Tuple[str, str],
+        kind: str,
+        dimensions: Sequence[DimensionResult],
+        warnings: List[str],
+    ) -> Tuple[DebateTurn, DebateTurn]:
+        """One debate stage: the two independent calls run in parallel."""
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_a = pool.submit(self._summarize, prompt_a)
+            future_b = pool.submit(self._summarize, prompt_b)
+            raw_a, raw_b = future_a.result(), future_b.result()
+        turn_a, warnings_a = self._parse_turn(raw_a, roles[0], kind, dimensions)
+        turn_b, warnings_b = self._parse_turn(raw_b, roles[1], kind, dimensions)
+        warnings.extend(warnings_a)
+        warnings.extend(warnings_b)
+        return turn_a, turn_b
+
+    # -- parsing -----------------------------------------------------------
+
     @staticmethod
     def _parse_turn(
         raw: str,
         role: str,
-        round_number: int,
+        kind: str,
         dimensions: Sequence[DimensionResult],
     ) -> Tuple[DebateTurn, List[str]]:
         """One debater reply → a turn; off-spec parts degrade, not crash."""
         warnings: List[str] = []
+        expect_score = kind == "response"
         parsed = parse_llm_json(raw)
         if parsed is None:
-            warnings.append(
-                f"{role} reply was not JSON — argument kept as plain text, no score"
-            )
-            return (
-                DebateTurn(role=role, round=round_number, argument=raw.strip()),
-                warnings,
-            )
+            message = f"{role} {kind} was not JSON — kept as plain text"
+            if expect_score:
+                message += ", no score"
+            warnings.append(message)
+            return DebateTurn(role=role, kind=kind, argument=raw.strip()), warnings
 
         argument = str(parsed.get("argument") or "").strip() or raw.strip()
 
-        bullishness = _whole_number(parsed.get("bullishness"), 0, 10)
-        if bullishness is None:
-            warnings.append(
-                f"{role} bullishness {parsed.get('bullishness')!r} is not a "
-                "whole number 0-10 — dropped"
-            )
+        position_score: Optional[int] = None
+        if expect_score:
+            position_score = _whole_number(parsed.get("position_score"), 0, 10)
+            if position_score is None:
+                warnings.append(
+                    f"{role} position score {parsed.get('position_score')!r} is "
+                    "not a whole number 0-10 — dropped"
+                )
 
         raw_citations = [str(c).strip() for c in parsed.get("citations") or []]
         citations = validate_evidence(raw_citations, dimensions)
@@ -423,9 +578,9 @@ class DebateEngine:
         return (
             DebateTurn(
                 role=role,
-                round=round_number,
+                kind=kind,
                 argument=argument,
-                bullishness=bullishness,
+                position_score=position_score,
                 citations=tuple(citations),
             ),
             warnings,
@@ -433,30 +588,57 @@ class DebateEngine:
 
     @staticmethod
     def _parse_grades(
-        raw: str,
-    ) -> Tuple[Optional[Dict[str, Dict[str, Any]]], List[str]]:
-        """Judge grades → per-side axis dicts; any off-spec grade voids."""
+        raw: str, turns: Sequence[DebateTurn]
+    ) -> Tuple[Optional[Dict[str, Dict[str, AxisGrade]]], List[str]]:
+        """Judge grades → per-side AxisGrades; an off-spec score voids,
+        a bad or missing quote only flags (the grade itself is usable)."""
         parsed = parse_llm_json(raw)
         if parsed is None:
             return None, ["grading judge returned unparseable output — tier-2 verdict voided"]
 
-        grades: Dict[str, Dict[str, Any]] = {}
+        side_text = {
+            side: _squash(" ".join(t.argument for t in turns if t.role == side))
+            for side in ("bull", "bear")
+        }
+
+        warnings: List[str] = []
+        grades: Dict[str, Dict[str, AxisGrade]] = {}
         for side in ("bull", "bear"):
             node = parsed.get(side)
             if not isinstance(node, dict):
                 return None, [f"grading judge gave no {side} grades — tier-2 verdict voided"]
-            axes: Dict[str, Any] = {}
-            for axis in ("citation_validity", "knowledge_validity", "logical_validity"):
-                value = _whole_number(node.get(axis), 0, 5)
-                if value is None:
-                    return None, [
-                        f"grading judge {side} {axis} {node.get(axis)!r} is not "
+            axes: Dict[str, AxisGrade] = {}
+            for axis in GRADE_AXES:
+                cell = node.get(axis)
+                # Tolerate a bare number (v3-shaped reply): score, no comment.
+                if isinstance(cell, dict):
+                    raw_score, quote, why = cell.get("score"), cell.get("quote"), cell.get("why")
+                else:
+                    raw_score, quote, why = cell, None, None
+                score = _whole_number(raw_score, 0, 5)
+                if score is None:
+                    return None, warnings + [
+                        f"grading judge {side} {axis} {raw_score!r} is not "
                         "a whole number 0-5 — tier-2 verdict voided"
                     ]
-                axes[axis] = value
-            axes["notes"] = str(node.get("notes") or "").strip() or None
+                quote = str(quote).strip() if quote else None
+                why = str(why).strip() if why else None
+                if score == 5:
+                    # A flawless grade needs no comment — N/A in the UI.
+                    quote, why = None, None
+                elif quote is None:
+                    warnings.append(
+                        f"grading judge gave no quote for {side} {axis} "
+                        f"score {score}/5 — kept, flagged"
+                    )
+                elif _squash(quote) not in side_text[side]:
+                    warnings.append(
+                        f"grading judge quote for {side} {axis} not found "
+                        "verbatim in the transcript — kept, flagged"
+                    )
+                axes[axis] = AxisGrade(score=score, quote=quote, why=why)
             grades[side] = axes
-        return grades, []
+        return grades, warnings
 
     @staticmethod
     def _final_score(scoring: Dict[str, DebaterScore]) -> Tuple[float, List[str]]:
@@ -469,7 +651,7 @@ class DebateEngine:
                 "to neutral 5"
             ]
         final = (
-            bull.weight * bull.bullishness + bear.weight * bear.bullishness
+            bull.weight * bull.position_score + bear.weight * bear.position_score
         ) / total_weight
         return final, []
 
@@ -484,9 +666,16 @@ class DebateEngine:
     ) -> Tuple[str, Optional[str], Optional[str], List[str]]:
         """The user-facing prose; its failure never voids the computed verdict."""
         grades_block = "\n".join(
-            f"{side}: citation {s.citation_validity}/5, knowledge "
-            f"{s.knowledge_validity}/5, logic {s.logical_validity}/5"
-            + (f" — {s.notes}" if s.notes else "")
+            f"{side}: position score {s.position_score}/10; "
+            + "; ".join(
+                f"{axis.split('_')[0]} {grade.score}/5"
+                + (f' (quote: "{grade.quote}" — {grade.why})' if grade.quote else "")
+                for axis, grade in (
+                    ("citation_validity", s.citation_validity),
+                    ("knowledge_validity", s.knowledge_validity),
+                    ("logical_validity", s.logical_validity),
+                )
+            )
             for side, s in scoring.items()
         )
         try:

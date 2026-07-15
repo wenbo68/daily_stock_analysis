@@ -200,6 +200,72 @@ function makeScoredDebate(): TieredDebateDetail {
   };
 }
 
+// A v4 threaded audit trail: argue/attack/respond turns with kinds, the
+// position score only on response turns, and axis grades that carry the
+// judge's quote + why below 5 (null at 5/5 → N/A).
+function makeThreadedDebate(): TieredDebateDetail {
+  return {
+    turns: [
+      {
+        role: 'bull',
+        kind: 'argument',
+        argument: 'Momentum is strong.',
+        citations: ['technicals.close'],
+      },
+      { role: 'bear', kind: 'attack', argument: 'The bull overstates momentum.', citations: [] },
+      {
+        role: 'bull',
+        kind: 'response',
+        argument: 'I stand by the momentum case.',
+        position_score: 8,
+        citations: [],
+      },
+      { role: 'bear', kind: 'argument', argument: 'Valuation is stretched.', citations: [] },
+      { role: 'bull', kind: 'attack', argument: 'The bear misreads valuation.', citations: [] },
+      {
+        role: 'bear',
+        kind: 'response',
+        argument: 'I concede part of it.',
+        position_score: 3,
+        citations: [],
+      },
+    ],
+    verdict: {
+      direction: 'hold',
+      summary: 'Weighted to hold.',
+      bull_summary: 'Corrected bull case.',
+      bear_summary: 'Corrected bear case.',
+      final_score: 6.095,
+      final_score_rounded: 6,
+      scoring: {
+        bull: {
+          position_score: 8,
+          citation_validity: {
+            score: 4,
+            quote: 'Momentum is strong.',
+            why: 'Overstated from one indicator.',
+          },
+          knowledge_validity: { score: 5, quote: null, why: null },
+          logical_validity: { score: 4, quote: 'I stand by the momentum case.', why: 'No new support.' },
+          weight: 0.8667,
+        },
+        bear: {
+          position_score: 3,
+          citation_validity: { score: 2, quote: 'Valuation is stretched.', why: 'The cited ratio does not show that.' },
+          knowledge_validity: { score: 3, quote: 'I concede part of it.', why: 'Partial concession left gaps.' },
+          logical_validity: { score: 3, quote: 'The bull overstates momentum.', why: 'Attack gave no specifics.' },
+          weight: 0.5333,
+        },
+      },
+      confidence: null,
+      reasons_for: [],
+      reasons_against: [],
+      would_change_mind: null,
+    },
+    warnings: [],
+  };
+}
+
 function renderResult(result: TieredResult) {
   render(
     <MemoryRouter>
@@ -367,7 +433,8 @@ describe('AltResult', () => {
     expect(within(tier2).getByText('Corrected bull case.')).toBeInTheDocument();
     expect(within(tier2).getByText('Corrected bear case.')).toBeInTheDocument();
     // transcript turns carry the debater's own score and citations
-    expect(tier2).toHaveTextContent(/(看多分|bullishness) 8\/10/);
+    // (the label is "position score" for every generation since v4)
+    expect(tier2).toHaveTextContent(/(立场分|position score) 8\/10/);
     expect(within(tier2).getByRole('button', { name: 'technicals.close' })).toBeInTheDocument();
   });
 
@@ -391,6 +458,39 @@ describe('AltResult', () => {
     expect(screen.getByText(/6\.1 (四舍五入为|rounds to) 6/)).toBeInTheDocument();
     expect(screen.getByText(/0–3 (卖出|sell)/)).toBeInTheDocument();
     expect(screen.getByTestId('alt-scoring-verdict')).toHaveTextContent(/持有|Hold/);
+  });
+
+  it('renders a threaded (v4) transcript: kinds shown, score only on responses', () => {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeThreadedDebate();
+    renderResult(deep);
+    const tier2 = screen.getByTestId('alt-tier2');
+    // six turns labeled by kind, no round numbering
+    expect(within(tier2).getAllByText(/立论|argument/).length).toBeGreaterThanOrEqual(2);
+    expect(within(tier2).getAllByText(/质疑|attack/).length).toBeGreaterThanOrEqual(2);
+    expect(tier2).not.toHaveTextContent(/第 1 轮|round 1/);
+    // the position score sits on the response turn
+    expect(tier2).toHaveTextContent(/(立场分|position score) 8\/10/);
+    expect(within(tier2).getByText('I stand by the momentum case.')).toBeInTheDocument();
+  });
+
+  it('shows a judge comment per axis grade: quote + why below 5, N/A at 5/5', () => {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeThreadedDebate();
+    renderResult(deep);
+    const bull = screen.getByTestId('alt-scoring-bull');
+    expect(bull).toHaveTextContent(/(立场分|position score): 8\/10/);
+    // sub-5 grade → the offending sentence, quoted, plus the reason
+    expect(bull).toHaveTextContent('“Momentum is strong.” — Overstated from one indicator.');
+    // 5/5 grade → N/A
+    expect(bull).toHaveTextContent(/(知识有效性|knowledge validity): 5\/5 · (评语|comment): N\/A/);
+    // weight formula still plugs the numeric scores
+    expect(bull).toHaveTextContent('= (4 + 5 + 4) / 15');
+    expect(bull).toHaveTextContent('= 0.87');
+    // final formula uses the v4 position_score field
+    expect(screen.getByTestId('alt-scoring-final-formula').textContent).toBe(
+      '= (0.87 × 8 + 0.53 × 3) / (0.87 + 0.53)',
+    );
   });
 
   it('renders citation evidence as sentiment.citation:N in link colors', () => {

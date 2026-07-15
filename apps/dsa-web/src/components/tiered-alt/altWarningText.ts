@@ -118,21 +118,23 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
   {
-    pattern: /^(bull|bear) reply was not JSON — argument kept as plain text, no score$/,
+    // v3: "bull reply was not JSON — argument kept as plain text, no score"
+    // v4: "bull argument|attack|response was not JSON — kept as plain text[, no score]"
+    pattern: /^(bull|bear) (?:reply|argument|attack|response) was not JSON — .*kept as plain text/,
     toText: (m, t) =>
       t('tiered.note.debaterNotJson', {
         side: t(m[1] === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear'),
       }),
   },
   {
-    pattern: /^(bull|bear) bullishness .* is not a whole number 0-10 — dropped$/,
+    pattern: /^(bull|bear) (?:bullishness|position score) .* is not a whole number 0-10 — dropped$/,
     toText: (m, t) =>
       t('tiered.note.debaterScoreDropped', {
         side: t(m[1] === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear'),
       }),
   },
   {
-    pattern: /^no usable bullishness score from .* — tier-2 verdict voided$/,
+    pattern: /^no usable (?:bullishness|position) score from .* — tier-2 verdict voided$/,
     toText: (_m, t) => t('tiered.note.debateVoided'),
   },
   {
@@ -141,6 +143,14 @@ const NOTE_RULES: NoteRule[] = [
       t('tiered.note.debaterBadRefs', {
         side: t(m[1] === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear'),
       }),
+  },
+  {
+    pattern: /^grading judge gave no quote for .* — kept, flagged$/,
+    toText: (_m, t) => t('tiered.note.gradingNoQuote'),
+  },
+  {
+    pattern: /^grading judge quote for .* not found verbatim in the transcript — kept, flagged$/,
+    toText: (_m, t) => t('tiered.note.gradingQuoteMismatch'),
   },
   {
     pattern: /^grading judge .* voided$/,

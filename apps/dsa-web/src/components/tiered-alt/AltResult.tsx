@@ -324,6 +324,13 @@ const AltDebateColumn = ({
   );
 };
 
+// v4 transcript turn kinds → their display labels.
+const TURN_KIND_KEYS: Record<string, UiTextKey> = {
+  argument: 'tiered.debate.kind.argument',
+  attack: 'tiered.debate.kind.attack',
+  response: 'tiered.debate.kind.response',
+};
+
 const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
   const detail = section.debate_detail;
@@ -388,17 +395,24 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
 
       {detail && detail.turns.length > 0 ? (
         <AltFold title={t('tiered.debate.transcript')}>
-          {detail.turns.map((turn, index) => (
+          {detail.turns.map((turn, index) => {
+            // v4 turns carry a kind (argument/attack/response); older runs
+            // numbered their rounds instead.
+            const kindKey = turn.kind ? TURN_KIND_KEYS[turn.kind] : undefined;
+            const positionScore = turn.position_score ?? turn.bullishness;
+            return (
             <div key={index}>
               <div className="mb-0.5 text-xs font-semibold text-gray-300">
                 {t((turn.role === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear') as UiTextKey)}{' '}
                 <span className="font-normal text-gray-500">
-                  {t('tiered.debate.round', { round: turn.round })}
-                  {turn.bullishness != null ? (
+                  {kindKey
+                    ? t(kindKey)
+                    : (turn.kind ?? t('tiered.debate.round', { round: turn.round ?? 1 }))}
+                  {positionScore != null ? (
                     <>
                       {' · '}
-                      {t('tiered.debate.bullishness')}{' '}
-                      <span className="tabular-nums">{turn.bullishness}/10</span>
+                      {t('tiered.debate.positionScore')}{' '}
+                      <span className="tabular-nums">{positionScore}/10</span>
                     </>
                   ) : null}
                 </span>
@@ -410,7 +424,8 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
                 </span>
               ) : null}
             </div>
-          ))}
+            );
+          })}
         </AltFold>
       ) : null}
 

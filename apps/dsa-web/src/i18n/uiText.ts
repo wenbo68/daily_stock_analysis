@@ -858,11 +858,13 @@ const zh = {
   'tiered.note.noEntryNoStop': '没有可用的买入价，因此无法设置止损。',
   'tiered.note.judgeConfidenceDropped': '辩论裁判给出的信心值无法读取，因此没有显示。',
   'tiered.note.judgeNoSummary': '辩论裁判没有写总结。',
-  'tiered.note.debaterNotJson': '{side}的回复格式不对——论点按原文展示，没有打分。',
-  'tiered.note.debaterScoreDropped': '{side}给出的看多分不是 0-10 的整数，已忽略。',
-  'tiered.note.debateVoided': '有辩手没有给出可用的看多分，无法计算层级 2 结论——沿用层级 1 的结论。',
+  'tiered.note.debaterNotJson': '{side}的回复格式不对——内容按原文展示。',
+  'tiered.note.debaterScoreDropped': '{side}给出的立场分不是 0-10 的整数，已忽略。',
+  'tiered.note.debateVoided': '有辩手没有给出可用的立场分，无法计算层级 2 结论——沿用层级 1 的结论。',
   'tiered.note.debaterBadRefs': '{side}引用了本报告中不存在的证据，无效引用已删除。',
   'tiered.note.gradingVoided': '裁判的有效性评分无法使用，无法计算层级 2 结论——沿用层级 1 的结论。',
+  'tiered.note.gradingNoQuote': '裁判打了低于 5 的分数，但没有引用出错的原句——评分仍然有效，已标记。',
+  'tiered.note.gradingQuoteMismatch': '裁判引用的句子在辩论记录中找不到原文——评分仍然有效，已标记。',
   'tiered.note.zeroValidity': '裁判给双方论证的有效性都打了零分，最终得分默认取中性的 5。',
   'tiered.note.summaryFailed': '裁判的文字总结生成失败——公式算出的结论不受影响。',
   'tiered.note.riskNoSummary': '风险裁判没有写总结。',
@@ -939,7 +941,7 @@ const zh = {
   'tiered.levelModal.rejectedNote': '该调整未通过程序校验，已被拒绝——实际使用公式基准价。',
   'tiered.debate.title': '第 2 层 · 多空辩论',
   'tiered.help.debate':
-    '一个 AI 唱多，另一个唱空，各自给出看多分。\n裁判只负责给双方论证打有效性分。\n结论由固定公式算出，不由 AI 拍板——见卡片内「评分与计算」。\n所有 AI 都只能引用四份报告里的证据。',
+    '多空双方各自立论；对方从引用、知识、逻辑三方面质疑；本方回应质疑后给出立场分。\n裁判只负责给双方的全部发言打有效性分，低于满分必须引用出错的原句。\n结论由固定公式算出，不由 AI 拍板——见卡片内「评分与计算」。\n所有 AI 都只能引用四份报告里的证据。',
   'tiered.debate.confidence': '裁判信心',
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
@@ -951,10 +953,14 @@ const zh = {
   'tiered.debate.bull': '多方',
   'tiered.debate.bear': '空方',
   'tiered.debate.round': '第 {round} 轮',
+  'tiered.debate.kind.argument': '立论',
+  'tiered.debate.kind.attack': '质疑',
+  'tiered.debate.kind.response': '回应',
   'tiered.debate.bullCase': '多方总结',
   'tiered.debate.bearCase': '空方总结',
   'tiered.debate.scoringTitle': '评分与计算',
-  'tiered.debate.bullishness': '看多分',
+  'tiered.debate.positionScore': '立场分',
+  'tiered.debate.comment': '评语',
   'tiered.debate.citationValidity': '引用有效性',
   'tiered.debate.knowledgeValidity': '知识有效性',
   'tiered.debate.logicValidity': '逻辑有效性',
@@ -963,7 +969,7 @@ const zh = {
   'tiered.debate.roundsTo': '{raw} 四舍五入为 {rounded}',
   'tiered.debate.ranges': '0–3 卖出 · 4–6 持有 · 7–10 买入',
   'tiered.help.debateScore':
-    '辩论得出的看多程度，满分 10。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n0–3 卖出，4–6 持有，7–10 买入。\n由固定公式算出：双方的看多分按裁判的有效性评分加权——见「评分与计算」。',
+    '辩论得出的看多程度，满分 10。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n0–3 卖出，4–6 持有，7–10 买入。\n由固定公式算出：双方的立场分按裁判的有效性评分加权——见「评分与计算」。',
   'tiered.risk.title': '第 3 层 · 风险压力测试',
   'tiered.help.risk':
     '三个风险审查者——保守、激进、中立——分别挑剔层级 2 的结论。\n风险裁判汇总成本结论、仓位倍数和止损。',
@@ -1075,8 +1081,8 @@ const zh = {
   'tiered.alt.f.belowNote': '只保留低于理想买入价 {value} 的数值',
   'tiered.alt.f.bullWeight': '多方权重',
   'tiered.alt.f.bearWeight': '空方权重',
-  'tiered.alt.f.bullScore': '多方看多分',
-  'tiered.alt.f.bearScore': '空方看多分',
+  'tiered.alt.f.bullScore': '多方立场分',
+  'tiered.alt.f.bearScore': '空方立场分',
   'tiered.alt.sources': '来源',
   'tiered.alt.verdict': '结论',
   'tiered.alt.size': '仓位',
@@ -1965,15 +1971,19 @@ const en: Record<UiTextKey, string> = {
     'The debate judge’s confidence number couldn’t be read, so it isn’t shown.',
   'tiered.note.judgeNoSummary': 'The debate judge didn’t write a summary.',
   'tiered.note.debaterNotJson':
-    'The {side} analyst’s reply wasn’t in the expected format — its argument is shown as-is, without a score.',
+    'The {side} analyst’s reply wasn’t in the expected format — it is shown as-is.',
   'tiered.note.debaterScoreDropped':
-    'The {side} analyst’s bullishness score wasn’t a whole number from 0 to 10, so it was dropped.',
+    'The {side} analyst’s position score wasn’t a whole number from 0 to 10, so it was dropped.',
   'tiered.note.debateVoided':
-    'A debater gave no usable bullishness score, so no tier-2 verdict was computed — the tier-1 verdict stands.',
+    'A debater gave no usable position score, so no tier-2 verdict was computed — the tier-1 verdict stands.',
   'tiered.note.debaterBadRefs':
     'The {side} analyst cited evidence that doesn’t exist in this report — the invalid references were dropped.',
   'tiered.note.gradingVoided':
     'The judge’s validity grades couldn’t be used, so no tier-2 verdict was computed — the tier-1 verdict stands.',
+  'tiered.note.gradingNoQuote':
+    'The judge gave a grade below 5 without quoting the offending sentence — the grade still counts, but it’s flagged.',
+  'tiered.note.gradingQuoteMismatch':
+    'The judge quoted a sentence that doesn’t appear in the debate transcript — the grade still counts, but it’s flagged.',
   'tiered.note.zeroValidity':
     'The judge graded both arguments zero validity, so the final score defaults to a neutral 5.',
   'tiered.note.summaryFailed':
@@ -2063,7 +2073,7 @@ const en: Record<UiTextKey, string> = {
     'This proposal failed the code-side safety checks and was rejected — the formula base is used instead.',
   'tiered.debate.title': 'Tier 2 · Bull/bear debate',
   'tiered.help.debate':
-    'One AI argues for the stock, another against it, each with a bullishness score.\nA judge only grades how valid each argument is.\nThe verdict comes from a fixed formula, not an AI’s call — see Scoring and calculation on the card.\nEvery AI may cite only the evidence in the four reports.',
+    'Each side argues its case; the opponent attacks it on citations, knowledge and logic; each side answers the attack and then gives its position score.\nA judge only grades how valid each side’s statements are — any grade below 5 must quote the offending sentence.\nThe verdict comes from a fixed formula, not an AI’s call — see Scoring and calculation on the card.\nEvery AI may cite only the evidence in the four reports.',
   'tiered.debate.confidence': 'Judge confidence',
   'tiered.help.debateConfidence':
     'How sure the judge AI is of its own verdict, from 0 to 1 — higher means more confident.',
@@ -2078,10 +2088,14 @@ const en: Record<UiTextKey, string> = {
   'tiered.debate.bull': 'Bull',
   'tiered.debate.bear': 'Bear',
   'tiered.debate.round': 'round {round}',
+  'tiered.debate.kind.argument': 'argument',
+  'tiered.debate.kind.attack': 'attack',
+  'tiered.debate.kind.response': 'response',
   'tiered.debate.bullCase': 'Bull case',
   'tiered.debate.bearCase': 'Bear case',
   'tiered.debate.scoringTitle': 'Scoring and calculation',
-  'tiered.debate.bullishness': 'bullishness',
+  'tiered.debate.positionScore': 'position score',
+  'tiered.debate.comment': 'comment',
   'tiered.debate.citationValidity': 'citation validity',
   'tiered.debate.knowledgeValidity': 'knowledge validity',
   'tiered.debate.logicValidity': 'logic validity',
@@ -2090,7 +2104,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.debate.roundsTo': '{raw} rounds to {rounded}',
   'tiered.debate.ranges': '0–3 sell · 4–6 hold · 7–10 buy',
   'tiered.help.debateScore':
-    'How bullish the debate concluded, out of 10.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\n0–3 sell, 4–6 hold, 7–10 buy.\nComputed by a fixed formula weighing each debater’s score by the judge’s validity grades — see Scoring and calculation.',
+    'How bullish the debate concluded, out of 10.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\n0–3 sell, 4–6 hold, 7–10 buy.\nComputed by a fixed formula weighing each side’s position score by the judge’s validity grades — see Scoring and calculation.',
   'tiered.risk.title': 'Tier 3 · Risk stress test',
   'tiered.help.risk':
     'Three risk reviewers — conservative, aggressive, neutral — critique the tier-2 verdict.\nA risk judge merges them into this verdict, the size and the stop loss.',
@@ -2221,8 +2235,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.f.belowNote': 'only values below the ideal entry {value} are kept',
   'tiered.alt.f.bullWeight': 'bull weight',
   'tiered.alt.f.bearWeight': 'bear weight',
-  'tiered.alt.f.bullScore': 'bull bullishness',
-  'tiered.alt.f.bearScore': 'bear bullishness',
+  'tiered.alt.f.bullScore': 'bull position score',
+  'tiered.alt.f.bearScore': 'bear position score',
   'tiered.alt.sources': 'Sources',
   'tiered.alt.verdict': 'Verdict',
   'tiered.alt.size': 'Size',

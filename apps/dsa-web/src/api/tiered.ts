@@ -49,27 +49,42 @@ export type TieredAnchoredReason = {
   evidence: string[];
 };
 
-// v3 scored debate: one debater's numbers — its own 0-10 bullishness plus
-// the judge's three 0-5 validity grades; weight = (sum of grades) / 15.
-export type TieredDebaterScore = {
-  bullishness: number;
-  citation_validity: number;
-  knowledge_validity: number;
-  logical_validity: number;
-  weight: number;
-  notes: string | null;
+// v4 judge grade for one validity axis: the 0-5 score plus, below 5, the
+// exact offending sentence and why it is wrong (both null at 5/5 → N/A).
+export type TieredAxisGrade = {
+  score: number;
+  quote?: string | null;
+  why?: string | null;
 };
 
-// Bull/bear debate audit trail (tier-2 section). Two generations coexist
+// One debater's numbers — its own 0-10 position score plus the judge's
+// three 0-5 validity grades; weight = (sum of grades) / 15. v3 runs store
+// the position score as `bullishness` and the axes as bare numbers; v4
+// runs store `position_score` and axis objects with quote/why comments.
+export type TieredDebaterScore = {
+  position_score?: number;
+  bullishness?: number;
+  citation_validity: number | TieredAxisGrade;
+  knowledge_validity: number | TieredAxisGrade;
+  logical_validity: number | TieredAxisGrade;
+  weight: number;
+  notes?: string | null;
+};
+
+// Bull/bear debate audit trail (tier-2 section). Three generations coexist
 // in stored runs: the v2 judged shape (confidence, reasons, would_change_
-// mind) and the v3 scored shape (final_score, scoring, corrected bull/bear
-// summaries) — every generation-specific field is optional.
+// mind), the v3 scored shape (final_score, scoring, corrected bull/bear
+// summaries), and the v4 threaded shape (turn kinds, axis-grade comments)
+// — every generation-specific field is optional.
 export type TieredDebateDetail = {
   turns: {
     role: string;
-    round: number;
+    // v2/v3 runs number their rounds; v4 turns carry a kind instead.
+    round?: number;
+    kind?: string;
     argument: string;
     bullishness?: number | null;
+    position_score?: number | null;
     citations?: string[];
   }[];
   verdict: {
