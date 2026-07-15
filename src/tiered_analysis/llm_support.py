@@ -67,6 +67,9 @@ class LlmUsageTracker:
     def __init__(self) -> None:
         self._stages: Dict[str, _StageUsage] = {}
         self._current: Optional[str] = None
+        # Debate stages run two LLM calls in parallel threads; both report
+        # into the same tracker.
+        self._lock = threading.Lock()
 
     @contextmanager
     def activate(self):
@@ -89,12 +92,13 @@ class LlmUsageTracker:
     def record(
         self, prompt_tokens: Optional[int], completion_tokens: Optional[int]
     ) -> None:
-        stage = self._stages.setdefault(
-            self._current or _UNATTRIBUTED_STAGE, _StageUsage()
-        )
-        stage.calls += 1
-        stage.prompt_tokens += int(prompt_tokens or 0)
-        stage.completion_tokens += int(completion_tokens or 0)
+        with self._lock:
+            stage = self._stages.setdefault(
+                self._current or _UNATTRIBUTED_STAGE, _StageUsage()
+            )
+            stage.calls += 1
+            stage.prompt_tokens += int(prompt_tokens or 0)
+            stage.completion_tokens += int(completion_tokens or 0)
 
     def to_detail(self) -> Dict[str, Any]:
         total = _StageUsage()
@@ -116,6 +120,17 @@ def record_llm_usage(
     tracker = getattr(_active, "tracker", None)
     if tracker is not None:
         tracker.record(prompt_tokens, completion_tokens)
+
+
+def active_tracker() -> Optional["LlmUsageTracker"]:
+    """The tracker active on this thread, or None.
+
+    The tracker lives in thread-local storage, so code that fans LLM calls
+    out to worker threads (the debate's parallel stages) must capture it
+    here and re-``activate()`` it inside each worker — otherwise those
+    calls silently vanish from the run's usage numbers.
+    """
+    return getattr(_active, "tracker", None)
 
 
 def _summarize(prompt: str, temperature: float) -> str:

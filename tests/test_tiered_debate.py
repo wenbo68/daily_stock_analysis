@@ -408,6 +408,27 @@ class TestDebateEngine(unittest.TestCase):
         )
         self.assertTrue(any("model down" in w for w in result.warnings))
 
+    def test_parallel_stage_calls_report_into_the_active_tracker(self):
+        # The tracker is thread-local; the engine must hand it to its
+        # worker threads or 6 of the 8 calls vanish from the usage numbers.
+        from src.tiered_analysis.llm_support import LlmUsageTracker, record_llm_usage
+
+        inner = RoutedSummarizer(_replies())
+
+        def summarizer(prompt):
+            record_llm_usage(10, 5)
+            return inner(prompt)
+
+        tracker = LlmUsageTracker()
+        with tracker.activate(), tracker.stage("tier2_debate"):
+            result = DebateEngine(summarizer=summarizer).run(
+                "AAPL", _tier1(), self._dims()
+            )
+        self.assertIsNotNone(result.verdict)
+        detail = tracker.to_detail()
+        self.assertEqual(detail["stages"]["tier2_debate"]["calls"], 8)
+        self.assertEqual(detail["total"]["prompt_tokens"], 80)
+
     def test_argument_prompts_carry_evidence_and_tier1_context(self):
         _, llm = self._run(_replies())
         bull_prompt = llm.prompts["bull_argument"]

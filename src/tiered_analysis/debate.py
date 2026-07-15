@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .llm_support import (
+    active_tracker,
     deterministic_summarizer,
     evidence_block,
     parse_llm_json,
@@ -527,9 +528,19 @@ class DebateEngine:
         warnings: List[str],
     ) -> Tuple[DebateTurn, DebateTurn]:
         """One debate stage: the two independent calls run in parallel."""
+        # The usage tracker is thread-local; hand it to the workers so
+        # their calls still count toward the run's AI-calls number.
+        tracker = active_tracker()
+
+        def call(prompt: str) -> str:
+            if tracker is None:
+                return self._summarize(prompt)
+            with tracker.activate():
+                return self._summarize(prompt)
+
         with ThreadPoolExecutor(max_workers=2) as pool:
-            future_a = pool.submit(self._summarize, prompt_a)
-            future_b = pool.submit(self._summarize, prompt_b)
+            future_a = pool.submit(call, prompt_a)
+            future_b = pool.submit(call, prompt_b)
             raw_a, raw_b = future_a.result(), future_b.result()
         turn_a, warnings_a = self._parse_turn(raw_a, roles[0], kind, dimensions)
         turn_b, warnings_b = self._parse_turn(raw_b, roles[1], kind, dimensions)
