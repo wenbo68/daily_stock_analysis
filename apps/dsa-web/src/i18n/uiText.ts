@@ -1005,6 +1005,8 @@ const zh = {
   'tiered.sizing.capApplied': '已触发单一持仓上限：按风险预算本可买更多，但单只股票的仓位被限制在本金的一定比例内。',
   'tiered.sizing.inputsLine': '计算输入：本金 {capital}，单笔风险 {riskPct}%，入场价 {entry}。',
   'tiered.sizing.reason.sizing_off': '仓位计算未开启（未提供本金和单笔风险比例）。',
+  'tiered.sizing.reason.sizing_off_capital': '仓位计算未开启（未提供本金）。',
+  'tiered.sizing.reason.sizing_off_risk': '仓位计算未开启（未提供单笔风险比例）。',
   'tiered.sizing.reason.not_a_buy': '当前结论不是「买入」，没有要开的仓位，因此不计算股数。',
   'tiered.sizing.reason.no_entry': '缺少可用的入场价，无法计算仓位。',
   'tiered.sizing.reason.no_stop': '缺少止损价——没有它就无法衡量每股风险，宁可不给股数也不编造。',
@@ -2140,6 +2142,10 @@ const en: Record<UiTextKey, string> = {
     'Inputs: capital {capital}, risk per trade {riskPct}%, entry {entry}.',
   'tiered.sizing.reason.sizing_off':
     'Sizing is off (capital and risk per trade were not provided).',
+  'tiered.sizing.reason.sizing_off_capital':
+    'Sizing is off (capital was not provided).',
+  'tiered.sizing.reason.sizing_off_risk':
+    'Sizing is off (risk per trade was not provided).',
   'tiered.sizing.reason.not_a_buy':
     'The verdict is not “buy”, so there is no position to open and no share count to print.',
   'tiered.sizing.reason.no_entry': 'No usable entry price — cannot size a position.',

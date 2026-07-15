@@ -336,6 +336,25 @@ describe('AltResult', () => {
     expect(screen.getByTestId('alt-shares-computation').textContent).not.toBe('');
   });
 
+  it('sizing-off message names only the missing input, not both', () => {
+    const deep = makeDeepResult();
+    renderResult({
+      ...deep,
+      sizing: {
+        ...deep.sizing!,
+        shares: null,
+        shares_before_multiplier: null,
+        risk_multiplier: null,
+        reason_code: 'sizing_off',
+        refusal_reason: 'Sizing is off: risk per trade was not provided.',
+        inputs: { ...deep.sizing!.inputs, risk_fraction: null },
+      },
+    });
+    const card = screen.getByTestId('alt-shares-computation');
+    expect(card).toHaveTextContent(/(未提供单笔风险比例|risk per trade was not provided)/);
+    expect(card).not.toHaveTextContent(/capital|本金/);
+  });
+
   it('renders a scored (v3) debate: corrected cases, scored turns, header 6/10', () => {
     const deep = makeDeepResult();
     deep.tier2!.debate_detail = makeScoredDebate();

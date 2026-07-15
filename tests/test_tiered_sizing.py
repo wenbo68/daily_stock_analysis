@@ -149,6 +149,23 @@ class TestRefusals(unittest.TestCase):
             size_position(_inputs(risk_fraction=None)), RefusalReason.SIZING_OFF
         )
 
+    def test_sizing_off_message_names_only_the_missing_input(self):
+        only_risk_missing = size_position(_inputs(risk_fraction=None))
+        self.assertEqual(
+            only_risk_missing.refusal_reason,
+            "Sizing is off: risk per trade was not provided.",
+        )
+        only_capital_missing = size_position(_inputs(capital=None))
+        self.assertEqual(
+            only_capital_missing.refusal_reason,
+            "Sizing is off: capital was not provided.",
+        )
+        both_missing = size_position(_inputs(capital=None, risk_fraction=None))
+        self.assertEqual(
+            both_missing.refusal_reason,
+            "Sizing is off: capital and risk per trade were not provided.",
+        )
+
     def test_missing_stop_is_refused(self):
         self._assert_refused(size_position(_inputs(stop_loss=None)), RefusalReason.NO_STOP)
 

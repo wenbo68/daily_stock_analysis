@@ -100,9 +100,20 @@ def _validate(inputs: SizingInputs) -> Tuple[Optional[SizingResult], List[str]]:
             f"'{inputs.direction.value}', not 'buy').",
         ), notes
     if inputs.capital is None or inputs.risk_fraction is None:
+        # Name exactly what is missing — "capital not provided" when the
+        # user did provide capital reads as a bug, not a refusal.
+        missing = [
+            label
+            for label, value in (
+                ("capital", inputs.capital),
+                ("risk per trade", inputs.risk_fraction),
+            )
+            if value is None
+        ]
+        verb = "were" if len(missing) > 1 else "was"
         return _refuse(
             RefusalReason.SIZING_OFF,
-            "Sizing is off: capital and risk per trade have not been provided.",
+            f"Sizing is off: {' and '.join(missing)} {verb} not provided.",
         ), notes
     if not (0 < inputs.fee_fraction < 1 or inputs.fee_fraction == 0):
         return _refuse(

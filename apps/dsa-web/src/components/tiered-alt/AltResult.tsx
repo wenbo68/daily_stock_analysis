@@ -114,7 +114,16 @@ const AltSharesComputation = ({
     entry === null ||
     stopLoss === null
   ) {
-    const reasonKey = sizing.reason_code ? REASON_KEYS[sizing.reason_code] : undefined;
+    // "Sizing is off" must name only the input that is actually missing —
+    // a run can carry capital but no risk per trade (or the reverse).
+    const reasonKey =
+      sizing.reason_code === 'sizing_off' && capital !== null
+        ? 'tiered.sizing.reason.sizing_off_risk'
+        : sizing.reason_code === 'sizing_off' && riskFraction !== null
+          ? 'tiered.sizing.reason.sizing_off_capital'
+          : sizing.reason_code
+            ? REASON_KEYS[sizing.reason_code]
+            : undefined;
     return (
       <AltCard testId="alt-shares-computation">
         <p className="text-sm text-amber-300">
