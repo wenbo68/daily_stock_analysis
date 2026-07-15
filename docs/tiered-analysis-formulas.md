@@ -188,3 +188,33 @@ they can't be known in advance.
 | Adjustment band | 1 × ATR | levels | beyond one typical day's swing = re-invention |
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
+
+## 6. Tier-2 scored debate (v3 redesign, `debate.py`)
+
+The tier-2 direction is computed, not judged. Inputs (all whole numbers,
+off-spec values void the verdict and tier 2 degrades to the tier-1
+direction):
+
+- each debater's `bullishness` ∈ {0..10} (0 = strongly bearish, 5 =
+  neutral, 10 = strongly bullish); with multiple rounds, the debater's
+  last turn counts
+- the grading judge's three validity grades per debater, each ∈ {0..5}:
+  `citation_validity`, `knowledge_validity`, `logical_validity`
+
+Formulas (code, not LLM):
+
+```
+weight      = (citation + knowledge + logic) / 15          per debater
+final_score = (w_bull × s_bull + w_bear × s_bear) / (w_bull + w_bear)
+              (both weights 0 → final_score = 5, flagged in warnings)
+rounded     = floor(final_score + 0.5)                     half-up
+direction   = sell if rounded ≤ 3, hold if ≤ 6, else buy
+```
+
+Weighting by validity is what keeps the role bias from cancelling out: a
+plain average of a bull (always high) and a bear (always low) would land
+near 5.5 on every stock; weighted, the better-argued side pulls the final
+number toward itself. A summary judge then writes the user-facing prose
+(decision summary + corrected bull/bear cases) *around* the computed
+number — its failure never voids the verdict. All tier-2 LLM calls run at
+temperature 0 (`deterministic_summarizer`).

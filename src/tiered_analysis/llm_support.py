@@ -118,7 +118,7 @@ def record_llm_usage(
         tracker.record(prompt_tokens, completion_tokens)
 
 
-def default_summarizer(prompt: str) -> str:
+def _summarize(prompt: str, temperature: float) -> str:
     import os
 
     model = (os.getenv("LITELLM_MODEL") or "").strip()
@@ -132,7 +132,7 @@ def default_summarizer(prompt: str) -> str:
     response = litellm.completion(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        temperature=temperature,
     )
     usage = getattr(response, "usage", None)
     record_llm_usage(
@@ -140,6 +140,16 @@ def default_summarizer(prompt: str) -> str:
         getattr(usage, "completion_tokens", None),
     )
     return response.choices[0].message.content or ""
+
+
+def default_summarizer(prompt: str) -> str:
+    return _summarize(prompt, temperature=0.2)
+
+
+def deterministic_summarizer(prompt: str) -> str:
+    """Zero-temperature summarizer: the scored tier-2 debate uses it so the
+    same evidence grades the same way on every run."""
+    return _summarize(prompt, temperature=0.0)
 
 
 def parse_llm_json(raw: str) -> Optional[dict]:

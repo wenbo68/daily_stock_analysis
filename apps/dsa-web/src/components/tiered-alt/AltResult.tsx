@@ -1,6 +1,7 @@
 import { type ComponentProps, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
+  TieredAnchoredReason,
   TieredCitation,
   TieredResult,
   TieredSizing,
@@ -13,7 +14,15 @@ import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHel
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
 import { ALT_LINK, DIRECTION_TEXT } from './altStyles';
-import { AltCard, AltEvidenceRefs, AltNotesButton, FVar } from './AltUi';
+import {
+  AltCard,
+  AltEvidenceRefs,
+  AltFold,
+  AltNotesButton,
+  AltSectionLabel,
+  FVar,
+} from './AltUi';
+import { AltDebateScoring } from './AltDebateScoring';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -22,17 +31,6 @@ import { AltLevels } from './AltLevels';
 // Alt skin rule: help popups everywhere, dotted underlines nowhere.
 const HelpTerm = (props: ComponentProps<typeof BaseHelpTerm>) => (
   <BaseHelpTerm underline={false} {...props} />
-);
-
-const AltSectionLabel = ({ children }: { children: ReactNode }) => (
-  <div className="mb-1 text-xs font-semibold text-gray-500">{children}</div>
-);
-
-const AltFold = ({ title, children }: { title: string; children: ReactNode }) => (
-  <details className="mt-4 rounded bg-gray-900/60 px-4 py-3">
-    <summary className="cursor-pointer text-xs font-semibold text-gray-300">{title}</summary>
-    <div className="mt-3 flex flex-col gap-3">{children}</div>
-  </details>
 );
 
 // An UPPERCASE title sitting above its card, like the page's section titles.
@@ -278,18 +276,68 @@ interface AltTierSectionProps {
   citations: TieredCitation[];
 }
 
+// One side of the debate card: the judged (v2) shape shows anchored
+// reasons; the scored (v3) shape shows the judge's corrected case summary.
+const AltDebateColumn = ({
+  labelKey,
+  color,
+  reasons,
+  summary,
+  citations,
+}: {
+  labelKey: UiTextKey;
+  color: string;
+  reasons: TieredAnchoredReason[];
+  summary: string | null;
+  citations: TieredCitation[];
+}) => {
+  const { t } = useUiLanguage();
+  return (
+    <div>
+      <div className={cn('mb-1 text-xs font-semibold', color)}>{t(labelKey)}</div>
+      {summary !== null ? (
+        <p className="text-xs leading-relaxed">{summary}</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {reasons.map((reason, index) => (
+            <li key={index} className="text-xs">
+              {reason.claim}
+              {reason.evidence.length > 0 ? (
+                <span className="mt-0.5 block">
+                  <AltEvidenceRefs refs={reason.evidence} citations={citations} />
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
   const detail = section.debate_detail;
   const verdict = detail?.verdict ?? null;
+  // Scored (v3) runs carry the formula's audit trail; older stored runs
+  // carry the judged shape and keep their original layout. TierScore
+  // expects 0-100, so both generations scale up to it.
+  const isScored = verdict?.scoring != null;
+  const score = isScored
+    ? verdict?.final_score_rounded != null
+      ? verdict.final_score_rounded * 10
+      : null
+    : verdict?.confidence != null
+      ? verdict.confidence * 100
+      : null;
 
   return (
     <AltCard testId="alt-tier2">
       <TierHeader
         section={section}
         notes={section.warnings}
-        score={verdict?.confidence != null ? verdict.confidence * 100 : null}
-        scoreHelpKey="tiered.help.judgeScore"
+        score={score}
+        scoreHelpKey={isScored ? 'tiered.help.debateScore' : 'tiered.help.judgeScore'}
       />
 
       {section.narrative ? (
@@ -298,40 +346,20 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
 
       {verdict ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <div className="mb-1 text-xs font-semibold text-emerald-300">
-              {t('tiered.debate.reasonsFor')}
-            </div>
-            <ul className="flex flex-col gap-2">
-              {verdict.reasons_for.map((reason, index) => (
-                <li key={index} className="text-xs">
-                  {reason.claim}
-                  {reason.evidence.length > 0 ? (
-                    <span className="mt-0.5 block">
-                      <AltEvidenceRefs refs={reason.evidence} citations={citations} />
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <div className="mb-1 text-xs font-semibold text-red-300">
-              {t('tiered.debate.reasonsAgainst')}
-            </div>
-            <ul className="flex flex-col gap-2">
-              {verdict.reasons_against.map((reason, index) => (
-                <li key={index} className="text-xs">
-                  {reason.claim}
-                  {reason.evidence.length > 0 ? (
-                    <span className="mt-0.5 block">
-                      <AltEvidenceRefs refs={reason.evidence} citations={citations} />
-                    </span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <AltDebateColumn
+            labelKey={isScored ? 'tiered.debate.bullCase' : 'tiered.debate.reasonsFor'}
+            color="text-emerald-300"
+            reasons={verdict.reasons_for ?? []}
+            summary={isScored ? (verdict.bull_summary ?? null) : null}
+            citations={citations}
+          />
+          <AltDebateColumn
+            labelKey={isScored ? 'tiered.debate.bearCase' : 'tiered.debate.reasonsAgainst'}
+            color="text-red-300"
+            reasons={verdict.reasons_against ?? []}
+            summary={isScored ? (verdict.bear_summary ?? null) : null}
+            citations={citations}
+          />
         </div>
       ) : (
         <p className="text-sm text-amber-300">{t('tiered.debate.noVerdict')}</p>
@@ -357,13 +385,27 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
                 {t((turn.role === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear') as UiTextKey)}{' '}
                 <span className="font-normal text-gray-500">
                   {t('tiered.debate.round', { round: turn.round })}
+                  {turn.bullishness != null ? (
+                    <>
+                      {' · '}
+                      {t('tiered.debate.bullishness')}{' '}
+                      <span className="tabular-nums">{turn.bullishness}/10</span>
+                    </>
+                  ) : null}
                 </span>
               </div>
               <p className="whitespace-pre-wrap text-xs leading-relaxed">{turn.argument}</p>
+              {turn.citations && turn.citations.length > 0 ? (
+                <span className="mt-0.5 block">
+                  <AltEvidenceRefs refs={turn.citations} citations={citations} />
+                </span>
+              ) : null}
             </div>
           ))}
         </AltFold>
       ) : null}
+
+      {verdict && isScored ? <AltDebateScoring verdict={verdict} /> : null}
     </AltCard>
   );
 };

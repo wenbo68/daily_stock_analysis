@@ -36,6 +36,11 @@ export const ALT_COLOR = {
   gray: 'bg-gray-500/20 text-gray-300 ring-gray-500/30',
 } as const;
 
+// One line of a formula block (words / plugged-in / result): same element,
+// font and spacing on every line, never wrapping.
+export const FORMULA_LINE = 'whitespace-nowrap text-gray-400';
+export const FORMULA_RESULT = 'whitespace-nowrap font-semibold text-gray-300';
+
 // Inline text link, showplayer blue. The color utilities carry ! because
 // index.css has an unlayered `a { color: inherit }` rule that outranks
 // Tailwind's layered utilities on <a> tags — without !, every anchor link

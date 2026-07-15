@@ -11,7 +11,7 @@ import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId } from './altFormat';
-import { ALT_LINK } from './altStyles';
+import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import { AltEvidenceRefs, AltModal, FVar } from './AltUi';
 
 // Alt skin rule: help popups everywhere, dotted underlines nowhere.
@@ -138,11 +138,6 @@ const AltFormula = ({ formula, inputs, onNavigate }: AltFormulaProps) => {
     </>
   );
 };
-
-// One line of a formula modal: same element, font and spacing for every
-// line, and never wrapping — the modal grows instead.
-const FORMULA_LINE = 'whitespace-nowrap text-gray-400';
-const FORMULA_RESULT = 'whitespace-nowrap font-semibold text-gray-300';
 
 // The backup entry is the only level whose formula filters its inputs:
 // take the supports sitting below the ideal entry, keep the highest. The

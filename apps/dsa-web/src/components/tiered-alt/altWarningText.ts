@@ -118,6 +118,43 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
   {
+    pattern: /^(bull|bear) reply was not JSON — argument kept as plain text, no score$/,
+    toText: (m, t) =>
+      t('tiered.note.debaterNotJson', {
+        side: t(m[1] === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear'),
+      }),
+  },
+  {
+    pattern: /^(bull|bear) bullishness .* is not a whole number 0-10 — dropped$/,
+    toText: (m, t) =>
+      t('tiered.note.debaterScoreDropped', {
+        side: t(m[1] === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear'),
+      }),
+  },
+  {
+    pattern: /^no usable bullishness score from .* — tier-2 verdict voided$/,
+    toText: (_m, t) => t('tiered.note.debateVoided'),
+  },
+  {
+    pattern: /^(bull|bear) cited evidence that does not resolve — invalid refs dropped$/,
+    toText: (m, t) =>
+      t('tiered.note.debaterBadRefs', {
+        side: t(m[1] === 'bull' ? 'tiered.debate.bull' : 'tiered.debate.bear'),
+      }),
+  },
+  {
+    pattern: /^grading judge .* voided$/,
+    toText: (_m, t) => t('tiered.note.gradingVoided'),
+  },
+  {
+    pattern: /^both debaters graded zero validity/,
+    toText: (_m, t) => t('tiered.note.zeroValidity'),
+  },
+  {
+    pattern: /^(?:judge summary unparseable|summary LLM call failed: .*) — computed verdict stands$/,
+    toText: (_m, t) => t('tiered.note.summaryFailed'),
+  },
+  {
     pattern: /^(?:risk )?judge confidence .* unusable — dropped$/,
     toText: (_m, t) => t('tiered.note.judgeConfidenceDropped'),
   },

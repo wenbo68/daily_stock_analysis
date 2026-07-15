@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import type { TieredLevelsDetail, TieredResult, TieredTierSection } from '../../../api/tiered';
+import type {
+  TieredDebateDetail,
+  TieredLevelsDetail,
+  TieredResult,
+  TieredTierSection,
+} from '../../../api/tiered';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { AltResult } from '../AltResult';
 
@@ -146,6 +151,55 @@ function makeDeepResult(): TieredResult {
   };
 }
 
+// A v3 scored-debate audit trail: debater turns carry their own scores
+// and citations; the verdict carries the judge grades and the computed
+// final number.
+function makeScoredDebate(): TieredDebateDetail {
+  return {
+    turns: [
+      {
+        role: 'bull',
+        round: 1,
+        argument: 'Bull argument.',
+        bullishness: 8,
+        citations: ['technicals.close'],
+      },
+      { role: 'bear', round: 1, argument: 'Bear argument.', bullishness: 3, citations: [] },
+    ],
+    verdict: {
+      direction: 'hold',
+      summary: 'Weighted to hold.',
+      bull_summary: 'Corrected bull case.',
+      bear_summary: 'Corrected bear case.',
+      final_score: 6.095,
+      final_score_rounded: 6,
+      scoring: {
+        bull: {
+          bullishness: 8,
+          citation_validity: 4,
+          knowledge_validity: 5,
+          logical_validity: 4,
+          weight: 0.8667,
+          notes: 'Solid case.',
+        },
+        bear: {
+          bullishness: 3,
+          citation_validity: 2,
+          knowledge_validity: 3,
+          logical_validity: 3,
+          weight: 0.5333,
+          notes: 'Weaker case.',
+        },
+      },
+      confidence: null,
+      reasons_for: [],
+      reasons_against: [],
+      would_change_mind: null,
+    },
+    warnings: [],
+  };
+}
+
 function renderResult(result: TieredResult) {
   render(
     <MemoryRouter>
@@ -280,6 +334,44 @@ describe('AltResult', () => {
     });
     expect(screen.queryByTestId('alt-shares-formula')).not.toBeInTheDocument();
     expect(screen.getByTestId('alt-shares-computation').textContent).not.toBe('');
+  });
+
+  it('renders a scored (v3) debate: corrected cases, scored turns, header 6/10', () => {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeScoredDebate();
+    renderResult(deep);
+    const tier2 = screen.getByTestId('alt-tier2');
+    // header score is the rounded final number out of 10
+    expect(tier2).toHaveTextContent(/(评分|Score): 6\/10/);
+    // corrected side summaries instead of the old reasons columns
+    expect(within(tier2).getByText(/多方总结|Bull case/)).toBeInTheDocument();
+    expect(within(tier2).getByText('Corrected bull case.')).toBeInTheDocument();
+    expect(within(tier2).getByText('Corrected bear case.')).toBeInTheDocument();
+    // transcript turns carry the debater's own score and citations
+    expect(tier2).toHaveTextContent(/(看多分|bullishness) 8\/10/);
+    expect(within(tier2).getByRole('button', { name: 'technicals.close' })).toBeInTheDocument();
+  });
+
+  it('shows the scoring foldable with the weight and final-score formulas', () => {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeScoredDebate();
+    renderResult(deep);
+    expect(screen.getByText(/评分与计算|Scoring and calculation/)).toBeInTheDocument();
+    // per-debater grades and weight formula, in the three-line shape
+    const bull = screen.getByTestId('alt-scoring-bull');
+    expect(bull).toHaveTextContent('8/10');
+    expect(bull).toHaveTextContent('= (4 + 5 + 4) / 15');
+    expect(bull).toHaveTextContent('= 0.87');
+    expect(bull).toHaveTextContent('Solid case.');
+    // the final score plugs in the weights and scores shown above it
+    expect(screen.getByTestId('alt-scoring-final-formula').textContent).toBe(
+      '= (0.87 × 8 + 0.53 × 3) / (0.87 + 0.53)',
+    );
+    expect(screen.getByText('= 6.1')).toBeInTheDocument();
+    // rounding + the fixed ranges + the mapped verdict
+    expect(screen.getByText(/6\.1 (四舍五入为|rounds to) 6/)).toBeInTheDocument();
+    expect(screen.getByText(/0–3 (卖出|sell)/)).toBeInTheDocument();
+    expect(screen.getByTestId('alt-scoring-verdict')).toHaveTextContent(/持有|Hold/);
   });
 
   it('renders citation evidence as sentiment.citation:N in link colors', () => {

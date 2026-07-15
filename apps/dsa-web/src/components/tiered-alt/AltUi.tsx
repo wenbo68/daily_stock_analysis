@@ -35,6 +35,18 @@ interface AltModalProps {
 // (plain or linked) read as values — no underscores, no parentheses.
 export const FVar = ({ children }: { children: ReactNode }) => <i>{children}</i>;
 
+export const AltSectionLabel = ({ children }: { children: ReactNode }) => (
+  <div className="mb-1 text-xs font-semibold text-gray-500">{children}</div>
+);
+
+// A quiet inline fold (debate transcript, scoring breakdown).
+export const AltFold = ({ title, children }: { title: string; children: ReactNode }) => (
+  <details className="mt-4 rounded bg-gray-900/60 px-4 py-3">
+    <summary className="cursor-pointer text-xs font-semibold text-gray-300">{title}</summary>
+    <div className="mt-3 flex flex-col gap-3">{children}</div>
+  </details>
+);
+
 // showplayer-style popup: black/50 backdrop, flat gray-800 panel.
 export const AltModal = ({ isOpen, title, onClose, children, panelClassName }: AltModalProps) => {
   useEffect(() => {

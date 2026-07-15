@@ -49,16 +49,43 @@ export type TieredAnchoredReason = {
   evidence: string[];
 };
 
-// v2 slice 4: bull/bear debate audit trail (tier-2 section).
+// v3 scored debate: one debater's numbers — its own 0-10 bullishness plus
+// the judge's three 0-5 validity grades; weight = (sum of grades) / 15.
+export type TieredDebaterScore = {
+  bullishness: number;
+  citation_validity: number;
+  knowledge_validity: number;
+  logical_validity: number;
+  weight: number;
+  notes: string | null;
+};
+
+// Bull/bear debate audit trail (tier-2 section). Two generations coexist
+// in stored runs: the v2 judged shape (confidence, reasons, would_change_
+// mind) and the v3 scored shape (final_score, scoring, corrected bull/bear
+// summaries) — every generation-specific field is optional.
 export type TieredDebateDetail = {
-  turns: { role: string; round: number; argument: string }[];
+  turns: {
+    role: string;
+    round: number;
+    argument: string;
+    bullishness?: number | null;
+    citations?: string[];
+  }[];
   verdict: {
     direction: string;
-    confidence: number | null;
     summary: string;
-    reasons_for: TieredAnchoredReason[];
-    reasons_against: TieredAnchoredReason[];
-    would_change_mind: string | null;
+    // v2 judged shape
+    confidence?: number | null;
+    reasons_for?: TieredAnchoredReason[];
+    reasons_against?: TieredAnchoredReason[];
+    would_change_mind?: string | null;
+    // v3 scored shape
+    final_score?: number | null;
+    final_score_rounded?: number | null;
+    bull_summary?: string | null;
+    bear_summary?: string | null;
+    scoring?: { bull: TieredDebaterScore; bear: TieredDebaterScore } | null;
   } | null;
   warnings: string[];
 };

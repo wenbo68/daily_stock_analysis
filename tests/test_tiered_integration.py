@@ -270,8 +270,8 @@ def _buy_verdicts():
     from src.tiered_analysis.debate import DebateVerdict
     from src.tiered_analysis.risk import RiskVerdict
 
-    debate = DebateVerdict(direction=Direction.BUY, confidence=0.7,
-                           summary="bull case holds up")
+    debate = DebateVerdict(direction=Direction.BUY, final_score=7.4,
+                           final_score_rounded=7, summary="bull case holds up")
     risk = RiskVerdict(stance=Direction.BUY, size_multiplier=0.5,
                        stop_advice="keep", tightened_stop=None,
                        summary="half size")

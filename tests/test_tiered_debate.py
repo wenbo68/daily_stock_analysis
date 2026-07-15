@@ -1,17 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the tier-2 bull/bear debate (v2 slice 4).
+"""Offline tests for the tier-2 scored debate (v3 redesign).
 
-Fake-LLM tests covering: round choreography (bull -> bear x rounds ->
-judge), verdict parsing, evidence anchoring of judge claims, and every
-degradation path (LLM failure, unparseable judge, unusable direction) —
-each of which must fall back to the tier-1 direction, never crash.
+Fake-LLM tests covering: choreography (bull -> bear x rounds -> grading
+judge -> summary judge), the deterministic verdict formula
+(validity-weighted average of the debaters' bullishness scores), the
+0-3/4-6/7-10 direction thresholds, evidence validation of debater
+citations, and every degradation path — off-spec numbers void the verdict
+(tier 2 then falls back to tier 1), but a broken summary never voids a
+computed verdict.
 """
 from __future__ import annotations
 
 import json
 import unittest
 
-from src.tiered_analysis.debate import DebateEngine, DebateResult, DebateVerdict
+from src.tiered_analysis.debate import (
+    DebateEngine,
+    DebateResult,
+    DebateVerdict,
+    direction_from_score,
+)
 from src.tiered_analysis.providers.base import (
     Citation,
     Coverage,
@@ -57,21 +65,45 @@ def _tier1(direction=Direction.BUY, dimensions=()):
     )
 
 
-def _judge_json(direction="hold", confidence=0.62, **overrides):
-    body = {
-        "direction": direction,
-        "confidence": confidence,
-        "summary": "The bear's valuation concern outweighs the momentum case.",
-        "reasons_for": [
-            {"claim": "Momentum is strong", "evidence": ["technicals.rsi_14"]},
-        ],
-        "reasons_against": [
-            {"claim": "News-driven spike may fade", "evidence": ["citation:1"]},
-        ],
-        "would_change_mind": "a confirmed earnings beat",
-    }
+def _debater_json(bullishness, citations=("technicals.rsi_14",), argument="case"):
+    return json.dumps(
+        {"argument": argument, "citations": list(citations), "bullishness": bullishness}
+    )
+
+
+def _grades_json(bull=(4, 5, 4), bear=(2, 3, 3), **overrides):
+    def _side(scores):
+        c, k, l = scores
+        return {
+            "citation_validity": c,
+            "knowledge_validity": k,
+            "logical_validity": l,
+            "notes": "graded",
+        }
+
+    body = {"bull": _side(bull), "bear": _side(bear)}
     body.update(overrides)
     return json.dumps(body)
+
+
+def _summary_json():
+    return json.dumps(
+        {
+            "summary": "The weighted result lands at hold.",
+            "bull_summary": "Corrected bull case.",
+            "bear_summary": "Corrected bear case.",
+        }
+    )
+
+
+def _script(bull=8, bear=3, grades=None, summary=None):
+    """The standard 4-call script: bull, bear, grading judge, summary judge."""
+    return [
+        _debater_json(bull),
+        _debater_json(bear, citations=("citation:1",)),
+        grades if grades is not None else _grades_json(),
+        summary if summary is not None else _summary_json(),
+    ]
 
 
 class ScriptedSummarizer:
@@ -88,100 +120,183 @@ class ScriptedSummarizer:
         return self._replies.pop(0)
 
 
+class TestDirectionThresholds(unittest.TestCase):
+    def test_owner_spec_ranges(self):
+        for value in (0, 1, 2, 3):
+            self.assertEqual(direction_from_score(value), Direction.SELL)
+        for value in (4, 5, 6):
+            self.assertEqual(direction_from_score(value), Direction.HOLD)
+        for value in (7, 8, 9, 10):
+            self.assertEqual(direction_from_score(value), Direction.BUY)
+
+
 class TestDebateEngine(unittest.TestCase):
     def _dims(self):
         return [_technicals(), _sentiment()]
 
-    def test_one_round_is_bull_bear_judge(self):
-        llm = ScriptedSummarizer(["bull says up", "bear says down", _judge_json()])
-        result = DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
-        self.assertEqual(len(llm.prompts), 3)
+    def _run(self, replies):
+        llm = ScriptedSummarizer(replies)
+        return DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims()), llm
+
+    def test_one_round_is_bull_bear_grader_summarizer(self):
+        result, llm = self._run(_script())
+        self.assertEqual(len(llm.prompts), 4)
         self.assertEqual(
             [(t.role, t.round) for t in result.turns],
             [("bull", 1), ("bear", 1)],
         )
+        # bull 8 weighted 13/15, bear 3 weighted 8/15:
+        # (13*8 + 8*3) / 21 = 128/21 ≈ 6.095 → 6 → hold
+        self.assertAlmostEqual(result.verdict.final_score, 128 / 21)
+        self.assertEqual(result.verdict.final_score_rounded, 6)
         self.assertEqual(result.verdict.direction, Direction.HOLD)
-        self.assertAlmostEqual(result.verdict.confidence, 0.62)
-        self.assertIn("valuation concern", result.verdict.summary)
+        self.assertEqual(result.verdict.summary, "The weighted result lands at hold.")
+        self.assertEqual(result.verdict.bull_summary, "Corrected bull case.")
         self.assertEqual(result.warnings, [])
 
-    def test_two_rounds_produce_four_turns_and_shared_transcript(self):
-        llm = ScriptedSummarizer(
-            ["bull r1", "bear r1", "bull r2", "bear r2", _judge_json()]
+    def test_better_argued_side_pulls_the_final_number(self):
+        # bull 8 at full validity, bear 2 at 3/15 → (1*8 + 0.2*2)/1.2 = 7 → buy
+        result, _ = self._run(_script(bull=8, bear=2, grades=_grades_json(
+            bull=(5, 5, 5), bear=(1, 1, 1))))
+        self.assertAlmostEqual(result.verdict.final_score, 7.0)
+        self.assertEqual(result.verdict.direction, Direction.BUY)
+
+    def test_both_zero_validity_defaults_to_neutral_five(self):
+        result, _ = self._run(_script(grades=_grades_json(bull=(0, 0, 0), bear=(0, 0, 0))))
+        self.assertEqual(result.verdict.final_score, 5.0)
+        self.assertEqual(result.verdict.direction, Direction.HOLD)
+        self.assertTrue(any("zero validity" in w for w in result.warnings))
+
+    def test_scoring_carries_grades_and_weights(self):
+        result, _ = self._run(_script())
+        bull = result.verdict.scoring["bull"]
+        self.assertEqual(bull.bullishness, 8)
+        self.assertEqual(
+            (bull.citation_validity, bull.knowledge_validity, bull.logical_validity),
+            (4, 5, 4),
         )
+        self.assertAlmostEqual(bull.weight, 13 / 15)
+        self.assertEqual(bull.notes, "graded")
+
+    def test_debater_citations_are_validated(self):
+        replies = _script()
+        replies[0] = _debater_json(8, citations=("technicals.rsi_14", "technicals.nope"))
+        result, _ = self._run(replies)
+        self.assertEqual(result.turns[0].citations, ("technicals.rsi_14",))
+        self.assertTrue(any("does not resolve" in w for w in result.warnings))
+
+    def test_non_whole_bullishness_voids_the_verdict(self):
+        replies = _script()
+        replies[1] = _debater_json(7.5)
+        result, _ = self._run(replies[:3])  # summary call never happens
+        self.assertIsNone(result.verdict)
+        self.assertEqual(len(result.turns), 2)  # transcript kept
+        self.assertTrue(any("verdict voided" in w for w in result.warnings))
+
+    def test_non_json_debater_keeps_text_but_voids_the_verdict(self):
+        replies = _script()
+        replies[0] = "the vibes are good"
+        result, _ = self._run(replies[:3])
+        self.assertEqual(result.turns[0].argument, "the vibes are good")
+        self.assertIsNone(result.turns[0].bullishness)
+        self.assertIsNone(result.verdict)
+
+    def test_unparseable_grading_judge_voids_the_verdict(self):
+        result, _ = self._run(_script(grades="no json here")[:3])
+        self.assertIsNone(result.verdict)
+        self.assertTrue(any("unparseable" in w for w in result.warnings))
+
+    def test_out_of_range_grade_voids_the_verdict(self):
+        result, _ = self._run(_script(grades=_grades_json(bull=(6, 5, 4)))[:3])
+        self.assertIsNone(result.verdict)
+        self.assertTrue(any("whole number 0-5" in w for w in result.warnings))
+
+    def test_broken_summary_never_voids_a_computed_verdict(self):
+        result, _ = self._run(_script(summary="not json"))
+        self.assertIsNotNone(result.verdict)
+        self.assertEqual(result.verdict.direction, Direction.HOLD)
+        self.assertEqual(result.verdict.summary, "")
+        self.assertTrue(any("verdict stands" in w for w in result.warnings))
+
+    def test_summary_llm_failure_never_voids_a_computed_verdict(self):
+        replies = _script()[:3]
+        calls = {"n": 0}
+
+        def flaky(prompt):
+            calls["n"] += 1
+            if calls["n"] > 3:
+                raise RuntimeError("model down")
+            return replies[calls["n"] - 1]
+
+        result = DebateEngine(summarizer=flaky).run("AAPL", _tier1(), self._dims())
+        self.assertIsNotNone(result.verdict)
+        self.assertTrue(any("model down" in w for w in result.warnings))
+
+    def test_two_rounds_use_each_debaters_last_score(self):
+        replies = [
+            _debater_json(2),  # bull r1
+            _debater_json(3, citations=("citation:1",)),  # bear r1
+            _debater_json(8),  # bull r2 — this one counts
+            _debater_json(3, citations=("citation:1",)),  # bear r2
+            _grades_json(),
+            _summary_json(),
+        ]
+        llm = ScriptedSummarizer(replies)
         result = DebateEngine(summarizer=llm, rounds=2).run(
             "AAPL", _tier1(), self._dims()
         )
         self.assertEqual(len(result.turns), 4)
-        # the bear's round-2 prompt must contain the bull's round-2 argument
-        self.assertIn("bull r2", llm.prompts[3])
-        # the judge sees the whole transcript
-        self.assertIn("bear r2", llm.prompts[4])
+        self.assertEqual(result.verdict.scoring["bull"].bullishness, 8)
+        # the bear's round-2 prompt must contain the bull's round-2 turn
+        self.assertIn("bullishness 8/10", llm.prompts[3])
 
     def test_prompts_carry_evidence_and_tier1_context(self):
-        llm = ScriptedSummarizer(["b", "r", _judge_json()])
-        DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
+        _, llm = self._run(_script())
         bull_prompt = llm.prompts[0]
         self.assertIn("rsi_14", bull_prompt)  # evidence bundle
-        self.assertIn("citation:1", bull_prompt)  # citation grammar
+        self.assertIn("citation:N", bull_prompt)  # citation grammar
         self.assertIn("direction=buy", bull_prompt)  # tier-1 context
         self.assertIn("96.0", bull_prompt)  # tier-1 levels
 
-    def test_judge_reason_evidence_is_validated(self):
-        result_json = _judge_json(
-            reasons_for=[{"claim": "Momentum", "evidence": ["technicals.rsi_14"]}],
-            reasons_against=[{"claim": "Made up", "evidence": ["technicals.nope"]}],
-        )
-        llm = ScriptedSummarizer(["b", "r", result_json])
-        result = DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
-        self.assertEqual(
-            result.verdict.reasons_for[0].evidence, ("technicals.rsi_14",)
-        )
-        # unanchored claim is kept but flagged
-        self.assertEqual(result.verdict.reasons_against[0].evidence, ())
-        self.assertTrue(any("not anchored" in w for w in result.warnings))
+    def test_grading_prompt_shows_scores_and_citations(self):
+        _, llm = self._run(_script())
+        grading_prompt = llm.prompts[2]
+        self.assertIn("bullishness 8/10", grading_prompt)
+        self.assertIn("cited: technicals.rsi_14", grading_prompt)
+        self.assertIn("citation_validity", grading_prompt)
 
-    def test_bad_confidence_dropped_with_warning(self):
-        llm = ScriptedSummarizer(["b", "r", _judge_json(confidence=7)])
-        result = DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
-        self.assertIsNone(result.verdict.confidence)
-        self.assertTrue(any("confidence" in w for w in result.warnings))
-
-    def test_unparseable_judge_means_no_verdict(self):
-        llm = ScriptedSummarizer(["b", "r", "the vibes are good"])
-        result = DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
-        self.assertIsNone(result.verdict)
-        self.assertTrue(result.warnings)
-
-    def test_unusable_direction_means_no_verdict(self):
-        llm = ScriptedSummarizer(["b", "r", _judge_json(direction="yolo")])
-        result = DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
-        self.assertIsNone(result.verdict)
+    def test_summary_prompt_carries_the_computed_result(self):
+        _, llm = self._run(_script())
+        summary_prompt = llm.prompts[3]
+        self.assertIn("6.1", summary_prompt)  # final, 1 decimal
+        self.assertIn("verdict hold", summary_prompt)
+        self.assertIn("0-3 sell, 4-6 hold, 7-10 buy", summary_prompt)
+        self.assertIn("citation 4/5", summary_prompt)  # grades block
 
     def test_llm_failure_mid_debate_keeps_partial_transcript(self):
         def flaky(prompt):
             if "BEAR" in prompt:
                 raise RuntimeError("model down")
-            return "bull argument"
+            return _debater_json(8)
 
-        llm_calls = []
-
-        def wrapper(prompt):
-            llm_calls.append(prompt)
-            return flaky(prompt)
-
-        result = DebateEngine(summarizer=wrapper).run("AAPL", _tier1(), self._dims())
+        result = DebateEngine(summarizer=flaky).run("AAPL", _tier1(), self._dims())
         self.assertIsNone(result.verdict)
         self.assertEqual([t.role for t in result.turns], ["bull"])
         self.assertTrue(any("model down" in w for w in result.warnings))
 
-    def test_to_detail_is_json_ready(self):
-        llm = ScriptedSummarizer(["b", "r", _judge_json()])
-        result = DebateEngine(summarizer=llm).run("AAPL", _tier1(), self._dims())
+    def test_to_detail_is_json_ready_with_scoring_and_legacy_keys(self):
+        result, _ = self._run(_script())
         detail = result.to_detail()
         json.dumps(detail)  # must not raise
-        self.assertEqual(detail["verdict"]["direction"], "hold")
-        self.assertEqual(len(detail["turns"]), 2)
+        verdict = detail["verdict"]
+        self.assertEqual(verdict["direction"], "hold")
+        self.assertEqual(verdict["final_score_rounded"], 6)
+        self.assertAlmostEqual(verdict["scoring"]["bull"]["weight"], 0.8667)
+        self.assertEqual(detail["turns"][0]["bullishness"], 8)
+        self.assertEqual(detail["turns"][0]["citations"], ["technicals.rsi_14"])
+        # legacy keys pre-redesign readers rely on
+        self.assertIsNone(verdict["confidence"])
+        self.assertEqual(verdict["reasons_for"], [])
 
     def test_rejects_zero_rounds(self):
         with self.assertRaises(ValueError):
@@ -211,7 +326,10 @@ class TestTier2Stage(unittest.TestCase):
         return DebateResult(
             turns=[],
             verdict=DebateVerdict(
-                direction=direction, confidence=0.62, summary="ruling"
+                direction=direction,
+                final_score=6.1,
+                final_score_rounded=6,
+                summary="ruling",
             ),
         )
 
@@ -221,8 +339,8 @@ class TestTier2Stage(unittest.TestCase):
         report = Tier2Stage(engine=engine).run(state)
         self.assertEqual(report.tier, 2)
         self.assertEqual(report.coverage, Coverage.FULL)
-        self.assertEqual(report.direction, Direction.HOLD)  # judge overruled
-        self.assertEqual(report.confidence, "0.62")
+        self.assertEqual(report.direction, Direction.HOLD)  # formula overruled
+        self.assertIsNone(report.confidence)  # no judge confidence in v3
         self.assertAlmostEqual(report.levels.entry, 96.0)
         self.assertEqual(report.narrative, "ruling")
         self.assertIsNotNone(report.debate_detail)

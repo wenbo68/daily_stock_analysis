@@ -204,9 +204,10 @@ class Tier2Stage(TierStage):
             market=state.market,
             coverage=Coverage.FULL,
             direction=verdict.direction,
-            confidence=(
-                f"{verdict.confidence:.2f}" if verdict.confidence is not None else None
-            ),
+            # v3 scored debate: the verdict is computed by formula, so
+            # there is no judge confidence to report — the bullishness
+            # number lives in debate_detail.verdict.final_score.
+            confidence=None,
             score=tier1.score,
             levels=tier1.levels,
             narrative=verdict.summary or None,

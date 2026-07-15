@@ -53,7 +53,7 @@ export const DebateCard = ({ section, citations }: DebateCardProps) => {
           <div>
             <div className="label-uppercase mb-1 text-success">{t('tiered.debate.reasonsFor')}</div>
             <ul className="space-y-2">
-              {verdict.reasons_for.map((reason, index) => (
+              {(verdict.reasons_for ?? []).map((reason, index) => (
                 <li key={index} className="text-xs text-secondary-text">
                   {reason.claim}
                   {reason.evidence.length > 0 ? (
@@ -70,7 +70,7 @@ export const DebateCard = ({ section, citations }: DebateCardProps) => {
               {t('tiered.debate.reasonsAgainst')}
             </div>
             <ul className="space-y-2">
-              {verdict.reasons_against.map((reason, index) => (
+              {(verdict.reasons_against ?? []).map((reason, index) => (
                 <li key={index} className="text-xs text-secondary-text">
                   {reason.claim}
                   {reason.evidence.length > 0 ? (
