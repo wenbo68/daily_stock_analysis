@@ -214,12 +214,32 @@ describe('AltResult', () => {
     renderResult(makeDeepResult());
     fireEvent.click(screen.getByTestId('alt-level-computed-stop_loss'));
     const dialog = screen.getByRole('dialog');
-    // the formula in words, then plugged in, then the result
-    expect(within(dialog).getByText('ideal_entry − 2 × atr_14')).toBeInTheDocument();
-    // ideal_entry came from the computed entry cell, atr_14 from technicals
-    expect(within(dialog).getByRole('button', { name: 'ideal_entry' })).toHaveTextContent('95');
-    expect(within(dialog).getByRole('button', { name: 'atr_14' })).toHaveTextContent('2.50');
+    // title in the `<level>: formula` shape
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(/(止损：公式|Stop loss: formula)/);
+    // the formula in words (variables without underscores), plugged in, result
+    expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
+      'ideal entry − 2 × atr 14',
+    );
+    // ideal entry came from the computed entry cell, atr 14 from technicals
+    expect(within(dialog).getByRole('button', { name: 'ideal entry' })).toHaveTextContent('95');
+    expect(within(dialog).getByRole('button', { name: 'atr 14' })).toHaveTextContent('2.50');
     expect(within(dialog).getByText('= 90')).toBeInTheDocument();
+  });
+
+  it('renders the backup entry formula as a max over the supports below the ideal entry', () => {
+    renderResult(makeDeepResult());
+    fireEvent.click(screen.getByTestId('alt-level-computed-secondary_entry'));
+    const dialog = screen.getByRole('dialog');
+    // a clean max(...) — never the stored prose string
+    expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
+      'max(sma 60, swing low 20)',
+    );
+    expect(within(dialog).queryByText(/strictly below/)).not.toBeInTheDocument();
+    // the filter condition carries the ideal entry as a link
+    expect(within(dialog).getByRole('button', { name: 'ideal entry' })).toHaveTextContent('95');
+    // both candidates sit below 95, so both are plugged in
+    expect(within(dialog).getByTestId('alt-formula-plugged').textContent).toBe('= max(94, 92)');
+    expect(within(dialog).getByText('= 94')).toBeInTheDocument();
   });
 
   it('clicking an adjusted level opens the AI reason with its references, nothing else', () => {
@@ -235,7 +255,7 @@ describe('AltResult', () => {
   it('expands the shares computation to numbers that all exist in the report', () => {
     renderResult(makeDeepResult());
     const formula = screen.getByTestId('alt-shares-formula');
-    expect(formula.textContent).toBe('= (100000) × (1%) × (0.5) / ((96) − (90))');
+    expect(formula.textContent).toBe('= 100000 × 1% × 0.5 / (96 − 90)');
     // each number links back to where it appears within this run entry
     expect(within(formula).getByRole('button', { name: '100000' })).toBeInTheDocument();
     expect(within(formula).getByRole('button', { name: '1%' })).toBeInTheDocument();
@@ -306,10 +326,13 @@ describe('AltResult', () => {
     expect(tier3).toHaveTextContent(/(结论|Verdict): (持有|Hold)/);
     expect(tier3).toHaveTextContent(/(仓位|Size): 0.5x/);
     expect(tier3).toHaveTextContent(/(止损|Stop loss): (维持|keep)/);
-    expect(tier3).toHaveTextContent(/(评分|Score): 70/);
+    // judge confidence 0.7 → a whole number out of 10
+    expect(tier3).toHaveTextContent(/(评分|Score): 7\/10/);
     const tier1 = screen.getByTestId('alt-tier1');
     expect(tier1).toHaveTextContent(/(结论|Verdict): (买入|Buy)/);
-    expect(tier1).toHaveTextContent(/(评分|Score): 72/);
+    // tier 1's stored score is a bullishness composite, not a judge
+    // confidence — it is not shown as "Score"
+    expect(tier1).not.toHaveTextContent(/评分|Score/);
   });
 
   it('links the recorded signal number straight to that signal', () => {

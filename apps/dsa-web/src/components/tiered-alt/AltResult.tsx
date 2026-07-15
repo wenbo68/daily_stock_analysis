@@ -12,8 +12,8 @@ import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
-import { ALT_LINK } from './altStyles';
-import { AltCard, AltEvidenceRefs, AltNotesButton } from './AltUi';
+import { ALT_LINK, DIRECTION_TEXT } from './altStyles';
+import { AltCard, AltEvidenceRefs, AltNotesButton, FVar } from './AltUi';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -131,46 +131,55 @@ const AltSharesComputation = ({
   const feeTerm =
     feeFraction > 0 ? (
       <>
-        {' + ('}
+        {' + '}
         <FormulaLink targetId={entryTargetId}>{formatPrice(entry)}</FormulaLink>
-        {') × ('}
+        {' × '}
         <span className="tabular-nums text-gray-300">{riskPctText(feeFraction)}%</span>
-        {')'}
       </>
     ) : null;
 
   return (
     <AltCard testId="alt-shares-computation">
       <div className="flex flex-col gap-2 text-sm">
+        {/* Variables are italic words; parentheses only where the math
+            needs them (grouping the loss per share). */}
         <p className="text-gray-400">
-          ({t('tiered.alt.f.capital')}) × ({t('tiered.alt.f.risk')})
-          {multiplier !== null ? <> × ({t('tiered.alt.f.multiplier')})</> : null} / ((
-          {t('tiered.alt.f.entry')}) − ({t('tiered.alt.f.stop')})
-          {feeFraction > 0 ? <> + ({t('tiered.alt.f.entry')}) × ({t('tiered.alt.f.fee')})</> : null}
+          <FVar>{t('tiered.alt.f.capital')}</FVar> × <FVar>{t('tiered.alt.f.risk')}</FVar>
+          {multiplier !== null ? (
+            <>
+              {' × '}
+              <FVar>{t('tiered.alt.f.multiplier')}</FVar>
+            </>
+          ) : null}
+          {' / ('}
+          <FVar>{t('tiered.alt.f.entry')}</FVar> − <FVar>{t('tiered.alt.f.stop')}</FVar>
+          {feeFraction > 0 ? (
+            <>
+              {' + '}
+              <FVar>{t('tiered.alt.f.entry')}</FVar> × <FVar>{t('tiered.alt.f.fee')}</FVar>
+            </>
+          ) : null}
           {')'}
         </p>
         <p className="text-gray-400" data-testid="alt-shares-formula">
-          {'= ('}
+          {'= '}
           <FormulaLink targetId={taskId ? `alt-run-${taskId}-capital` : null}>
             {plainNumber(capital)}
           </FormulaLink>
-          {') × ('}
+          {' × '}
           <FormulaLink targetId={taskId ? `alt-run-${taskId}-risk` : null}>
             {riskPctText(riskFraction)}%
           </FormulaLink>
-          {')'}
           {multiplier !== null ? (
             <>
-              {' × ('}
+              {' × '}
               <FormulaLink targetId="alt-risk-multiplier">{multiplier}</FormulaLink>
-              {')'}
             </>
           ) : null}
-          {' / (('}
+          {' / ('}
           <FormulaLink targetId={entryTargetId}>{formatPrice(entry)}</FormulaLink>
-          {') − ('}
+          {' − '}
           <FormulaLink targetId={stopTargetId}>{formatPrice(stopLoss)}</FormulaLink>
-          {')'}
           {feeTerm}
           {')'}
         </p>
@@ -184,8 +193,9 @@ const AltSharesComputation = ({
 
 // ---------- tier cards ----------
 
-// One header fact — `Label: value` in the same quiet styling for verdict,
-// size, stop loss and score alike.
+// One header fact — quiet label, prominent value; the same styling for
+// verdict, size, stop loss and score alike (children may recolor the
+// value, e.g. the verdict's buy/hold/sell tint).
 const AltFact = ({
   label,
   helpKey,
@@ -198,17 +208,17 @@ const AltFact = ({
   <span className="text-xs text-gray-500">
     {helpKey ? <HelpTerm label={label} helpKey={helpKey} /> : label}
     {': '}
-    <span className="text-gray-300">{children}</span>
+    <span className="text-sm font-semibold text-gray-200">{children}</span>
   </span>
 );
 
-// The unified per-tier "Score": always 0-100, whatever scale the backend
-// spoke (tier 1 is already 0-100; the tier-2/3 judges report 0-1).
+// The unified per-tier "Score", shown out of 10. The tier-2/3 judges
+// report 0-1 confidence; callers pass it as 0-100 and it rounds to /10.
 const TierScore = ({ value, helpKey }: { value: number; helpKey: UiTextKey }) => {
   const { t } = useUiLanguage();
   return (
     <AltFact label={t('tiered.score')} helpKey={helpKey}>
-      <span className="tabular-nums">{Math.round(value)}</span>
+      <span className="tabular-nums">{Math.round(value / 10)}/10</span>
     </AltFact>
   );
 };
@@ -231,7 +241,10 @@ const TierHeader = ({ section, notes, score, scoreHelpKey, side }: TierHeaderPro
   return (
     <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1">
       <AltFact label={t('tiered.alt.verdict')}>
-        {t(`tiered.direction.${section.direction}` as UiTextKey)}
+        {/* Same buy/hold/sell tint as the run-history rows. */}
+        <span className={DIRECTION_TEXT[section.direction]}>
+          {t(`tiered.direction.${section.direction}` as UiTextKey)}
+        </span>
       </AltFact>
       {side}
       {score != null && scoreHelpKey ? <TierScore value={score} helpKey={scoreHelpKey} /> : null}
@@ -249,11 +262,12 @@ interface AltTierOneProps {
 
 const AltTierOne = ({ result, citations }: AltTierOneProps) => (
   <AltCard testId="alt-tier1">
+    {/* No score here: tier 1's stored score is the analyzer's bullishness
+        composite, not a judge confidence like tiers 2/3 — showing it under
+        the same "Score" label would mean two different things. */}
     <TierHeader
       section={{ direction: result.direction, coverage: result.coverage }}
       notes={result.warnings}
-      score={result.score}
-      scoreHelpKey="tiered.help.score"
     />
     <AltLevels levels={result.levels} levelsDetail={result.levels_detail} citations={citations} />
   </AltCard>

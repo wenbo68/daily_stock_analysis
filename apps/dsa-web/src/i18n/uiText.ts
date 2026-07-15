@@ -835,8 +835,8 @@ const zh = {
   'tiered.group.reportInfo': '报告信息',
   'tiered.group.other': '其他',
   'tiered.dataSources': '数据来源',
-  'tiered.help.judgeScore': '辩论裁判对自己结论的把握，0-100。\n越高越有把握。',
-  'tiered.help.riskScore': '风险裁判对自己结论的把握，0-100。\n越高越有把握。',
+  'tiered.help.judgeScore': '辩论裁判对自己结论的把握，满分 10 分。\n越高越有把握。',
+  'tiered.help.riskScore': '风险裁判对自己结论的把握，满分 10 分。\n越高越有把握。',
   'tiered.note.textLevel': 'AI 把{level}写成了句子（“{text}”）而不是数字，因此该价位留空。',
   'tiered.note.levelsMissing': '第 1 层分析没有返回价格参考位。',
   'tiered.note.pageBlocked': '新闻网站 {domain} 拒绝加载全文，改用了搜索结果里较短的摘要。',
@@ -918,13 +918,13 @@ const zh = {
   'tiered.help.levelBase': '由固定公式从技术指标算出的基准价，点击可查看公式和代入的数字。',
   'tiered.help.levelAdjusted':
     'AI 在基准价附近（最多一个 ATR，即平均日波幅）微调后的价位，必须给出有依据的理由；点击查看理由和依据。未通过校验的调整会被拒绝，仍使用基准价。',
-  'tiered.levelModal.formulaTitle': '{level} — 公式基准',
+  'tiered.levelModal.formulaTitle': '{level}：公式',
   'tiered.levelModal.formula': '公式',
   'tiered.levelModal.withNumbers': '代入本次数据',
   'tiered.levelModal.inputs': '输入项',
   'tiered.levelModal.inputsHint': '带下划线的数字可点击，跳转到技术面卡片中该指标所在行（即数据来源）。',
   'tiered.levelModal.noBase': '本次运行缺少计算该价位所需的数据，没有公式基准。',
-  'tiered.levelModal.adjustTitle': '{level} — AI 调整说明',
+  'tiered.levelModal.adjustTitle': '{level}：调整',
   'tiered.levelModal.reason': 'AI 调整理由',
   'tiered.levelModal.references': '参考依据',
   'tiered.levelModal.referencesHint':
@@ -1050,6 +1050,7 @@ const zh = {
   'tiered.alt.f.entry': '入场价',
   'tiered.alt.f.stop': '止损价',
   'tiered.alt.f.fee': '费率',
+  'tiered.alt.f.belowNote': '只保留低于理想买入价 {value} 的数值',
   'tiered.alt.sources': '来源',
   'tiered.alt.verdict': '结论',
   'tiered.alt.size': '仓位',
@@ -1901,9 +1902,9 @@ const en: Record<UiTextKey, string> = {
   'tiered.group.other': 'Other',
   'tiered.dataSources': 'Data sources',
   'tiered.help.judgeScore':
-    'How sure the debate judge is of its ruling, 0–100.\nHigher = more sure.',
+    'How sure the debate judge is of its ruling, out of 10.\nHigher = more sure.',
   'tiered.help.riskScore':
-    'How sure the risk judge is of its ruling, 0–100.\nHigher = more sure.',
+    'How sure the risk judge is of its ruling, out of 10.\nHigher = more sure.',
   'tiered.note.textLevel':
     'The AI wrote the {level} as a sentence (“{text}”) instead of a number, so that price was left blank.',
   'tiered.note.levelsMissing': 'The tier-1 analysis didn’t return its price levels.',
@@ -2005,7 +2006,7 @@ const en: Record<UiTextKey, string> = {
     'Computed by a fixed formula from the technical indicators. Click to see the formula and the numbers plugged into it.',
   'tiered.help.levelAdjusted':
     'The AI may nudge the base within a bounded band (at most one ATR — the stock’s average daily swing) and must give an evidence-backed reason; click to read it. Adjustments that fail the safety checks are rejected and the base is used.',
-  'tiered.levelModal.formulaTitle': '{level} — formula base',
+  'tiered.levelModal.formulaTitle': '{level}: formula',
   'tiered.levelModal.formula': 'Formula',
   'tiered.levelModal.withNumbers': 'With this run’s numbers',
   'tiered.levelModal.inputs': 'Inputs',
@@ -2013,7 +2014,7 @@ const en: Record<UiTextKey, string> = {
     'Underlined numbers are clickable — they jump to that metric’s row on the technicals card (its data source).',
   'tiered.levelModal.noBase':
     'This run lacked the data needed to compute this level, so there is no formula base.',
-  'tiered.levelModal.adjustTitle': '{level} — AI adjustment',
+  'tiered.levelModal.adjustTitle': '{level}: adjustment',
   'tiered.levelModal.reason': 'Why the AI moved it',
   'tiered.levelModal.references': 'References',
   'tiered.levelModal.referencesHint':
@@ -2160,6 +2161,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.f.entry': 'entry',
   'tiered.alt.f.stop': 'stop loss',
   'tiered.alt.f.fee': 'fee rate',
+  'tiered.alt.f.belowNote': 'only values below the ideal entry {value} are kept',
   'tiered.alt.sources': 'Sources',
   'tiered.alt.verdict': 'Verdict',
   'tiered.alt.size': 'Size',

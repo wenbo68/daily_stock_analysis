@@ -27,10 +27,16 @@ interface AltModalProps {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  /** Overrides the panel's width classes (e.g. fit-to-content for formulas). */
+  panelClassName?: string;
 }
 
+// A formula variable: italic, so words read as placeholders and numbers
+// (plain or linked) read as values — no underscores, no parentheses.
+export const FVar = ({ children }: { children: ReactNode }) => <i>{children}</i>;
+
 // showplayer-style popup: black/50 backdrop, flat gray-800 panel.
-export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) => {
+export const AltModal = ({ isOpen, title, onClose, children, panelClassName }: AltModalProps) => {
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -56,7 +62,10 @@ export const AltModal = ({ isOpen, title, onClose, children }: AltModalProps) =>
       <div
         role="dialog"
         aria-modal="true"
-        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded bg-gray-800 p-5 text-sm text-gray-400"
+        className={cn(
+          'max-h-[80vh] w-full max-w-lg overflow-y-auto rounded bg-gray-800 p-5 text-sm text-gray-400',
+          panelClassName,
+        )}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">

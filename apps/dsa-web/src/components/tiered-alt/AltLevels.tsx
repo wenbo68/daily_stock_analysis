@@ -12,7 +12,7 @@ import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId } from './altFormat';
 import { ALT_LINK } from './altStyles';
-import { AltEvidenceRefs, AltModal } from './AltUi';
+import { AltEvidenceRefs, AltModal, FVar } from './AltUi';
 
 // Alt skin rule: help popups everywhere, dotted underlines nowhere.
 const HelpTerm = (props: Parameters<typeof BaseHelpTerm>[0]) => (
@@ -48,61 +48,155 @@ const COMPUTED_CELL_INPUTS: Record<string, LevelKey> = {
   stop_loss: 'stop_loss',
 };
 
+// On-screen names for formula variables — never raw underscore tokens.
+const VAR_LABEL: Record<string, string> = {
+  close: 'close',
+  sma_20: 'sma 20',
+  sma_60: 'sma 60',
+  swing_low_20: 'swing low 20',
+  atr_14: 'atr 14',
+  ideal_entry: 'ideal entry',
+  stop_loss: 'stop loss',
+};
+
+const splitOnInputs = (formula: string, inputs: Record<string, number>): string[] => {
+  const keys = Object.keys(inputs).sort((a, b) => b.length - a.length);
+  if (keys.length === 0) {
+    return [formula];
+  }
+  return formula.split(new RegExp(`(${keys.join('|')})`, 'g'));
+};
+
+// One plugged-in number, linking to where it already appears — a
+// technicals metric row, or another computed cell of the levels table.
+const InputNumberLink = ({
+  inputKey,
+  value,
+  onNavigate,
+}: {
+  inputKey: string;
+  value: number;
+  onNavigate: () => void;
+}) => {
+  const computedTarget = COMPUTED_CELL_INPUTS[inputKey];
+  const jump = TECHNICALS_INPUT_KEYS.has(inputKey)
+    ? () => jumpToMetric(`technicals.${inputKey}`)
+    : computedTarget
+      ? () => flashElement(computedCellId(computedTarget))
+      : null;
+  if (!jump) {
+    return <span className="tabular-nums">{formatPrice(value)}</span>;
+  }
+  return (
+    <button
+      type="button"
+      aria-label={VAR_LABEL[inputKey] ?? inputKey}
+      className={cn('cursor-pointer tabular-nums', ALT_LINK)}
+      onClick={() => {
+        onNavigate();
+        // Let the modal unmount before scrolling to the row behind it.
+        window.setTimeout(jump, 50);
+      }}
+    >
+      {formatPrice(value)}
+    </button>
+  );
+};
+
 interface AltFormulaProps {
   formula: string;
   inputs: Record<string, number>;
   onNavigate: () => void;
 }
 
-// The formula with each input replaced by this run's number; numbers link
-// to where they already appear — a technicals metric row, or another
-// computed cell of the levels table.
+// The formula in words: variables italic, everything else as written.
+const AltFormulaWords = ({ formula, inputs }: Omit<AltFormulaProps, 'onNavigate'>) => (
+  <>
+    {splitOnInputs(formula, inputs).map((part, index) =>
+      inputs[part] === undefined ? (
+        <span key={index}>{part}</span>
+      ) : (
+        <FVar key={index}>{VAR_LABEL[part] ?? part}</FVar>
+      ),
+    )}
+  </>
+);
+
+// The formula with each input replaced by this run's number.
 const AltFormula = ({ formula, inputs, onNavigate }: AltFormulaProps) => {
-  const parts = useMemo(() => {
-    const keys = Object.keys(inputs).sort((a, b) => b.length - a.length);
-    if (keys.length === 0) {
-      return [formula];
-    }
-    return formula.split(new RegExp(`(${keys.join('|')})`, 'g'));
-  }, [formula, inputs]);
+  const parts = useMemo(() => splitOnInputs(formula, inputs), [formula, inputs]);
 
   return (
     <>
-      {parts.map((part, index) => {
-        const value = inputs[part];
-        if (value === undefined) {
-          return <span key={index}>{part}</span>;
-        }
-        const computedTarget = COMPUTED_CELL_INPUTS[part];
-        const jump = TECHNICALS_INPUT_KEYS.has(part)
-          ? () => jumpToMetric(`technicals.${part}`)
-          : computedTarget
-            ? () => flashElement(computedCellId(computedTarget))
-            : null;
-        if (jump) {
-          return (
-            <button
-              key={index}
-              type="button"
-              aria-label={part}
-              className={cn('cursor-pointer tabular-nums', ALT_LINK)}
-              onClick={() => {
-                onNavigate();
-                // Let the modal unmount before scrolling to the row behind it.
-                window.setTimeout(jump, 50);
-              }}
-            >
-              {formatPrice(value)}
-            </button>
-          );
-        }
-        return (
-          <span key={index} className="tabular-nums">
-            {formatPrice(value)}
-          </span>
-        );
-      })}
+      {parts.map((part, index) =>
+        inputs[part] === undefined ? (
+          <span key={index}>{part}</span>
+        ) : (
+          <InputNumberLink key={index} inputKey={part} value={inputs[part]} onNavigate={onNavigate} />
+        ),
+      )}
     </>
+  );
+};
+
+// One line of a formula modal: same element, font and spacing for every
+// line, and never wrapping — the modal grows instead.
+const FORMULA_LINE = 'whitespace-nowrap text-gray-400';
+const FORMULA_RESULT = 'whitespace-nowrap font-semibold text-gray-300';
+
+// The backup entry is the only level whose formula filters its inputs:
+// take the supports sitting below the ideal entry, keep the highest. The
+// stored audit string spells that filter out in prose, so this renders it
+// as a clean max(...) plus a one-line condition instead.
+const AltFilteredMaxFormula = ({
+  inputs,
+  base,
+  onNavigate,
+}: {
+  inputs: Record<string, number>;
+  base: number;
+  onNavigate: () => void;
+}) => {
+  const { t } = useUiLanguage();
+  const ideal = inputs.ideal_entry;
+  const candidates = Object.entries(inputs).filter(([key]) => key !== 'ideal_entry');
+  const qualifying =
+    ideal === undefined ? candidates : candidates.filter(([, value]) => value < ideal);
+  // The condition line carries the ideal-entry number (a link) — split the
+  // translated sentence around its {value} slot.
+  const [notePrefix, noteSuffix] = t('tiered.alt.f.belowNote').split('{value}');
+
+  return (
+    <div className="flex flex-col gap-2 overflow-x-auto text-sm" data-testid="alt-formula-modal">
+      <p className={FORMULA_LINE} data-testid="alt-formula-words">
+        {'max('}
+        {candidates.map(([key], index) => (
+          <span key={key}>
+            {index > 0 ? ', ' : ''}
+            <FVar>{VAR_LABEL[key] ?? key}</FVar>
+          </span>
+        ))}
+        {')'}
+      </p>
+      {ideal !== undefined ? (
+        <p className="whitespace-nowrap text-xs text-gray-500">
+          {notePrefix}
+          <InputNumberLink inputKey="ideal_entry" value={ideal} onNavigate={onNavigate} />
+          {noteSuffix}
+        </p>
+      ) : null}
+      <p className={FORMULA_LINE} data-testid="alt-formula-plugged">
+        {'= max('}
+        {qualifying.map(([key, value], index) => (
+          <span key={key}>
+            {index > 0 ? ', ' : ''}
+            <InputNumberLink inputKey={key} value={value} onNavigate={onNavigate} />
+          </span>
+        ))}
+        {')'}
+      </p>
+      <p className={FORMULA_RESULT}>= {formatPrice(base)}</p>
+    </div>
   );
 };
 
@@ -140,18 +234,28 @@ const AltComputedCell = ({ levelKey, detail, label }: Omit<AltLevelCellProps, 'c
         isOpen={isOpen}
         title={t('tiered.levelModal.formulaTitle', { level: label })}
         onClose={close}
+        // Fit the widest formula line; each line stays a single line.
+        panelClassName="w-fit min-w-72 max-w-[95vw]"
       >
-        {detail.formula ? (
-          <div className="flex flex-col gap-2 text-sm">
-            <p className="text-gray-400">{detail.formula}</p>
-            <code className="block whitespace-pre-wrap text-gray-300">
+        {!detail.formula ? (
+          <p>{t('tiered.levelModal.noBase')}</p>
+        ) : detail.formula.includes('strictly below') ? (
+          <AltFilteredMaxFormula
+            inputs={detail.inputs ?? {}}
+            base={detail.base}
+            onNavigate={close}
+          />
+        ) : (
+          <div className="flex flex-col gap-2 overflow-x-auto text-sm" data-testid="alt-formula-modal">
+            <p className={FORMULA_LINE} data-testid="alt-formula-words">
+              <AltFormulaWords formula={detail.formula} inputs={detail.inputs ?? {}} />
+            </p>
+            <p className={FORMULA_LINE} data-testid="alt-formula-plugged">
               {'= '}
               <AltFormula formula={detail.formula} inputs={detail.inputs ?? {}} onNavigate={close} />
-            </code>
-            <p className="font-semibold text-gray-300">= {formatPrice(detail.base)}</p>
+            </p>
+            <p className={FORMULA_RESULT}>= {formatPrice(detail.base)}</p>
           </div>
-        ) : (
-          <p>{t('tiered.levelModal.noBase')}</p>
         )}
       </AltModal>
     </>
