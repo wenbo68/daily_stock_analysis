@@ -336,10 +336,10 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
   const detail = section.debate_detail;
   const verdict = detail?.verdict ?? null;
-  // v5 runs carry the defender/attacker/judge tree and render it whole —
-  // no scoring foldable, no bull/bear columns; the arithmetic lives in
-  // the tree's own scores block.
-  if (detail?.format === 5 && Array.isArray(detail.items)) {
+  // v5/v6 runs carry the defender/attacker/judge tree and render it
+  // whole — no scoring foldable, no bull/bear columns; the arithmetic
+  // lives in the tree's own scores block.
+  if ((detail?.format === 5 || detail?.format === 6) && Array.isArray(detail.items)) {
     return (
       <AltCard testId="alt-tier2">
         <TierHeader

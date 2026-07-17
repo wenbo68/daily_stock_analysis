@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the tier-2 defender/attacker/judge debate (v5).
+"""Offline tests for the tier-2 defender/attacker/judge debate (v6).
 
 Fake-LLM tests covering: the 5-step choreography (parallel openings →
-attacker review → defender reply → judge → summary), every row of the
-weight ledger (1/1 correct keeps, 0/1 defender errors, 0/0 correctly
-removed), the score formula final = 5 + weight × (adjusted − 5) with its
-<4 / 4-6 / >6 verdict bands, leaf-only citation validation, the Pydantic
-retry-once contract, and every failure rule — defender/judge failures
-void the verdict (tier 2 falls back to tier 1), attacker failures degrade
-loudly, and a broken summary never voids a computed verdict.
+attacker review → defender reply → judge → summary), the deterministic
+pool scores (per dimension 10 × bullish/total, averaged; three snapshots
+initial/adjusted/final), final-pool membership (judge + code value check;
+defender stance irrelevant — resurrection included), mechanical link
+verification ({text, ref, value} with value-mismatch auto-fail), dynamic
+per-dimension ceilings, the Pydantic retry-once contract, and every
+failure rule — defender/judge failures void the verdict (tier 2 falls
+back to tier 1), attacker failures degrade loudly, and a broken summary
+never voids a computed verdict.
 
 The two opening calls run in parallel threads, so the fake LLM routes
 replies by prompt content, not call order.
@@ -24,6 +26,7 @@ from src.tiered_analysis.debate import (
     DebateResult,
     DebateVerdict,
     direction_from_final,
+    max_items_per_dimension,
 )
 from src.tiered_analysis.llm_support import LlmUsageTracker, record_llm_usage
 from src.tiered_analysis.providers.base import (
@@ -42,8 +45,9 @@ def _technicals():
         dimension="technicals",
         kind=SourceKind.NUMERIC,
         coverage=Coverage.FULL,
-        # "macd" is a grouping on purpose: the leaf-only citation rule must
+        # "macd" is a grouping on purpose: the leaf-only link rule must
         # reject "technicals.macd" but accept "technicals.macd.signal".
+        # Leaf count = 4 (close, rsi_14, score, macd.signal).
         payload={"close": 100.0, "rsi_14": 71.2, "score": 68, "macd": {"signal": 1.2}},
     )
 
@@ -53,8 +57,11 @@ def _sentiment():
         dimension="sentiment",
         kind=SourceKind.TEXTUAL,
         coverage=Coverage.FULL,
-        narrative="Sentiment: positive. Big deal announced [1].",
-        citations=[Citation(source_name="reuters", url="https://ex.com/1")],
+        narrative="Sentiment: positive. Big deal announced [1]. Doubts remain [2].",
+        citations=[
+            Citation(source_name="reuters", url="https://ex.com/1"),
+            Citation(source_name="bloomberg", url="https://ex.com/2"),
+        ],
     )
 
 
@@ -78,20 +85,28 @@ def _tier1(direction=Direction.BUY, dimensions=()):
 
 
 # ---------------------------------------------------------------------------
-# Reply builders — the default run: 4 defender items, one attack on
-# T2:logic (rejected, judge sides with the defender), one addition S3
-# (accepted, judge says real). Ledger 5/5 → weight 1.0; initial 8,
-# adjusted 7 → final 7.00 → buy.
+# Reply builders — the default run: 4 defender items (T bullish ×2,
+# S bullish + bearish), one attack on T2:logic (rejected, judge sides with
+# the defender), one bearish addition S3 (accepted, judge checks pass).
+#
+# Scores (per dimension 10 × bullish/total, averaged):
+#   initial  = (tech 10 + sent 5) / 2      = 7.50
+#   adjusted = (tech 10 + sent 10/3) / 2   = 6.67   (S3 joins the pool)
+#   final    = same pool                    = 6.67 → buy
 # ---------------------------------------------------------------------------
 
 
-def _item(item_id, dimension, direction, claim, citations):
+def _link(text, ref, value=None):
+    return {"text": text, "ref": ref, "value": value}
+
+
+def _item(item_id, dimension, direction, claim, links):
     return {
         "id": item_id,
         "dimension": dimension,
         "direction": direction,
         "claim": claim,
-        "citations": list(citations),
+        "links": links,
     }
 
 
@@ -107,24 +122,30 @@ def _checks(citation=None, logic=None):
 
 
 DEFENDER_ITEMS = [
-    _item("T1", "technicals", "bullish", "RSI shows strong momentum.", ["technicals.rsi_14"]),
-    _item("T2", "technicals", "bullish", "Price holds above 100.", ["technicals.close"]),
-    _item("S1", "sentiment", "bullish", "A big deal was announced.", ["citation:1"]),
-    _item("S2", "sentiment", "bearish", "Coverage may be one-sided.", ["citation:1"]),
+    _item("T1", "technicals", "bullish",
+          "The 14-day RSI (71.2) is above 70, showing strong momentum.",
+          [_link("14-day RSI", "technicals.rsi_14", 71.2)]),
+    _item("T2", "technicals", "bullish",
+          "The closing price (100.0) holds above the 95 support.",
+          [_link("closing price", "technicals.close", 100.0)]),
+    _item("S1", "sentiment", "bullish",
+          "A big deal was announced.",
+          [_link("big deal", "citation:1")]),
+    _item("S2", "sentiment", "bearish",
+          "Doubts remain about the coverage.",
+          [_link("Doubts remain", "citation:2")]),
 ]
 
 ATTACKER_ITEMS = DEFENDER_ITEMS + [
-    _item("S3", "sentiment", "bearish", "The deal is not closed yet.", ["citation:1"]),
+    _item("S3", "sentiment", "bearish",
+          "The deal is not closed yet.",
+          [_link("deal", "citation:2")]),
 ]
 
 
-def _defender_opening(items=None, initial_score=8):
+def _defender_opening(items=None):
     return json.dumps(
-        {
-            "items": items or DEFENDER_ITEMS,
-            "no_data_dimensions": [],
-            "initial_score": initial_score,
-        }
+        {"items": items or DEFENDER_ITEMS, "no_data_dimensions": []}
     )
 
 
@@ -148,7 +169,7 @@ def _review(checks=None, match_map=None):
             or {
                 "T1": _checks(),
                 "T2": _checks(
-                    logic=_check("invalid", "One price point is not a trend.", ["technicals.close"])
+                    logic=_check("invalid", "One price point is not support.", ["technicals.close"])
                 ),
                 "S1": _checks(),
                 "S2": _checks(),
@@ -157,7 +178,7 @@ def _review(checks=None, match_map=None):
     )
 
 
-def _reply(responses=None, adjusted_score=7):
+def _reply(responses=None):
     return json.dumps(
         {
             "responses": responses
@@ -172,16 +193,21 @@ def _reply(responses=None, adjusted_score=7):
                 ),
                 "add:S3": _checks(),
             },
-            "adjusted_score": adjusted_score,
         }
     )
 
 
-def _judge(reason_checks=None, attack_rulings=None, addition_rulings=None):
+def _judge(reason_checks=None, attack_rulings=None):
     return json.dumps(
         {
             "reason_checks": reason_checks
-            or {"T1": _checks(), "T2": _checks(), "S1": _checks(), "S2": _checks()},
+            or {
+                "T1": _checks(),
+                "T2": _checks(),
+                "S1": _checks(),
+                "S2": _checks(),
+                "S3": _checks(),
+            },
             "attack_rulings": attack_rulings
             if attack_rulings is not None
             else {
@@ -191,15 +217,12 @@ def _judge(reason_checks=None, attack_rulings=None, addition_rulings=None):
                     "citations": ["technicals.close"],
                 }
             },
-            "addition_rulings": addition_rulings
-            if addition_rulings is not None
-            else {"S3": {"verdict": "real", "reason": "Genuinely missed.", "citations": []}},
         }
     )
 
 
 def _summary():
-    return json.dumps({"summary": "The defense held up and the case leans bullish."})
+    return json.dumps({"summary": "The surviving evidence leans bullish."})
 
 
 def _replies(**overrides):
@@ -289,6 +312,54 @@ class DirectionBandsTest(unittest.TestCase):
         self.assertEqual(direction_from_final(10.0), Direction.BUY)
 
 
+class CeilingsTest(unittest.TestCase):
+    def test_ceiling_is_the_leaf_count_of_the_report(self):
+        ceilings = max_items_per_dimension(_dimensions())
+        # close, rsi_14, score, macd.signal — the macd grouping is not a leaf.
+        self.assertEqual(ceilings["technicals"], 4)
+
+    def test_sentiment_ceiling_is_sources_times_two(self):
+        ceilings = max_items_per_dimension(_dimensions())
+        self.assertEqual(ceilings["sentiment"], 4)
+
+    def test_ceiling_never_drops_below_the_floor(self):
+        dims = [
+            DimensionResult(
+                dimension="technicals",
+                kind=SourceKind.NUMERIC,
+                coverage=Coverage.FULL,
+                payload={"close": 100.0},
+            )
+        ]
+        self.assertEqual(max_items_per_dimension(dims)["technicals"], 2)
+
+    def test_too_many_items_for_the_ceiling_is_rejected(self):
+        # 5 technicals items against a ceiling of 4 → retry with the error.
+        extra = _item("T5", "technicals", "bullish",
+                      "The technical score (68) is high.",
+                      [_link("technical score", "technicals.score", 68)])
+        many = [
+            DEFENDER_ITEMS[0], DEFENDER_ITEMS[1],
+            _item("T3", "technicals", "bullish",
+                  "The technical score (68) is high.",
+                  [_link("technical score", "technicals.score", 68)]),
+            _item("T4", "technicals", "bullish",
+                  "The MACD signal (1.2) is positive.",
+                  [_link("MACD signal", "technicals.macd.signal", 1.2)]),
+            extra, DEFENDER_ITEMS[2], DEFENDER_ITEMS[3],
+        ]
+        result, fake = _run(
+            _replies(defender_opening=_defender_opening(items=many)),
+            retry_replies={"defender_opening": _defender_opening()},
+        )
+        self.assertIsNotNone(result.verdict)
+        retry_prompt = next(
+            p for p in fake.prompts
+            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
+        )
+        self.assertIn("the maximum is 4", retry_prompt)
+
+
 class ChoreographyTest(unittest.TestCase):
     def test_full_run_six_calls_and_the_computed_verdict(self):
         result, fake = _run()
@@ -300,15 +371,17 @@ class ChoreographyTest(unittest.TestCase):
         )
         verdict = result.verdict
         self.assertIsNotNone(verdict)
-        self.assertEqual(verdict.initial_score, 8)
-        self.assertEqual(verdict.adjusted_score, 7)
-        self.assertFalse(verdict.adjusted_kept)
-        self.assertEqual((verdict.weight_numerator, verdict.weight_denominator), (5, 5))
-        self.assertEqual(verdict.weight, 1.0)
-        # final = 5 + 1.0 × (7 − 5) = 7.00 → buy
-        self.assertEqual(verdict.final_score, 7.0)
+        # initial: tech 10.0, sentiment 5.0 → 7.5
+        self.assertEqual(verdict.initial_score, 7.5)
+        # adjusted/final: S3 (bearish) joins → sentiment 10/3 → (10+3.33)/2
+        self.assertEqual(verdict.adjusted_score, 6.67)
+        self.assertEqual(verdict.final_score, 6.67)
         self.assertEqual(verdict.direction, Direction.BUY)
-        self.assertEqual(verdict.summary, "The defense held up and the case leans bullish.")
+        self.assertEqual(verdict.summary, "The surviving evidence leans bullish.")
+        self.assertEqual(verdict.pools["initial"]["dimensions"]["technicals"]["score"], 10.0)
+        self.assertEqual(verdict.pools["initial"]["dimensions"]["sentiment"]["score"], 5.0)
+        self.assertEqual(verdict.pools["final"]["bullish"], 3)
+        self.assertEqual(verdict.pools["final"]["bearish"], 2)
 
     def test_the_openings_run_before_everything_else(self):
         _, fake = _run()
@@ -316,15 +389,15 @@ class ChoreographyTest(unittest.TestCase):
         self.assertEqual(sorted(stages[:2]), ["attacker_opening", "defender_opening"])
         self.assertEqual(stages[2:], ["review", "reply", "judge", "summary"])
 
-    def test_the_addition_joins_the_tree_renumbered_and_tagged(self):
+    def test_the_addition_joins_the_tree_renumbered_and_counted(self):
         result, _ = _run()
         addition = _item_by_id(result, "S3")
         self.assertTrue(addition["added_by_attacker"])
         self.assertEqual(addition["dimension"], "sentiment")
-        self.assertEqual(addition["claim"], "The deal is not closed yet.")
         self.assertTrue(addition["response"]["accepted"])
-        self.assertEqual(addition["judge"]["verdict"], "real")
-        self.assertEqual(addition["outcome"], "valid")
+        self.assertEqual(addition["judge"]["citation"]["kind"], "reason_check")
+        self.assertEqual(addition["judge"]["citation"]["verdict"], "valid")
+        self.assertEqual(addition["final_status"], "counted")
 
     def test_defended_attack_is_recorded_on_the_item(self):
         result, _ = _run()
@@ -334,160 +407,126 @@ class ChoreographyTest(unittest.TestCase):
         self.assertEqual(item["judge"]["logic"]["kind"], "attack_ruling")
         self.assertEqual(item["judge"]["logic"]["verdict"], "attack_wrong")
         self.assertEqual(item["judge"]["citation"]["kind"], "reason_check")
-        self.assertEqual(item["outcome"], "valid")
+        self.assertEqual(item["final_status"], "counted")
+
+    def test_macro_econ_items_use_the_e_prefix(self):
+        macro = DimensionResult(
+            dimension="macro_econ",
+            kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL,
+            payload={"unemployment_pct": 4.2, "cpi_yoy_pct": 3.4},
+        )
+        dims = [_technicals(), macro, _sentiment()]
+        e_items = [
+            _item("E1", "macro_econ", "bullish",
+                  "Unemployment (4.2%) is low.",
+                  [_link("Unemployment", "macro_econ.unemployment_pct", 4.2)]),
+            _item("E2", "macro_econ", "bearish",
+                  "CPI inflation (3.4%) is above target.",
+                  [_link("CPI inflation", "macro_econ.cpi_yoy_pct", 3.4)]),
+        ]
+        items = DEFENDER_ITEMS + e_items
+        match_map = [
+            {"own_id": i["id"], "covered_by": i["id"]} for i in items
+        ]
+        checks = {i["id"]: _checks() for i in items}
+        reason_checks = {i["id"]: _checks() for i in items}
+        result, _ = _run(
+            _replies(
+                defender_opening=_defender_opening(items=items),
+                attacker_opening=_attacker_opening(items=items),
+                review=_review(checks=checks, match_map=match_map),
+                judge=_judge(reason_checks=reason_checks, attack_rulings={}),
+            ),
+            dimensions=dims,
+        )
+        self.assertIsNotNone(result.verdict)
+        self.assertEqual(_item_by_id(result, "E1")["dimension"], "macro_econ")
+        # macro pool: 1 bullish of 2 → 5.0
+        self.assertEqual(
+            result.verdict.pools["initial"]["dimensions"]["macro_econ"]["score"], 5.0
+        )
 
 
-class WeightLedgerTest(unittest.TestCase):
-    """Every row of the agreed table, one scenario each."""
+class FinalPoolTest(unittest.TestCase):
+    """Membership: judge + code decide; the defender's stance never does."""
 
-    def test_unattacked_reason_judged_invalid_costs_0_1(self):
+    def test_unattacked_item_judged_invalid_is_excluded(self):
         reason_checks = {
             "T1": _checks(logic=_check("invalid", "Does not follow.")),
             "T2": _checks(),
             "S1": _checks(),
             "S2": _checks(),
+            "S3": _checks(),
         }
         result, _ = _run(_replies(judge=_judge(reason_checks=reason_checks)))
-        self.assertEqual(_item_by_id(result, "T1")["outcome"], "invalid")
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 5)
-        )
-        # weight 0.8, adjusted 7 → final 5 + 0.8×2 = 6.6 → buy
-        self.assertEqual(result.verdict.final_score, 6.6)
-        self.assertEqual(result.verdict.direction, Direction.BUY)
+        item = _item_by_id(result, "T1")
+        self.assertEqual(item["final_status"], "excluded")
+        self.assertEqual(item["exclusion_reason"], "judge_invalid")
+        # final pool: tech = T2 only (10.0), sentiment 10/3 → 6.67 buy
+        self.assertEqual(result.verdict.final_score, 6.67)
 
-    def test_rejected_attack_the_judge_upholds_costs_0_1(self):
+    def test_upheld_attack_excludes_the_item(self):
         attack_rulings = {
             "T2:logic": {"verdict": "attack_right", "reason": "The attack is correct.", "citations": []}
         }
         result, _ = _run(_replies(judge=_judge(attack_rulings=attack_rulings)))
-        self.assertEqual(_item_by_id(result, "T2")["outcome"], "invalid")
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 5)
-        )
-
-    def test_correctly_conceded_attack_drops_the_reason_from_the_count(self):
-        responses = {
-            "T2:logic": _checks(),  # both checks valid → accepted (conceded)
-            "add:S3": _checks(),
-        }
-        attack_rulings = {
-            "T2:logic": {"verdict": "attack_right", "reason": "The attack is correct.", "citations": []}
-        }
-        result, _ = _run(
-            _replies(reply=_reply(responses=responses), judge=_judge(attack_rulings=attack_rulings))
-        )
         item = _item_by_id(result, "T2")
-        self.assertEqual(item["outcome"], "neutral")
-        self.assertEqual(item["count"], {"numerator": 0, "denominator": 0})
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 4)
-        )
-        self.assertEqual(result.verdict.weight, 1.0)
+        self.assertEqual(item["final_status"], "excluded")
+        self.assertEqual(item["exclusion_reason"], "attack_upheld")
 
-    def test_accepting_a_flawed_attack_costs_0_1_and_flags(self):
+    def test_wrongly_conceded_item_is_restored_and_flagged(self):
         responses = {
-            "T2:logic": _checks(),  # accepted…
+            "T2:logic": _checks(),  # both checks valid → conceded…
             "add:S3": _checks(),
         }
-        # …but the judge (default reply) rules the attack wrong.
+        # …but the judge (default) rules the attack wrong → restored.
         result, _ = _run(_replies(reply=_reply(responses=responses)))
-        self.assertEqual(_item_by_id(result, "T2")["outcome"], "invalid")
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 5)
-        )
+        item = _item_by_id(result, "T2")
+        self.assertEqual(item["final_status"], "counted")
         self.assertTrue(
-            any(
-                "defender accepted an attack the judge ruled wrong" in w
-                for w in result.warnings
-            )
+            any("evidence restored to the final pool" in w for w in result.warnings)
         )
+        # The concession still shows in the adjusted pool (T2 out of it).
+        self.assertEqual(result.verdict.pools["adjusted"]["total"], 4)
+        self.assertEqual(result.verdict.pools["final"]["total"], 5)
 
-    def test_adopted_bogus_addition_costs_0_1(self):
-        addition_rulings = {"S3": {"verdict": "bogus", "reason": "Duplicated.", "citations": []}}
-        result, _ = _run(_replies(judge=_judge(addition_rulings=addition_rulings)))
-        self.assertEqual(_item_by_id(result, "S3")["outcome"], "invalid")
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 5)
-        )
-
-    def test_wrongly_rejected_real_addition_costs_0_1(self):
+    def test_wrongly_rejected_addition_is_included_and_flagged(self):
         responses = {
             "T2:logic": _checks(
                 logic=_check("invalid", "The claim was about the level.", ["technicals.close"])
             ),
-            "add:S3": _checks(logic=_check("invalid", "Not relevant.")),  # rejected…
+            "add:S3": _checks(logic=_check("invalid", "Not relevant.")),
         }
-        # …but the judge (default reply) says the addition is real.
+        # Judge (default) says S3's checks pass → included anyway.
         result, _ = _run(_replies(reply=_reply(responses=responses)))
-        self.assertEqual(_item_by_id(result, "S3")["outcome"], "invalid")
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 5)
-        )
-
-    def test_correctly_rejected_bogus_addition_is_excluded(self):
-        responses = {
-            "T2:logic": _checks(
-                logic=_check("invalid", "The claim was about the level.", ["technicals.close"])
-            ),
-            "add:S3": _checks(logic=_check("invalid", "Invented.")),
-        }
-        addition_rulings = {"S3": {"verdict": "bogus", "reason": "Invented.", "citations": []}}
-        result, _ = _run(
-            _replies(
-                reply=_reply(responses=responses),
-                judge=_judge(addition_rulings=addition_rulings),
-            )
-        )
         item = _item_by_id(result, "S3")
-        self.assertEqual(item["outcome"], "neutral")
-        self.assertEqual(item["count"], {"numerator": 0, "denominator": 0})
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 4)
+        self.assertEqual(item["final_status"], "counted")
+        self.assertTrue(
+            any("included in the final pool" in w for w in result.warnings)
         )
+        # The refusal shows in the adjusted pool (S3 not in it).
+        self.assertEqual(result.verdict.pools["adjusted"]["total"], 4)
 
-    def test_empty_ledger_defaults_to_neutral_five(self):
-        # Every defender item attacked and correctly conceded; the addition
-        # correctly rejected as bogus → denominator 0 → final 5.00 hold.
-        checks = {
-            "T1": _checks(logic=_check("invalid", "Flawed.")),
-            "T2": _checks(logic=_check("invalid", "Flawed.")),
-            "S1": _checks(logic=_check("invalid", "Flawed.")),
-            "S2": _checks(logic=_check("invalid", "Flawed.")),
+    def test_addition_failing_a_judge_check_is_excluded(self):
+        reason_checks = {
+            "T1": _checks(), "T2": _checks(), "S1": _checks(), "S2": _checks(),
+            "S3": _checks(citation=_check("invalid", "The source does not say that.")),
         }
-        responses = {
-            "T1:logic": _checks(),
-            "T2:logic": _checks(),
-            "S1:logic": _checks(),
-            "S2:logic": _checks(),
-            "add:S3": _checks(logic=_check("invalid", "Invented.")),
-        }
-        attack_rulings = {
-            key: {"verdict": "attack_right", "reason": "Correct.", "citations": []}
-            for key in ("T1:logic", "T2:logic", "S1:logic", "S2:logic")
-        }
-        addition_rulings = {"S3": {"verdict": "bogus", "reason": "Invented.", "citations": []}}
-        result, _ = _run(
-            _replies(
-                review=_review(checks=checks),
-                reply=_reply(responses=responses, adjusted_score=3),
-                judge=_judge(attack_rulings=attack_rulings, addition_rulings=addition_rulings),
-            )
-        )
-        verdict = result.verdict
-        self.assertEqual((verdict.weight_numerator, verdict.weight_denominator), (0, 0))
-        self.assertEqual(verdict.weight, 0.0)
-        self.assertEqual(verdict.final_score, 5.0)
-        self.assertEqual(verdict.direction, Direction.HOLD)
-        self.assertTrue(any("no surviving evidence to weigh" in w for w in result.warnings))
+        result, _ = _run(_replies(judge=_judge(reason_checks=reason_checks)))
+        item = _item_by_id(result, "S3")
+        self.assertEqual(item["final_status"], "excluded")
+        self.assertEqual(item["exclusion_reason"], "judge_invalid")
+        # final: tech 10, sentiment (S1 bullish, S2 bearish) 5 → 7.5
+        self.assertEqual(result.verdict.final_score, 7.5)
 
-    def test_thin_base_is_flagged_when_most_initial_evidence_dies(self):
-        # 3 of 4 defender reasons judged invalid → survivors 1 < half.
+    def test_empty_final_pool_defaults_to_neutral_five(self):
         reason_checks = {
             "T1": _checks(logic=_check("invalid", "Flawed.")),
             "T2": _checks(),
             "S1": _checks(logic=_check("invalid", "Flawed.")),
             "S2": _checks(logic=_check("invalid", "Flawed.")),
+            "S3": _checks(logic=_check("invalid", "Flawed.")),
         }
         attack_rulings = {
             "T2:logic": {"verdict": "attack_right", "reason": "Correct.", "citations": []}
@@ -495,48 +534,123 @@ class WeightLedgerTest(unittest.TestCase):
         result, _ = _run(
             _replies(judge=_judge(reason_checks=reason_checks, attack_rulings=attack_rulings))
         )
+        verdict = result.verdict
+        self.assertEqual(verdict.pools["final"]["total"], 0)
+        self.assertEqual(verdict.final_score, 5.0)
+        self.assertEqual(verdict.direction, Direction.HOLD)
+        self.assertTrue(any("no surviving evidence to weigh" in w for w in result.warnings))
+
+    def test_thin_base_is_flagged_when_most_initial_evidence_dies(self):
+        reason_checks = {
+            "T1": _checks(logic=_check("invalid", "Flawed.")),
+            "T2": _checks(),
+            "S1": _checks(logic=_check("invalid", "Flawed.")),
+            "S2": _checks(logic=_check("invalid", "Flawed.")),
+            "S3": _checks(),
+        }
+        result, _ = _run(_replies(judge=_judge(reason_checks=reason_checks)))
         self.assertTrue(
             any("the weight rests on a thin base" in w for w in result.warnings)
         )
 
-    def test_the_worked_example_from_the_design_doc(self):
-        # Flip side of the doc's appendix: the defender concedes S1's attack
-        # but the judge rules that attack wrong → 0/1 + flag; the other 3
-        # reasons and the addition hold → weight 4/5; adjusted 7 →
-        # final = 5 + 0.8 × 2 = 6.6.
-        checks = {
-            "T1": _checks(),
-            "T2": _checks(),
-            "S1": _checks(citation=_check("invalid", "Miscited.", ["citation:1"])),
-            "S2": _checks(),
-        }
-        responses = {"S1:citation": _checks(), "add:S3": _checks()}
-        attack_rulings = {
-            "S1:citation": {"verdict": "attack_wrong", "reason": "The citation is fine.", "citations": []}
-        }
-        result, _ = _run(
+
+class LinkVerificationTest(unittest.TestCase):
+    def test_value_mismatch_auto_fails_the_citation_check(self):
+        # The defender claims close = 999 (report says 100). The first
+        # attempt is bounced with the mismatch shown; the model repeats
+        # itself, so the lenient retry keeps the item but code fails it —
+        # even though every AI ruled it valid.
+        bad = [
+            DEFENDER_ITEMS[0],
+            _item("T2", "technicals", "bullish",
+                  "The closing price (999.0) holds above the 95 support.",
+                  [_link("closing price", "technicals.close", 999.0)]),
+            DEFENDER_ITEMS[2], DEFENDER_ITEMS[3],
+        ]
+        checks = {"T1": _checks(), "T2": _checks(), "S1": _checks(), "S2": _checks()}
+        result, fake = _run(
             _replies(
+                defender_opening=_defender_opening(items=bad),
                 review=_review(checks=checks),
-                reply=_reply(responses=responses),
-                judge=_judge(attack_rulings=attack_rulings),
+                reply=_reply(responses={"add:S3": _checks()}),
+                judge=_judge(attack_rulings={}),
             )
         )
-        verdict = result.verdict
-        self.assertEqual((verdict.weight_numerator, verdict.weight_denominator), (4, 5))
-        self.assertEqual(verdict.weight, 0.8)
-        self.assertEqual(verdict.final_score, 6.6)
+        item = _item_by_id(result, "T2")
+        self.assertEqual(item["value_check"]["verdict"], "invalid")
+        self.assertEqual(item["final_status"], "excluded")
+        self.assertEqual(item["exclusion_reason"], "value_mismatch")
+        self.assertTrue(
+            any("citation check failed mechanically" in w for w in result.warnings)
+        )
+        retry_prompt = next(
+            p for p in fake.prompts
+            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
+        )
+        self.assertIn("does not match", retry_prompt)
+        # final: tech = T1 only → 10, sentiment 10/3 → 6.67
+        self.assertEqual(result.verdict.final_score, 6.67)
+
+    def test_rounding_tolerance_accepts_honest_rounding(self):
+        items = [
+            _item("T1", "technicals", "bullish",
+                  "The 14-day RSI (71) is above 70.",
+                  [_link("14-day RSI", "technicals.rsi_14", 71)]),
+        ] + DEFENDER_ITEMS[1:]
+        result, _ = _run(_replies(defender_opening=_defender_opening(items=items)))
+        self.assertEqual(_item_by_id(result, "T1")["value_check"]["verdict"], "valid")
+
+    def test_group_path_link_is_dropped_leaf_kept(self):
+        items = [
+            _item("T1", "technicals", "bullish",
+                  "The 14-day RSI (71.2) is above 70 and MACD confirms.",
+                  [_link("14-day RSI", "technicals.rsi_14", 71.2),
+                   _link("MACD", "technicals.macd", 1.2)]),
+        ] + DEFENDER_ITEMS[1:]
+        result, fake = _run(
+            _replies(defender_opening=_defender_opening(items=items)),
+            retry_replies={"defender_opening": _defender_opening(items=items)},
+        )
+        t1 = _item_by_id(result, "T1")
+        self.assertEqual([link["ref"] for link in t1["links"]], ["technicals.rsi_14"])
+        self.assertEqual(t1["value_check"]["verdict"], "valid")
+        self.assertTrue(
+            any("does not resolve to a single report value" in w for w in result.warnings)
+        )
+
+    def test_link_text_missing_from_the_claim_is_dropped(self):
+        items = [
+            _item("T1", "technicals", "bullish",
+                  "The 14-day RSI (71.2) is above 70.",
+                  [_link("14-day RSI", "technicals.rsi_14", 71.2),
+                   _link("relative strength", "technicals.rsi_14", 71.2)]),
+        ] + DEFENDER_ITEMS[1:]
+        result, _ = _run(
+            _replies(defender_opening=_defender_opening(items=items)),
+            retry_replies={"defender_opening": _defender_opening(items=items)},
+        )
+        t1 = _item_by_id(result, "T1")
+        self.assertEqual(len(t1["links"]), 1)
+        self.assertTrue(any("not found in the claim" in w for w in result.warnings))
+
+    def test_an_item_with_no_verifiable_links_fails_mechanically(self):
+        items = [
+            _item("T1", "technicals", "bullish",
+                  "The 14-day RSI (71.2) is above 70.",
+                  [_link("14-day RSI", "technicals.rsi_9", 71.2)]),
+        ] + DEFENDER_ITEMS[1:]
+        result, _ = _run(
+            _replies(defender_opening=_defender_opening(items=items)),
+            retry_replies={"defender_opening": _defender_opening(items=items)},
+        )
+        t1 = _item_by_id(result, "T1")
+        self.assertEqual(t1["links"], [])
+        self.assertEqual(t1["value_check"]["verdict"], "invalid")
+        self.assertEqual(t1["final_status"], "excluded")
 
 
 class ScoreHandlingTest(unittest.TestCase):
-    def test_keep_resolves_to_the_initial_score(self):
-        result, _ = _run(_replies(reply=_reply(adjusted_score="keep")))
-        self.assertEqual(result.verdict.adjusted_score, 8)
-        self.assertTrue(result.verdict.adjusted_kept)
-        # weight 1.0, adjusted 8 → final 8.00 → buy
-        self.assertEqual(result.verdict.final_score, 8.0)
-
     def test_no_challenges_skips_the_defender_reply(self):
-        # Full coverage, no attacks, no additions → 5 calls, score kept.
         match_map = [
             {"own_id": item["id"], "covered_by": item["id"]} for item in DEFENDER_ITEMS
         ]
@@ -547,55 +661,21 @@ class ScoreHandlingTest(unittest.TestCase):
                     checks={i["id"]: _checks() for i in DEFENDER_ITEMS},
                     match_map=match_map,
                 ),
-                judge=_judge(attack_rulings={}, addition_rulings={}),
+                judge=_judge(
+                    reason_checks={i["id"]: _checks() for i in DEFENDER_ITEMS},
+                    attack_rulings={},
+                ),
             )
         )
         self.assertNotIn("reply", fake.stages())
         self.assertEqual(len(fake.prompts), 5)
-        self.assertTrue(result.verdict.adjusted_kept)
-        self.assertEqual(result.verdict.adjusted_score, 8)
+        # Nothing challenged → adjusted pool = initial pool.
+        self.assertEqual(result.verdict.adjusted_score, result.verdict.initial_score)
         self.assertTrue(any("defender response skipped" in w for w in result.warnings))
-
-    def test_non_whole_adjusted_score_voids_after_retry(self):
-        result, _ = _run(_replies(reply=_reply(adjusted_score=7.5)))
-        self.assertIsNone(result.verdict)
-        self.assertTrue(
-            any("defender reply invalid after retry" in w for w in result.warnings)
-        )
-        # The partial tree survives for the UI.
-        self.assertEqual(len(result.items), 5)
-
-
-class CitationRulesTest(unittest.TestCase):
-    def test_group_path_citations_are_stripped_leaves_kept(self):
-        items = [
-            _item("T1", "technicals", "bullish", "MACD crossed up.",
-                  ["technicals.macd", "technicals.macd.signal"]),
-            _item("T2", "technicals", "bullish", "Price holds above 100.",
-                  ["technicals.close"]),
-            _item("S1", "sentiment", "bullish", "A big deal was announced.", ["citation:1"]),
-            _item("S2", "sentiment", "bearish", "Coverage may be one-sided.", ["citation:1"]),
-        ]
-        result, _ = _run(_replies(defender_opening=_defender_opening(items=items)))
-        t1 = _item_by_id(result, "T1")
-        self.assertEqual(t1["citations"], ["technicals.macd.signal"])
-        self.assertTrue(
-            any("does not resolve to a single value" in w for w in result.warnings)
-        )
-
-    def test_out_of_range_sentiment_citations_are_stripped(self):
-        items = [dict(DEFENDER_ITEMS[0]), dict(DEFENDER_ITEMS[1]),
-                 _item("S1", "sentiment", "bullish", "A big deal was announced.",
-                       ["citation:1", "citation:9"]),
-                 dict(DEFENDER_ITEMS[3])]
-        result, _ = _run(_replies(defender_opening=_defender_opening(items=items)))
-        self.assertEqual(_item_by_id(result, "S1")["citations"], ["citation:1"])
 
 
 class RetryContractTest(unittest.TestCase):
     def test_an_invalid_first_reply_is_retried_with_the_errors_shown(self):
-        # First defender opening breaks the per-dimension floor (one lonely
-        # technicals item); the retry is valid and the run completes.
         bad = _defender_opening(
             items=[DEFENDER_ITEMS[0], DEFENDER_ITEMS[2], DEFENDER_ITEMS[3]]
         )
@@ -616,13 +696,12 @@ class RetryContractTest(unittest.TestCase):
     def test_items_in_a_dimension_without_data_are_rejected(self):
         items = DEFENDER_ITEMS + [
             _item("F1", "fundamentals", "bullish", "Margins are widening.",
-                  ["technicals.close"]),
+                  [_link("Margins", "technicals.close", 100.0)]),
             _item("F2", "fundamentals", "bullish", "Revenue grew.",
-                  ["technicals.close"]),
+                  [_link("Revenue", "technicals.close", 100.0)]),
         ]
-        bad = _defender_opening(items=items)
         result, fake = _run(
-            _replies(defender_opening=bad),
+            _replies(defender_opening=_defender_opening(items=items)),
             retry_replies={"defender_opening": _defender_opening()},
         )
         self.assertIsNotNone(result.verdict)
@@ -640,7 +719,7 @@ class RetryContractTest(unittest.TestCase):
             {"own_id": "S2", "covered_by": "S2"},
             {"own_id": "S3", "covered_by": None},
         ]
-        result, fake = _run(
+        result, _ = _run(
             _replies(review=_review(match_map=bad_map)),
             retry_replies={"review": _review()},
         )
@@ -659,18 +738,17 @@ class FailureRulesTest(unittest.TestCase):
         )
 
     def test_attacker_opening_invalid_twice_degrades_to_checks_only(self):
-        # Without the independent list there is no addition, so the reply
-        # and judge fixtures must not mention S3.
         responses = {
             "T2:logic": _checks(
                 logic=_check("invalid", "The claim was about the level.", ["technicals.close"])
             )
         }
+        reason_checks = {i["id"]: _checks() for i in DEFENDER_ITEMS}
         result, fake = _run(
             _replies(
                 attacker_opening="not json",
                 reply=_reply(responses=responses),
-                judge=_judge(addition_rulings={}),
+                judge=_judge(reason_checks=reason_checks),
             )
         )
         self.assertIsNotNone(result.verdict)
@@ -679,28 +757,23 @@ class FailureRulesTest(unittest.TestCase):
             any("attacker opening invalid after retry — proceeding without additions" in w
                 for w in result.warnings)
         )
-        # No additions can exist without the independent list.
         self.assertEqual(len(result.items), 4)
 
     def test_attacker_review_invalid_twice_degrades_to_no_challenges(self):
-        # With no review there are no attacks and no additions, so the
-        # judge fixture must carry only its own reason checks.
+        reason_checks = {i["id"]: _checks() for i in DEFENDER_ITEMS}
         result, fake = _run(
             _replies(
                 review="not json",
-                judge=_judge(attack_rulings={}, addition_rulings={}),
+                judge=_judge(reason_checks=reason_checks, attack_rulings={}),
             )
         )
         self.assertIsNotNone(result.verdict)
         self.assertTrue(
             any("attacker review invalid after retry" in w for w in result.warnings)
         )
-        # No challenges → the reply stage is skipped; the judge still
-        # reviews every reason on its own.
         self.assertNotIn("reply", fake.stages())
-        self.assertEqual(
-            (result.verdict.weight_numerator, result.verdict.weight_denominator), (4, 4)
-        )
+        # No additions → pools count only the defender's list.
+        self.assertEqual(result.verdict.pools["final"]["total"], 4)
 
     def test_judge_invalid_twice_voids_but_keeps_the_tree(self):
         result, _ = _run(_replies(judge="not json"))
@@ -756,23 +829,26 @@ class UsageTrackingTest(unittest.TestCase):
 
 
 class PromptContentTest(unittest.TestCase):
-    def test_opening_prompts_carry_evidence_and_the_rules(self):
+    def test_opening_prompts_carry_the_ceilings_and_the_link_rules(self):
         _, fake = _run()
         defender = next(p for p in fake.prompts if "You are the DEFENDER analyst" in p)
-        self.assertIn("rsi_14", defender)
-        self.assertIn("2 to 4", defender)
-        self.assertIn("no_data_dimensions", defender)
+        self.assertIn("technicals: 2-4", defender)
+        self.assertIn("sentiment: 2-4", defender)
+        self.assertIn("room, not a quota", defender)
+        self.assertIn("Link rules", defender)
+        self.assertIn("automatically fails the item's citation", defender)
+        self.assertIn("You give no score", defender)
         attacker = next(
             p for p in fake.prompts if "You are the ATTACKER analyst, working alone" in p
         )
         self.assertIn("you have NOT seen it", attacker)
-        self.assertNotIn("initial_score", attacker)
 
-    def test_review_prompt_shows_both_lists_and_the_required_ids(self):
+    def test_review_prompt_shows_both_lists_and_the_verified_values_rule(self):
         _, fake = _run()
         review = next(p for p in fake.prompts if "Compare the two evidence lists" in p)
-        self.assertIn("The deal is not closed yet.", review)  # own list
-        self.assertIn("RSI shows strong momentum.", review)  # defender list
+        self.assertIn("The deal is not closed yet.", review)
+        self.assertIn("The 14-day RSI (71.2)", review)
+        self.assertIn("Code has already", review)
         self.assertIn("T1, T2, S1, S2", review)
 
     def test_reply_prompt_lists_every_challenge_with_its_key(self):
@@ -783,47 +859,46 @@ class PromptContentTest(unittest.TestCase):
         self.assertIn('"T2:logic"', reply)
         self.assertIn('"add:S3"', reply)
         self.assertIn("you MISSED this", reply)
-        self.assertIn('"keep"', reply)
+        self.assertIn("You give no", reply)
 
-    def test_judge_prompt_carries_the_tree_and_the_ruling_keys(self):
+    def test_judge_prompt_requires_checks_for_every_item_including_additions(self):
         _, fake = _run()
         judge = next(p for p in fake.prompts if "You are the JUDGE with the final say" in p)
-        self.assertIn("added by the ATTACKER", judge)
-        self.assertIn("attacker logic check (T2:logic)", judge)
-        self.assertIn("defender response: REJECTED", judge)
+        self.assertIn('"reason_checks" must cover exactly: T1, T2, S1, S2, S3', judge)
         self.assertIn('"attack_rulings" must cover exactly: T2:logic', judge)
-        self.assertIn('"addition_rulings" must cover exactly: S3', judge)
+        self.assertIn("added by the ATTACKER", judge)
+        self.assertIn("regardless of what the defender said", judge)
 
-    def test_summary_prompt_carries_the_computed_numbers(self):
+    def test_summary_prompt_carries_the_computed_pool_scores(self):
         _, fake = _run()
         summary = next(p for p in fake.prompts if "Write the user-facing report" in p)
-        self.assertIn("weight = 5/5", summary)
-        self.assertIn("final = 5 + weight × (adjusted − 5) = 7.00", summary)
+        self.assertIn("initial score 7.50", summary)
+        self.assertIn("adjusted score 6.67", summary)
+        self.assertIn("final score 6.67", summary)
+        self.assertIn("3 bullish vs 2 bearish of 5", summary)
         self.assertIn("verdict: buy", summary)
 
 
 class DetailShapeTest(unittest.TestCase):
-    def test_to_detail_is_json_ready_with_the_v5_marker_and_legacy_keys(self):
+    def test_to_detail_is_json_ready_with_the_v6_marker_and_legacy_keys(self):
         result, _ = _run()
         detail = result.to_detail()
         json.dumps(detail)  # must not raise
-        self.assertEqual(detail["format"], 5)
+        self.assertEqual(detail["format"], 6)
         self.assertEqual(detail["turns"], [])
         self.assertEqual(len(detail["items"]), 5)
         verdict = detail["verdict"]
         self.assertEqual(verdict["direction"], "buy")
-        self.assertEqual(verdict["final_score"], 7.0)
-        self.assertEqual(verdict["initial_score"], 8)
-        self.assertEqual(verdict["adjusted_score"], 7)
-        self.assertFalse(verdict["adjusted_kept"])
-        self.assertEqual(
-            verdict["weight"], {"numerator": 5, "denominator": 5, "value": 1.0}
-        )
-        # Legacy keys pre-v5 readers touch must exist and be inert.
+        self.assertEqual(verdict["final_score"], 6.67)
+        self.assertEqual(verdict["initial_score"], 7.5)
+        self.assertEqual(verdict["adjusted_score"], 6.67)
+        self.assertIn("final", verdict["pools"])
+        self.assertEqual(verdict["pools"]["final"]["total"], 5)
+        # Legacy keys pre-v6 readers touch must exist and be inert.
         self.assertIsNone(verdict["confidence"])
         self.assertIsNone(verdict["scoring"])
+        self.assertIsNone(verdict["weight"])
         self.assertEqual(verdict["reasons_for"], [])
-        self.assertEqual(verdict["reasons_against"], [])
 
     def test_voided_run_still_serializes_its_partial_tree(self):
         result, _ = _run(_replies(judge="not json"))
@@ -859,12 +934,9 @@ class TestTier2Stage(unittest.TestCase):
                 direction=direction,
                 final_score=6.0,
                 summary="ruling",
-                initial_score=7,
-                adjusted_score=6,
-                adjusted_kept=False,
-                weight_numerator=3,
-                weight_denominator=3,
-                weight=1.0,
+                initial_score=7.5,
+                adjusted_score=6.5,
+                pools={},
             ),
         )
 
@@ -879,7 +951,7 @@ class TestTier2Stage(unittest.TestCase):
         self.assertAlmostEqual(report.levels.entry, 96.0)
         self.assertEqual(report.narrative, "ruling")
         self.assertIsNotNone(report.debate_detail)
-        self.assertEqual(report.debate_detail["format"], 5)
+        self.assertEqual(report.debate_detail["format"], 6)
 
     def test_no_verdict_falls_back_to_tier1_direction(self):
         engine = _FakeEngine(DebateResult(warnings=["judge exploded"]))

@@ -71,7 +71,17 @@ export type TieredDebaterScore = {
   notes?: string | null;
 };
 
-// --- v5 debate tree (defender/attacker/judge) ---
+// --- v5/v6 debate tree (defender/attacker/judge) ---
+
+// v6 inline citation: the exact words in the claim, the leaf field they
+// cite, and (payload refs) the claimed value — all verified by code.
+// mismatch marks a value the report contradicts (auto-failed).
+export type TieredDebateLink = {
+  text: string;
+  ref: string;
+  value: number | string | null;
+  mismatch?: boolean;
+};
 
 // One citation-or-logic check; 'invalid' carries the reason + citations.
 export type TieredDebateCheck = {
@@ -104,13 +114,17 @@ export type TieredDebateJudgeAddition = {
   citations: string[];
 };
 
-// One evidence item of the v5 tree with everything that happened to it.
+// One evidence item of the tree with everything that happened to it.
+// v5 runs store citations + the count/outcome ledger; v6 runs store
+// links + value_check + final_status — all optional so both render.
 export type TieredDebateItem = {
   id: string;
   dimension: string;
   direction: 'bullish' | 'bearish';
   claim: string;
-  citations: string[];
+  citations?: string[];
+  links?: TieredDebateLink[];
+  value_check?: { verdict: 'valid' | 'invalid'; problems: string[] } | null;
   added_by_attacker: boolean;
   attacker_checks: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;
   responses: {
@@ -122,8 +136,23 @@ export type TieredDebateItem = {
     | { citation: TieredDebateJudgeAxis; logic: TieredDebateJudgeAxis }
     | TieredDebateJudgeAddition
     | null;
-  count: { numerator: number; denominator: number } | null;
-  outcome: 'valid' | 'invalid' | 'neutral' | null;
+  count?: { numerator: number; denominator: number } | null;
+  outcome?: 'valid' | 'invalid' | 'neutral' | null;
+  final_status?: 'counted' | 'excluded' | null;
+  exclusion_reason?: string | null;
+};
+
+// v6 pool snapshot: per-dimension bullish/bearish counts and 10×b/n
+// scores, plus the pool-wide totals and the averaged score.
+export type TieredDebatePool = {
+  dimensions: Record<
+    string,
+    { bullish: number; bearish: number; total: number; score: number | null }
+  >;
+  bullish: number;
+  bearish: number;
+  total: number;
+  score: number | null;
 };
 
 // Bull/bear debate audit trail (tier-2 section). Four generations coexist
@@ -160,11 +189,17 @@ export type TieredDebateDetail = {
     bull_summary?: string | null;
     bear_summary?: string | null;
     scoring?: { bull: TieredDebaterScore; bear: TieredDebaterScore } | null;
-    // v5 tree shape
+    // v5/v6 tree shape (v5 scores are whole numbers + weight; v6 scores
+    // are 2-decimal pool counts + pools)
     initial_score?: number | null;
     adjusted_score?: number | null;
     adjusted_kept?: boolean | null;
     weight?: { numerator: number; denominator: number; value: number } | null;
+    pools?: {
+      initial: TieredDebatePool;
+      adjusted: TieredDebatePool;
+      final: TieredDebatePool;
+    } | null;
   } | null;
   warnings: string[];
 };

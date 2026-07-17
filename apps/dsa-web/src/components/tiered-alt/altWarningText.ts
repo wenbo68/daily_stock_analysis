@@ -117,6 +117,23 @@ const NOTE_RULES: NoteRule[] = [
     pattern: /^no usable entry price — cannot place a stop$/,
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
+  // --- v6 tree-debate notes ---
+  {
+    pattern: /citation check failed mechanically$/,
+    toText: (_m, t) => t('tiered.note.valueMismatch'),
+  },
+  {
+    pattern: / — link dropped$/,
+    toText: (_m, t) => t('tiered.note.linkDropped'),
+  },
+  {
+    pattern: /evidence restored to the final pool$/,
+    toText: (_m, t) => t('tiered.note.restoredEvidence'),
+  },
+  {
+    pattern: /included in the final pool$/,
+    toText: (_m, t) => t('tiered.note.includedAddition'),
+  },
   // --- v5 tree-debate notes ---
   {
     pattern: /^(?:defender opening|defender reply|judge rulings) invalid after retry — tier-2 verdict voided$/,

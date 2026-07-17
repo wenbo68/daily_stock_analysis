@@ -189,55 +189,66 @@ they can't be known in advance.
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 
-## 6. Tier-2 evidence debate (v5 redesign, `debate.py` + `debate_models.py`)
+## 6. Tier-2 evidence debate (v6, `debate.py` + `debate_models.py`)
 
-One evidence pool, three roles, no forced bull/bear personas
-(owner spec 2026-07-17; full design in `.claude/reviews/tier2-v5-design.md`):
+One evidence pool, three roles, no forced bull/bear personas, and no
+AI-authored numbers anywhere (owner spec 2026-07-18; full design in
+`.claude/reviews/tier2-v5-design.md`, v6 revision section):
 
 ```
 step 1  DEFENDER lists ALL evidence (bullish + bearish) per dimension
-        (2-4 items per dimension with data) + initial position score
      ‖  ATTACKER independently builds its own list (blind, in parallel)
 step 2  ATTACKER matches the two lists (uncovered own items become
         additions), then checks every defender item on two axes:
         citation and logic
 step 3  DEFENDER responds to every challenge by running the same two
         checks ON the challenge itself: both valid → accept (concede /
-        adopt), either invalid → rejection; then the adjusted score
-        (whole 0-10 or "keep"). Skipped when nothing was challenged.
-step 4  JUDGE, final say, binary rulings only: its own checks on every
-        defender item, attack_right/attack_wrong per attack,
-        real/bogus per addition
+        adopt), either invalid → rejection. Skipped when nothing was
+        challenged. No score output.
+step 4  JUDGE, final say: its own citation+logic check pair on EVERY
+        item (defender-listed and attacker-added alike), plus
+        attack_right/attack_wrong per attack
 step 5  summary prose around the computed numbers (never voids)
 ```
 
-Every stage fills a strict Pydantic form; an invalid reply gets one
-retry with the validation errors shown. Defender/judge failures void the
-tier-2 verdict (direction falls back to tier 1); attacker failures
-degrade loudly (checks-only review, or no challenges at all). Citations
-must resolve to a single payload value (leaf paths — `technicals.macd`
-is rejected, `technicals.macd.signal` passes) or an in-range sentiment
-`citation:N`; invalid refs are stripped by code.
+Per-dimension item counts: floor 2, ceiling = the number of leaf fields
+in that dimension's report (sentiment: verified sources × 2) — room for
+the whole report, not a quota. Macro-econ ids are E1, E2….
 
-The weight ledger (code, not LLM — one principle):
+Every claim carries inline links ``{text, ref, value}`` — the exact
+words in the sentence, the leaf field cited, and the claimed value.
+Code verifies mechanically: the text appears verbatim in the claim, the
+ref resolves to a single value (`technicals.macd` rejected,
+`technicals.macd.signal` passes), the value equals the report's (rounding
+tolerance = half a unit at the claimed precision) and appears literally
+in the sentence. Problems are shown back once for a retry; a mismatch
+surviving the retry auto-fails the item's citation check — code
+overrules everyone. The AI citation checks then judge whether the
+sentence says something TRUE about the verified values; the logic checks
+judge whether the direction tag follows.
+
+The score (code, pure counting — the v5 weight formula is gone):
 
 ```
-1/1  every item the defender correctly kept in the pool
-0/1  every item the defender got wrong (kept bad / dropped good,
-     per the judge)
-0/0  items correctly removed (conceded reasons, rejected bogus
-     additions) — they don't count at all
+per dimension  score_d = 10 × bullish_d / total_d
+overall        mean of the dimension scores present in the pool
+                                                       (2 decimals)
 
-weight = correct keeps / (correct keeps + errors)      (0 on 0/0 ledger)
-final  = 5 + weight × (adjusted − 5)                   2 decimals
+initial   = the defender's raw list
+adjusted  = the pool as the defender's responses leave it
+            (conceded items out, accepted additions in)
+final     = the pool as the judge + code ruled it: an item counts unless
+            its value check failed, an attack on it was upheld, or a
+            judge check on it is invalid. The defender's stance is
+            irrelevant here — wrongly conceded items are restored,
+            judge-approved additions count even if refused (flag notes).
+
 direction = sell if final < 4, hold if 4 ≤ final ≤ 6, else buy
+empty final pool → 5.00, hold, warning
 ```
 
-The weight shrinks the defender's conviction toward neutral 5 by exactly
-the share of the evidence pool it mishandled; garbage arguments can
-never produce a strong verdict, only "do nothing". Flags that never
-change numbers: the defender accepting an attack the judge ruled wrong,
-and a thin base (more than half the initial reasons died). All tier-2
-LLM calls run at temperature 0 (`deterministic_summarizer`); 6 calls per
-run across 5 sequential steps (the two openings run in parallel; the
-defender-reply call is skipped when there are no challenges).
+6 calls per run across 5 sequential steps (openings parallel; the reply
+call skipped when there are no challenges), all at temperature 0
+(`deterministic_summarizer`). Defender/judge failures void (tier-1
+direction stands); attacker failures degrade loudly; the summary's
+failure never voids anything.

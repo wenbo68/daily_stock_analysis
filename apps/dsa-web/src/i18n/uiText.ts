@@ -941,7 +941,7 @@ const zh = {
   'tiered.levelModal.rejectedNote': '该调整未通过程序校验，已被拒绝——实际使用公式基准价。',
   'tiered.debate.title': '第 2 层 · 多空辩论',
   'tiered.help.debate':
-    '守方通读四份报告，列出全部看多与看空证据并给出初始立场分。\n攻方先独立列出自己的证据清单，再逐条检查守方证据（引用、逻辑），并补上守方遗漏的证据。\n守方对每条质疑做同样的检查：都成立就接受，否则驳回；然后给出调整后立场分。\n裁判对每个争议做二选一裁定，代码据此算出权重和最终得分——AI 不经手任何数字。\n所有 AI 都只能引用四份报告里的证据，且引用必须指向单一数值。',
+    '守方通读四份报告，列出全部看多与看空证据并给出初始立场分。\n攻方先独立列出自己的证据清单，再逐条检查守方证据（引用、逻辑），并补上守方遗漏的证据。\n守方对每条质疑做同样的检查：都成立就接受，否则驳回；然后给出调整后立场分。\n裁判对每个争议做二选一裁定；代码校验每个引用的数值、按看多/看空条数算出得分——AI 不经手任何数字。\n所有 AI 都只能引用四份报告里的证据，且引用必须指向单一数值。',
   'tiered.debate.confidence': '裁判信心',
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
@@ -997,6 +997,16 @@ const zh = {
   'tiered.tree.kept': '（维持）',
   'tiered.tree.weightWords': '正确保留数 / (正确保留数 + 失误数)',
   'tiered.tree.ranges': '低于 4 卖出 · 4–6 持有 · 高于 6 买入',
+  'tiered.tree.newlyAdded': '新增证据',
+  'tiered.tree.code': '代码',
+  'tiered.tree.countedWord': '计入',
+  'tiered.tree.excludedWord': '不计入',
+  'tiered.tree.finalScore': '最终立场分',
+  'tiered.tree.total': '总条数',
+  'tiered.note.valueMismatch': '某条证据引用的数值与报告不符——代码自动判其引用检查无效，任何 AI 都不能推翻。',
+  'tiered.note.linkDropped': '某条证据的引用无法通过代码校验——该引用已剔除。',
+  'tiered.note.restoredEvidence': '守方让步的一个质疑被裁判判定不成立——该证据已恢复计入最终得分。',
+  'tiered.note.includedAddition': '守方驳回的一条新增证据被裁判判定成立——该证据已计入最终得分。',
   'tiered.note.stageInvalid': '辩论中的某个 AI 连续两次给出不合规的回复，本层结论作废——方向沿用第 1 层。',
   'tiered.note.attackerDegraded': '攻方连续给出不合规的回复，本次没有质疑和补充证据——裁判仍独立复核了每条理由。',
   'tiered.note.stageRetried': '某个辩论回复第一次不合规，重试一次后通过。',
@@ -1006,7 +1016,7 @@ const zh = {
   'tiered.note.thinBase': '守方最初的证据大多未能成立——权重建立在较薄的证据基础上。',
   'tiered.note.treeBadRefs': '{side}引用的证据无法解析为单一数值——无效引用已剔除。',
   'tiered.help.debateScore':
-    '辩论得出的最终立场分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 卖出，4–6 持有，高于 6 买入。\n固定公式：最终得分 = 5 + 权重 × (调整后立场分 − 5)，权重 = 正确保留的证据数 ÷ (正确保留数 + 失误数)——见辩论树底部的「评分」。',
+    '辩论得出的最终立场分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 卖出，4–6 持有，高于 6 买入。\n完全由代码计数得出：每个维度得分 = 10 × 看多条数 ÷ 总条数，再对各维度取平均；只统计经受住检验的证据——见辩论树底部的「评分」。',
   'tiered.risk.title': '第 3 层 · 风险压力测试',
   'tiered.help.risk':
     '三个风险审查者——保守、激进、中立——分别挑剔层级 2 的结论。\n风险裁判汇总成本结论、仓位倍数和止损。',
@@ -2110,7 +2120,7 @@ const en: Record<UiTextKey, string> = {
     'This proposal failed the code-side safety checks and was rejected — the formula base is used instead.',
   'tiered.debate.title': 'Tier 2 · Bull/bear debate',
   'tiered.help.debate':
-    'A defender reads the four reports, lists ALL the evidence — bullish and bearish — and gives an initial position score.\nAn attacker first builds its own independent list, then checks every defender item (citation, logic) and adds what was missed.\nThe defender runs the same checks on each challenge: both pass → accept, either fails → reject; then it gives an adjusted score.\nA judge makes a binary ruling on every dispute; code turns those rulings into the weight and the final score — no AI touches the numbers.\nEvery AI may cite only the evidence in the four reports, and every citation must point at a single value.',
+    'A defender reads the four reports, lists ALL the evidence — bullish and bearish — and gives an initial position score.\nAn attacker first builds its own independent list, then checks every defender item (citation, logic) and adds what was missed.\nThe defender runs the same checks on each challenge: both pass → accept, either fails → reject; then it gives an adjusted score.\nA judge makes a binary ruling on every dispute; code verifies every cited value and counts the surviving bullish vs bearish items into the score — no AI touches the numbers.\nEvery AI may cite only the evidence in the four reports, and every citation must point at a single value.',
   'tiered.debate.confidence': 'Judge confidence',
   'tiered.help.debateConfidence':
     'How sure the judge AI is of its own verdict, from 0 to 1 — higher means more confident.',
@@ -2169,6 +2179,19 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.kept': '(kept)',
   'tiered.tree.weightWords': 'correct keeps / (correct keeps + errors)',
   'tiered.tree.ranges': 'below 4 sell · 4–6 hold · above 6 buy',
+  'tiered.tree.newlyAdded': 'newly added',
+  'tiered.tree.code': 'code',
+  'tiered.tree.countedWord': 'counted',
+  'tiered.tree.excludedWord': 'excluded',
+  'tiered.tree.finalScore': 'final position score',
+  'tiered.tree.total': 'total items',
+  'tiered.note.valueMismatch':
+    'A claim cited a value that does not match the report — code automatically failed its citation check; no AI can overrule that.',
+  'tiered.note.linkDropped': 'A claim carried a reference that failed the code checks — that reference was dropped.',
+  'tiered.note.restoredEvidence':
+    'The defender conceded an attack the judge ruled wrong — that evidence was restored into the final score.',
+  'tiered.note.includedAddition':
+    'The defender rejected added evidence the judge ruled valid — it was counted in the final score anyway.',
   'tiered.note.stageInvalid':
     'One of the debate AIs kept returning an invalid reply, so the tier-2 verdict was voided — the direction falls back to tier 1.',
   'tiered.note.attackerDegraded':
@@ -2184,7 +2207,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.treeBadRefs':
     'The {side} cited evidence that does not point at a single value — invalid references were dropped.',
   'tiered.help.debateScore':
-    'The debate’s final position score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 sell, 4–6 hold, above 6 buy.\nFixed formula: final = 5 + weight × (adjusted − 5), where weight = correctly kept evidence ÷ (correct keeps + errors) — see Scores at the bottom of the debate tree.',
+    'The debate’s final position score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 sell, 4–6 hold, above 6 buy.\nPure counting by code: each dimension scores 10 × bullish items ÷ total items, averaged across dimensions — over only the evidence that survived checking. See Scores at the bottom of the debate tree.',
   'tiered.risk.title': 'Tier 3 · Risk stress test',
   'tiered.help.risk':
     'Three risk reviewers — conservative, aggressive, neutral — critique the tier-2 verdict.\nA risk judge merges them into this verdict, the size and the stop loss.',

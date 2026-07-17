@@ -387,6 +387,118 @@ function makeTreeDebate(): TieredDebateDetail {
   };
 }
 
+
+// A v6 tree audit trail: inline value-checked links, unified judge check
+// pairs, deterministic pool scores. T1 counted; T2 excluded by the code's
+// value check (claimed 999 vs the report's 100); addition S1 (bearish)
+// counted. Pools: initial tech-only 10.00; adjusted/final (10 + 0)/2 = 5.00.
+function makeTreeDebateV6(): TieredDebateDetail {
+  const valid = { verdict: 'valid' as const, reason: null, citations: [] };
+  const judgeValidPair = {
+    citation: { kind: 'reason_check' as const, verdict: 'valid' as const, reason: null, citations: [] },
+    logic: { kind: 'reason_check' as const, verdict: 'valid' as const, reason: null, citations: [] },
+  };
+  return {
+    format: 6,
+    turns: [],
+    items: [
+      {
+        id: 'T1',
+        dimension: 'technicals',
+        direction: 'bullish',
+        claim: 'The 14-day RSI (71.2) is above 70.',
+        links: [{ text: '14-day RSI', ref: 'technicals.rsi_14', value: 71.2 }],
+        value_check: { verdict: 'valid', problems: [] },
+        added_by_attacker: false,
+        attacker_checks: { citation: valid, logic: valid },
+        responses: { citation: null, logic: null },
+        response: null,
+        judge: judgeValidPair,
+        final_status: 'counted',
+        exclusion_reason: null,
+      },
+      {
+        id: 'T2',
+        dimension: 'technicals',
+        direction: 'bullish',
+        claim: 'The closing price (999.0) holds above support.',
+        links: [{ text: 'closing price', ref: 'technicals.close', value: 999.0, mismatch: true }],
+        value_check: {
+          verdict: 'invalid',
+          problems: ["claimed 999.0 for technicals.close, the report says 100.0"],
+        },
+        added_by_attacker: false,
+        attacker_checks: { citation: valid, logic: valid },
+        responses: { citation: null, logic: null },
+        response: null,
+        judge: judgeValidPair,
+        final_status: 'excluded',
+        exclusion_reason: 'value_mismatch',
+      },
+      {
+        id: 'S1',
+        dimension: 'sentiment',
+        direction: 'bearish',
+        claim: 'The deal is not closed yet.',
+        links: [{ text: 'deal', ref: 'citation:1', value: null }],
+        value_check: { verdict: 'valid', problems: [] },
+        added_by_attacker: true,
+        attacker_checks: null,
+        responses: { citation: null, logic: null },
+        response: { accepted: true, citation_check: valid, logic_check: valid },
+        judge: judgeValidPair,
+        final_status: 'counted',
+        exclusion_reason: null,
+      },
+    ],
+    verdict: {
+      direction: 'hold',
+      summary: 'Only balanced evidence survived.',
+      final_score: 5.0,
+      final_score_rounded: 5,
+      initial_score: 10.0,
+      adjusted_score: 5.0,
+      pools: {
+        initial: {
+          dimensions: { technicals: { bullish: 2, bearish: 0, total: 2, score: 10.0 } },
+          bullish: 2,
+          bearish: 0,
+          total: 2,
+          score: 10.0,
+        },
+        adjusted: {
+          dimensions: {
+            technicals: { bullish: 2, bearish: 0, total: 2, score: 10.0 },
+            sentiment: { bullish: 0, bearish: 1, total: 1, score: 0.0 },
+          },
+          bullish: 2,
+          bearish: 1,
+          total: 3,
+          score: 5.0,
+        },
+        final: {
+          dimensions: {
+            technicals: { bullish: 1, bearish: 0, total: 1, score: 10.0 },
+            sentiment: { bullish: 0, bearish: 1, total: 1, score: 0.0 },
+          },
+          bullish: 1,
+          bearish: 1,
+          total: 2,
+          score: 5.0,
+        },
+      },
+      confidence: null,
+      reasons_for: [],
+      reasons_against: [],
+      would_change_mind: null,
+      bull_summary: null,
+      bear_summary: null,
+      scoring: null,
+    },
+    warnings: [],
+  };
+}
+
 function renderResult(result: TieredResult) {
   render(
     <MemoryRouter>
@@ -720,7 +832,7 @@ describe('AltResult v5 debate tree', () => {
     expect(t2).toHaveTextContent(/counted 0\/1|计 0\/1/);
     // The addition is tagged and ruled real.
     const s2 = screen.getByTestId('alt-tree-item-S2');
-    expect(s2).toHaveTextContent(/added by attacker|攻方补充/);
+    expect(s2).toHaveTextContent(/newly added|新增证据/);
     expect(s2).toHaveTextContent(/real|成立/);
   });
 
@@ -743,7 +855,7 @@ describe('AltResult v5 debate tree', () => {
     renderTree();
     fireEvent.click(screen.getByTestId('alt-tree-step-1'));
     // Attacker material and judge rulings disappear…
-    expect(screen.queryByText(/added by attacker|攻方补充/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/newly added|新增证据/)).not.toBeInTheDocument();
     expect(screen.queryByText(/attack upheld|质疑成立/)).not.toBeInTheDocument();
     expect(screen.queryByText(/counted|计 /)).not.toBeInTheDocument();
     // …the defender items and initial score stay.
@@ -760,7 +872,7 @@ describe('AltResult v5 debate tree', () => {
     expect(t2).toHaveTextContent('One price point is not a trend.');
     expect(t2).not.toHaveTextContent('The attack ignores the moving averages.');
     expect(screen.getByTestId('alt-tree-item-S2')).toHaveTextContent(
-      /added by attacker|攻方补充/,
+      /newly added|新增证据/,
     );
     expect(t2).not.toHaveTextContent(/attack upheld|质疑成立/);
   });
@@ -781,5 +893,70 @@ describe('AltResult v5 debate tree', () => {
     expect(screen.getByText(/no usable verdict|未产生可用结论/)).toBeInTheDocument();
     expect(screen.getByTestId('alt-debate-tree')).toBeInTheDocument();
     expect(screen.queryByTestId('alt-tree-scores')).not.toBeInTheDocument();
+  });
+});
+
+describe('AltResult v6 debate tree', () => {
+  function renderTreeV6() {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeTreeDebateV6();
+    deep.tier2!.narrative = 'Only balanced evidence survived.';
+    renderResult(deep);
+  }
+
+  it('renders claims with the cited words as inline links, no trailing chips', () => {
+    renderTreeV6();
+    const link = within(screen.getByTestId('alt-tree-item-T1')).getByRole('button', {
+      name: '14-day RSI',
+    });
+    expect(link).toBeInTheDocument();
+    // No chip with the raw ref path next to the claim.
+    expect(
+      within(screen.getByTestId('alt-tree-item-T1')).queryByText('technicals.rsi_14'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the code’s mechanical citation failure and the counted/excluded badges', () => {
+    renderTreeV6();
+    const t2 = screen.getByTestId('alt-tree-item-T2');
+    expect(t2).toHaveTextContent(/code|代码/);
+    expect(t2).toHaveTextContent('the report says 100.0');
+    expect(t2).toHaveTextContent(/excluded|不计入/);
+    expect(screen.getByTestId('alt-tree-item-T1')).toHaveTextContent(/counted|计入/);
+  });
+
+  it('renders the addition with the newly-added line and the judge’s two checks, no real/bogus words', () => {
+    renderTreeV6();
+    const s1 = screen.getByTestId('alt-tree-item-S1');
+    expect(s1).toHaveTextContent(/newly added|新增证据/);
+    expect(s1).not.toHaveTextContent(/real evidence|bogus/);
+    // defender's two checks + judge's two checks all render as check lines
+    expect(s1).toHaveTextContent(/citation check|引用检查/);
+    expect(s1).toHaveTextContent(/judge|裁判/);
+  });
+
+  it('shows the three pool scores and the per-dimension counting formula', () => {
+    renderTreeV6();
+    const scores = screen.getByTestId('alt-tree-scores');
+    expect(scores).toHaveTextContent('10.00');
+    expect(scores).toHaveTextContent(/adjusted position score|调整后立场分/);
+    expect(scores).toHaveTextContent('5.00');
+    // per-dimension breakdown of the final pool
+    expect(scores).toHaveTextContent(/technicals|技术面/i);
+    expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent(
+      '= (10.00 + 0.00) / 2',
+    );
+    expect(screen.getByTestId('alt-tree-verdict')).toHaveTextContent(/hold|持有/i);
+    // No weight block on v6 runs.
+    expect(scores).not.toHaveTextContent(/correct keeps|正确保留数/);
+  });
+
+  it('step 1 hides the addition and the checking machinery', () => {
+    renderTreeV6();
+    fireEvent.click(screen.getByTestId('alt-tree-step-1'));
+    expect(screen.queryByTestId('alt-tree-item-S1')).not.toBeInTheDocument();
+    expect(screen.queryByText(/newly added|新增证据/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('alt-tree-item-T2')).not.toHaveTextContent(/code|代码/);
+    expect(screen.queryByText(/excluded|不计入/)).not.toBeInTheDocument();
   });
 });

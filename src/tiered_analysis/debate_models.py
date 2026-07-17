@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Pydantic forms the tier-2 v5 debate forces its LLM calls to fill.
+"""Pydantic forms the tier-2 debate (v6) forces its LLM calls to fill.
 
-Every stage of the v5 debate (defender opening, attacker opening, attacker
+Every stage of the debate (defender opening, attacker opening, attacker
 review, defender reply, judge rulings) is a strict typed form, not free
 prose: the engine hands the model the exact JSON shape, validates the
 reply against these models, retries once with the validation errors shown,
@@ -22,15 +22,16 @@ DIMENSIONS: Tuple[str, ...] = ("technicals", "fundamentals", "macro_econ", "sent
 DIMENSION_PREFIX: Dict[str, str] = {
     "technicals": "T",
     "fundamentals": "F",
-    "macro_econ": "M",
+    "macro_econ": "E",
     "sentiment": "S",
 }
 
-#: Every dimension that has collected data must contribute this many
-#: evidence items — a floor so no dimension is skipped, a ceiling so runs
-#: stay comparable in size and cost.
+#: Every dimension that has collected data must contribute at least this
+#: many evidence items — a floor so no dimension is skipped. The ceiling is
+#: dynamic (v6): the number of leaf fields in that dimension's report
+#: (sentiment: verified sources × 2), never below the floor — room for the
+#: whole report, not a quota.
 MIN_ITEMS_PER_DIMENSION = 2
-MAX_ITEMS_PER_DIMENSION = 4
 
 Dimension = Literal["technicals", "fundamentals", "macro_econ", "sentiment"]
 ItemDirection = Literal["bullish", "bearish"]
@@ -42,22 +43,33 @@ class _StageModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class LinkModel(_StageModel):
+    """One inline citation: the exact words in the claim, the leaf field
+    they cite, and (for payload refs) the value the sentence claims —
+    all three are verified mechanically by code."""
+
+    text: str = Field(min_length=1)
+    ref: str = Field(min_length=1)
+    value: Optional[Union[float, str]] = None
+
+
 class EvidenceItemModel(_StageModel):
-    """One evidence item: an atomic cited claim with a direction tag."""
+    """One evidence item: an atomic claim with a direction tag whose cited
+    words carry inline, value-checked links."""
 
     id: str = Field(min_length=1)
     dimension: Dimension
     direction: ItemDirection
     claim: str = Field(min_length=1)
-    citations: List[str] = Field(min_length=1)
+    links: List[LinkModel] = Field(min_length=1)
 
 
 class DefenderOpeningModel(_StageModel):
-    """Stage 1a: the defender's full evidence list + initial score."""
+    """Stage 1a: the defender's full evidence list. No score — the
+    position scores are computed by code from the direction tags (v6)."""
 
     items: List[EvidenceItemModel] = Field(min_length=1)
     no_data_dimensions: List[str] = Field(default_factory=list)
-    initial_score: int = Field(ge=0, le=10)
 
 
 class AttackerOpeningModel(_StageModel):
@@ -105,17 +117,10 @@ class AttackerReviewModel(_StageModel):
 
 
 class DefenderReplyModel(_StageModel):
-    """Stage 3: the defender's mechanical response to every challenge
-    (checks ON the attack/addition itself) + the adjusted score."""
+    """Stage 3: the defender's mechanical response to every challenge —
+    checks ON the attack/addition itself. No score output (v6)."""
 
     responses: Dict[str, ItemChecksModel] = Field(default_factory=dict)
-    adjusted_score: Union[int, Literal["keep"]]
-
-    @model_validator(mode="after")
-    def _score_in_range(self) -> "DefenderReplyModel":
-        if isinstance(self.adjusted_score, int) and not 0 <= self.adjusted_score <= 10:
-            raise ValueError("adjusted_score must be a whole number 0-10 or \"keep\"")
-        return self
 
 
 class AttackRulingModel(_StageModel):
@@ -126,21 +131,14 @@ class AttackRulingModel(_StageModel):
     citations: List[str] = Field(default_factory=list)
 
 
-class AdditionRulingModel(_StageModel):
-    """Stage 4: the judge's binary ruling on one attacker addition."""
-
-    verdict: Literal["real", "bogus"]
-    reason: str = Field(min_length=1)
-    citations: List[str] = Field(default_factory=list)
-
-
 class JudgeModel(_StageModel):
-    """Stage 4: the judge's complete ruling set. The engine checks the key
-    sets cover exactly the defender items / attacks / additions."""
+    """Stage 4: the judge's complete ruling set — its own citation+logic
+    check pair for EVERY item (defender-listed and attacker-added alike;
+    an addition is "real" simply when both checks pass), plus a binary
+    ruling per attack. The engine checks the key sets exactly."""
 
     reason_checks: Dict[str, ItemChecksModel] = Field(default_factory=dict)
     attack_rulings: Dict[str, AttackRulingModel] = Field(default_factory=dict)
-    addition_rulings: Dict[str, AdditionRulingModel] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -149,13 +147,17 @@ class JudgeModel(_StageModel):
 
 
 def check_opening_items(
-    items: Sequence[EvidenceItemModel], data_dimensions: Sequence[str]
+    items: Sequence[EvidenceItemModel],
+    data_dimensions: Sequence[str],
+    max_per_dimension: Dict[str, int],
 ) -> None:
-    """Enforce the per-dimension floor/ceiling and the id scheme.
+    """Enforce the per-dimension floor/dynamic-ceiling and the id scheme.
 
     ``data_dimensions`` is the code-verified list of dimensions that have
     collected evidence — the "no data" escape hatch cannot be used for
     them, and dimensions outside it may not carry items.
+    ``max_per_dimension`` is the code-computed ceiling per dimension
+    (leaf-field count; sentiment sources × 2; never below the floor).
     """
     errors: List[str] = []
     seen_ids: Dict[str, str] = {}
@@ -177,15 +179,16 @@ def check_opening_items(
             )
     for dimension in data_dimensions:
         count = per_dimension.get(dimension, 0)
+        ceiling = max_per_dimension.get(dimension, MIN_ITEMS_PER_DIMENSION)
         if count < MIN_ITEMS_PER_DIMENSION:
             errors.append(
                 f"dimension {dimension!r} has data but only {count} item(s) — "
-                f"list {MIN_ITEMS_PER_DIMENSION}-{MAX_ITEMS_PER_DIMENSION}"
+                f"list {MIN_ITEMS_PER_DIMENSION}-{ceiling}"
             )
-        elif count > MAX_ITEMS_PER_DIMENSION:
+        elif count > ceiling:
             errors.append(
                 f"dimension {dimension!r} has {count} items — "
-                f"the maximum is {MAX_ITEMS_PER_DIMENSION}"
+                f"the maximum is {ceiling}"
             )
     if errors:
         raise ValueError("; ".join(errors))

@@ -1,37 +1,48 @@
 # -*- coding: utf-8 -*-
-"""Tier 2: defender/attacker/judge evidence debate (v5).
+"""Tier 2: defender/attacker/judge evidence debate (v6).
 
-Redesign (owner spec, 2026-07-17, see .claude/reviews/tier2-v5-design.md).
-No forced bull/bear personas: one DEFENDER lists ALL the evidence it finds
-in the four dimension reports — bullish and bearish — and scores its
-honest read (0-10, 5 neutral). One ATTACKER, having first built its own
-independent list (in parallel, so omission-finding is a diff, not an
-assignment), checks every defender item on two axes (citation, logic) and
-adds what the defender missed. The defender responds mechanically — its
-own checks ON each attack/addition; both pass → accept, either fails →
-rejection — then adjusts its score. One JUDGE has the final say with
-binary rulings. Code (never an LLM) counts the weight ledger:
+v6 revision (owner spec 2026-07-18, on top of the 2026-07-17 v5 design —
+see .claude/reviews/tier2-v5-design.md). One DEFENDER lists ALL the
+evidence in the four dimension reports — bullish and bearish, no persona;
+one ATTACKER independently lists its own evidence (in parallel, blind),
+diffs the two lists (omissions become additions) and checks every item on
+two axes (citation, logic); the defender answers each challenge by
+checking the challenge itself (both valid → accept, either invalid →
+rejection); one JUDGE rules with the final say — its own citation+logic
+check pair on EVERY item plus a binary ruling per attack.
 
-    1/1  every item the defender correctly kept in the pool
-    0/1  every item the defender got wrong (kept bad / dropped good)
-    0/0  items correctly removed (conceded reasons, rejected bogus additions)
+v6 changes:
 
-    weight = correct keeps / (correct keeps + errors)
-    final  = 5 + weight × (adjusted − 5)        (2 decimals)
-    verdict: < 4 sell, 4-6 hold, > 6 buy
+- Per-dimension item ceilings are dynamic: the number of leaf fields in
+  that dimension's report (sentiment: verified sources × 2), floor 2 —
+  room for the whole report, not a quota.
+- Evidence claims carry inline LINKS ``{text, ref, value}``: the exact
+  words in the sentence, the leaf field they cite, and the claimed value.
+  Code verifies all three mechanically; a value that does not match the
+  report auto-fails the item's citation check — nobody can overrule
+  arithmetic.
+- NO AI authors any number. The position score is computed by code from
+  the direction tags: per dimension ``10 × bullish / total``, averaged
+  across dimensions, at three snapshots of the evidence pool —
+  initial (the defender's raw list), adjusted (after the defender's
+  responses: conceded out, accepted additions in), final (as the judge
+  ruled it: only judge-valid items count; wrongly conceded items are
+  restored, judge-approved additions count even if the defender refused
+  them). The v5 weight formula is gone — pool filtering does its job.
+- Verdict on the 2-decimal final: < 4 sell, 4-6 hold, > 6 buy.
+  Empty final pool → 5.00, hold, warning.
 
-6 LLM calls across 5 sequential steps (the two openings run in parallel),
-all at temperature 0. Every stage fills a strict Pydantic form; an invalid
-reply gets ONE retry with the validation errors shown, then the failure
-rules apply: defender/judge failures void the tier-2 verdict (tier-1
-direction stands), attacker failures degrade loudly, the summary's
-failure never voids anything. Citations must resolve to a single payload
-value (leaf paths, never groupings) or an in-range sentiment citation;
-invalid refs are stripped by code before anyone grades them.
+6 LLM calls across 5 sequential steps (openings parallel; the reply call
+is skipped when nothing was challenged), all temperature 0. Every stage
+fills a strict Pydantic form; an invalid reply gets ONE retry with the
+errors shown, then: defender/judge failures void the tier-2 verdict
+(tier-1 direction stands), attacker failures degrade loudly, the
+summary's failure never voids anything.
 """
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -49,7 +60,6 @@ from .debate_models import (
     EvidenceItemModel,
     ItemChecksModel,
     JudgeModel,
-    MAX_ITEMS_PER_DIMENSION,
     MIN_ITEMS_PER_DIMENSION,
     check_exact_keys,
     check_match_map,
@@ -73,7 +83,9 @@ HOLD_MAX = 6.0
 AXES = ("citation", "logic")
 
 #: Stored-detail version marker — the frontend picks its renderer by this.
-DETAIL_FORMAT = 5
+DETAIL_FORMAT = 6
+
+_CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 
 def direction_from_final(final: float) -> Direction:
@@ -96,17 +108,16 @@ class AnchoredReason:
 @dataclass(frozen=True)
 class DebateVerdict:
     direction: Direction
-    #: 5 + weight × (adjusted − 5), rounded to 2 decimals.
+    #: The final pool's score (per-dimension 10×bullish/total, averaged).
     final_score: float
     summary: str
-    initial_score: int
-    adjusted_score: int
-    #: True when the defender answered "keep" (or there was nothing to adjust).
-    adjusted_kept: bool
-    weight_numerator: int
-    weight_denominator: int
-    #: correct keeps / (correct keeps + errors); 0 on an empty ledger.
-    weight: float
+    #: The same formula over the defender's raw list.
+    initial_score: float
+    #: …and over the pool as the defender's responses leave it.
+    adjusted_score: float
+    #: Per-pool audit: {initial|adjusted|final: {dimensions, bullish,
+    #: bearish, total, score}}.
+    pools: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -129,13 +140,8 @@ class DebateResult:
                 "summary": v.summary,
                 "initial_score": v.initial_score,
                 "adjusted_score": v.adjusted_score,
-                "adjusted_kept": v.adjusted_kept,
-                "weight": {
-                    "numerator": v.weight_numerator,
-                    "denominator": v.weight_denominator,
-                    "value": v.weight,
-                },
-                # Legacy keys kept so pre-v5 readers never crash.
+                "pools": v.pools,
+                # Legacy keys kept so pre-v6 readers never crash.
                 "confidence": None,
                 "reasons_for": [],
                 "reasons_against": [],
@@ -143,15 +149,102 @@ class DebateResult:
                 "bull_summary": None,
                 "bear_summary": None,
                 "scoring": None,
+                "weight": None,
             }
         return {
             "format": DETAIL_FORMAT,
-            # Legacy key: pre-v5 readers iterate turns; v5 has none.
+            # Legacy key: pre-v5 readers iterate turns; v5+ has none.
             "turns": [],
             "items": [dict(item) for item in self.items],
             "verdict": verdict,
             "warnings": list(self.warnings),
         }
+
+
+# ---------------------------------------------------------------------------
+# Payload helpers (leaf counting, value lookup, value matching)
+# ---------------------------------------------------------------------------
+
+
+def _leaf_count(node: Any) -> int:
+    if isinstance(node, dict):
+        return sum(_leaf_count(value) for value in node.values())
+    return 1
+
+
+def max_items_per_dimension(dimensions: Sequence[DimensionResult]) -> Dict[str, int]:
+    """The dynamic ceilings: leaf-field count per numeric dimension,
+    verified sources × 2 for sentiment, never below the floor."""
+    ceilings: Dict[str, int] = {}
+    for dim in dimensions:
+        if dim.dimension not in DIMENSIONS:
+            continue
+        if dim.dimension == "sentiment":
+            ceiling = 2 * len(dim.citations or [])
+        else:
+            ceiling = _leaf_count(dim.payload) if dim.payload else 0
+        ceilings[dim.dimension] = max(ceiling, MIN_ITEMS_PER_DIMENSION)
+    return ceilings
+
+
+def _payload_value(ref: str, dimensions: Sequence[DimensionResult]) -> Tuple[bool, Any]:
+    """(resolves-to-a-leaf, value) for a ``dimension.key[.subkey…]`` ref."""
+    parts = ref.split(".")
+    if len(parts) < 2:
+        return False, None
+    dimension_name, path = parts[0], parts[1:]
+    for dim in dimensions:
+        if dim.dimension != dimension_name or not dim.payload:
+            continue
+        node: Any = dim.payload
+        for segment in path:
+            if not isinstance(node, dict) or segment not in node:
+                node = None
+                break
+            node = node[segment]
+        if node is not None and not isinstance(node, dict):
+            return True, node
+    return False, None
+
+
+def _decimals(number: float) -> int:
+    if number == int(number):
+        return 0  # "71" claims integer precision even though repr says 71.0
+    text = repr(float(number))
+    return len(text.split(".")[1]) if "." in text and "e" not in text else 0
+
+
+def _values_match(claimed: Any, actual: Any) -> bool:
+    """The claimed value equals the report's, allowing honest rounding."""
+    try:
+        claimed_f, actual_f = float(claimed), float(actual)
+    except (TypeError, ValueError):
+        return str(claimed).strip().lower() == str(actual).strip().lower()
+    # Half a unit at the claimed precision: 401.1 matches 401.095.
+    tolerance = 0.5 * 10 ** (-_decimals(claimed_f))
+    return abs(claimed_f - actual_f) <= tolerance + 1e-9
+
+
+def _value_renderings(value: Any) -> List[str]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return [str(value).strip()]
+    texts = [f"{number:g}"]
+    if number == int(number):
+        texts.append(str(int(number)))
+    for digits in (1, 2, 3, 4):
+        texts.append(f"{number:.{digits}f}")
+    return texts
+
+
+def _value_in_text(value: Any, claim: str) -> bool:
+    haystack = claim.replace(",", "")
+    return any(text and text in haystack for text in _value_renderings(value))
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -166,41 +259,55 @@ Collected evidence (the ONLY facts you may use — no outside knowledge):
 {evidence_block}
 """
 
-_CITE_RULES = """Citation rules (checked mechanically — invalid refs are stripped):
-- A payload citation must point at ONE exact value, like "technicals.rsi_14"
-  or "fundamentals.revenue_yoy_pct". Grouping paths that hold several values
-  (like "technicals.macd" when it contains sub-values) are rejected — cite
-  the leaf, like "technicals.macd.signal".
-- "citation:N" cites news source N from the sentiment evidence above.
-- Cite only the evidence above; never invent facts or references."""
+_LINK_RULES = """Link rules (all checked mechanically by code):
+- Every item carries "links": one entry per piece of evidence the sentence
+  uses, each {{"text": the exact words in your sentence, "ref": the leaf
+  field, "value": the value copied from the report}}.
+- "text" must appear word-for-word inside your claim sentence.
+- The claim sentence must state the actual VALUE from the report —
+  "The 14-day RSI (56.28) is above 50", never "RSI is high". A value that
+  does not match the report automatically fails the item's citation
+  check; nobody can overrule that.
+- A "ref" must point at ONE exact value, like "technicals.rsi_14" —
+  grouping paths ("technicals.macd" when it holds sub-values) are
+  rejected; cite the leaf ("technicals.macd.hist").
+- Sentiment links use "ref": "citation:N" (news source N above) and omit
+  "value".
+- Use only the evidence above; never invent facts or numbers."""
+
+_CHECK_CITE_RULES = """- Citations inside checks are leaf refs like "technicals.rsi_14" or
+  "citation:N"; invalid refs are stripped by code."""
 
 _LIST_RULES = """Evidence-list rules:
 - Group items by dimension: technicals, fundamentals, macro_econ, sentiment.
-- For every dimension that has data above, list {min_items} to {max_items}
-  items. If (and only if) a dimension truly has no collected data above,
-  skip it and name it in "no_data_dimensions" — code verifies this.
-- Each item: one atomic claim (one sentence), tagged "bullish" or
-  "bearish", with at least one citation.
-- Item ids: T1, T2… for technicals, F1… for fundamentals, M1… for
+- Per-dimension item counts (floor-ceiling, computed from the reports):
+  {ceilings}. The ceiling is room, not a quota — list every field that
+  genuinely leans bullish or bearish, and skip neutral metadata (bar
+  counts, dates, regions).
+- If (and only if) a dimension truly has no collected data above, skip it
+  and name it in "no_data_dimensions" — code verifies this.
+- Each item: one atomic claim (one sentence) containing the cited names
+  AND values, tagged "bullish" or "bearish". The direction tags ARE the
+  score — code counts them; nobody writes a score.
+- Item ids: T1, T2… for technicals, F1… for fundamentals, E1… for
   macro_econ, S1… for sentiment."""
 
 _ITEM_SHAPE = """{{"id": "T1", "dimension": "technicals", "direction": "bullish",
-  "claim": "one-sentence claim", "citations": ["technicals.rsi_14"]}}"""
+  "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
+  "links": [{{"text": "14-day RSI", "ref": "technicals.rsi_14", "value": 56.28}}]}}"""
 
 _DEFENDER_OPENING_TEMPLATE = """{context}
 You are the DEFENDER analyst. You take no side: list ALL the evidence you
-can find in the reports above — bullish AND bearish — then give your
-honest initial position score (0 = strongly bearish, 5 = neutral,
-10 = strongly bullish, whole number) based on everything you listed.
+can find in the reports above — bullish AND bearish. You give no score;
+code computes the position score from your direction tags.
 
 {list_rules}
 
-{cite_rules}
+{link_rules}
 
 Reply with JSON only:
 {{"items": [{item_shape}],
- "no_data_dimensions": [],
- "initial_score": <whole number 0-10>}}"""
+ "no_data_dimensions": []}}"""
 
 _ATTACKER_OPENING_TEMPLATE = """{context}
 You are the ATTACKER analyst, working alone. Another analyst is building
@@ -210,7 +317,7 @@ You take no position and give no score.
 
 {list_rules}
 
-{cite_rules}
+{link_rules}
 
 Reply with JSON only:
 {{"items": [{item_shape}],
@@ -234,14 +341,19 @@ Do two jobs:
    debate automatically as your additions — never mark null just to add
    something; a bogus addition costs you with the judge.
 
-2. Checks — for EVERY defender item, two checks:
-   - citation_check: does the cited data really say what the claim says?
-   - logic_check: does the direction tag actually follow from the fact?
+2. Checks — for EVERY defender item, two checks. Code has already
+   verified that every number in the claims matches the report
+   (mismatches are failed automatically), so:
+   - citation_check: does the sentence say something TRUE about those
+     verified values? ("RSI (56.28) shows the stock is overbought" is a
+     false statement about a correct number.)
+   - logic_check: does the bullish/bearish tag actually follow from the
+     fact?
    Verdict "valid" or "invalid"; an "invalid" needs a reason and
    citations. If an item has no real flaw, mark both checks valid — a
    false attack costs you with the judge.
 
-{cite_rules}
+{check_cite_rules}
 
 Reply with JSON only:
 {{"match_map": [{{"own_id": "T1", "covered_by": "T2"}}, {{"own_id": "F3", "covered_by": null}}],
@@ -257,14 +369,16 @@ it empty) and only check the defender's work.
 The defender's evidence list:
 {defender_items}
 
-For EVERY defender item, two checks:
-- citation_check: does the cited data really say what the claim says?
-- logic_check: does the direction tag actually follow from the fact?
+For EVERY defender item, two checks. Code has already verified that every
+number in the claims matches the report, so:
+- citation_check: does the sentence say something TRUE about those
+  verified values?
+- logic_check: does the bullish/bearish tag actually follow from the fact?
 Verdict "valid" or "invalid"; an "invalid" needs a reason and citations.
 If an item has no real flaw, mark both checks valid — a false attack
 costs you with the judge.
 
-{cite_rules}
+{check_cite_rules}
 
 Reply with JSON only:
 {{"match_map": [],
@@ -286,63 +400,61 @@ For EVERY challenge, run your own two checks ON THE CHALLENGE ITSELF
 - logic_check: does the challenge's reasoning actually hold?
 If BOTH your checks come back valid, you are accepting the challenge —
 conceding the attack, or adopting the added evidence. If EITHER check is
-invalid, that check's reason + citations ARE your rejection.
+invalid, that check's reason + citations ARE your rejection. You give no
+score; code recounts the pool from what survives.
 
-Then give your adjusted position score (whole number 0-10) reflecting all
-the evidence as you now see it — or the word "keep" if your initial score
-{initial_score} still stands.
-
-{cite_rules}
+{check_cite_rules}
 
 Reply with JSON only:
 {{"responses": {{"T2:logic": {{"citation_check": {{"verdict": "valid", "reason": null, "citations": []}},
-                            "logic_check": {{"verdict": "invalid", "reason": "why the challenge fails", "citations": ["technicals.rsi_14"]}}}}}},
- "adjusted_score": <whole number 0-10 or "keep">}}
+                            "logic_check": {{"verdict": "invalid", "reason": "why the challenge fails", "citations": ["technicals.rsi_14"]}}}}}}}}
 "responses" must cover exactly these keys: {challenge_keys}."""
 
 _JUDGE_TEMPLATE = """{context}
 You are the JUDGE with the final say. Below is the full debate tree —
 the defender's evidence, the attacker's checks and additions, and the
 defender's responses. Do NOT pick a direction and do NOT score anything —
-code computes the verdict from your binary rulings.
+code counts the verdict from the items your rulings leave standing.
 
 {tree}
 
-Three ruling sets:
+Two ruling sets:
 
-1. reason_checks — for EVERY defender-listed item, your OWN independent
-   citation_check and logic_check on the item (the attacker may have
-   missed a flaw or invented one; you check from scratch).
+1. reason_checks — for EVERY item, defender-listed AND attacker-added,
+   your OWN independent pair of checks. Code has already verified the
+   numbers, so:
+   - citation_check: does the sentence say something TRUE about the
+     verified values?
+   - logic_check: does the bullish/bearish tag follow from the fact?
+   An attacker addition counts as genuine evidence only if both your
+   checks pass — rule on it regardless of what the defender said.
 2. attack_rulings — for EVERY attack, rule "attack_right" (the attack
    found a real flaw) or "attack_wrong" (the attack itself is mistaken).
    Read the defender's response as input, but rule on the attack itself.
-3. addition_rulings — for EVERY attacker addition, rule "real" (genuine
-   evidence the defender missed) or "bogus" (invented, duplicated, or
-   miscited). Rule regardless of what the defender said about it.
 
 Every ruling needs a short plain-English reason; cite evidence where it
 helps.
 
-{cite_rules}
+{check_cite_rules}
 
 Reply with JSON only:
 {{"reason_checks": {{"T1": {{"citation_check": {{"verdict": "valid", "reason": null, "citations": []}},
                           "logic_check": {{"verdict": "valid", "reason": null, "citations": []}}}}}},
- "attack_rulings": {{"T2:logic": {{"verdict": "attack_wrong", "reason": "why", "citations": []}}}},
- "addition_rulings": {{"F3": {{"verdict": "real", "reason": "why", "citations": []}}}}}}
-"reason_checks" must cover exactly: {defender_ids}.
-"attack_rulings" must cover exactly: {attack_keys}.
-"addition_rulings" must cover exactly: {addition_ids}."""
+ "attack_rulings": {{"T2:logic": {{"verdict": "attack_wrong", "reason": "why", "citations": []}}}}}}
+"reason_checks" must cover exactly: {item_ids}.
+"attack_rulings" must cover exactly: {attack_keys}."""
 
 _SUMMARY_TEMPLATE = """{context}
 Full debate tree:
 {tree}
 
-Computed result (fixed formula, already decided by code):
-- initial position score {initial}, adjusted {adjusted}
-- weight = {numerator}/{denominator} = {weight} (the share of the evidence
-  pool the defender handled correctly, per the judge)
-- final = 5 + weight × (adjusted − 5) = {final} out of 10
+Computed result (fixed formula, already decided by code — per dimension
+the score is 10 × bullish items / total items, averaged across the
+dimensions present in the pool):
+- initial score {initial} (the defender's raw list)
+- adjusted score {adjusted} (after the defender's responses)
+- final score {final} (only the items the judge's rulings left standing:
+  {final_bullish} bullish vs {final_bearish} bearish of {final_total})
 - verdict: {direction} (below 4 sell, 4-6 hold, above 6 buy)
 
 Write the user-facing report. Reply with JSON only:
@@ -358,11 +470,11 @@ Rules:
 # Engine
 # ---------------------------------------------------------------------------
 
-_StageParse = Callable[[dict], Any]
+_StageParse = Callable[[dict, bool], Any]
 
 
 class DebateEngine:
-    """Runs the v5 debate. Never raises out of run()."""
+    """Runs the v6 debate. Never raises out of run()."""
 
     def __init__(self, summarizer: Optional[Callable[[str], str]] = None) -> None:
         # Temperature 0 by default: the same evidence rules the same way.
@@ -414,11 +526,12 @@ class DebateEngine:
         warnings: List[str],
         items: List[Dict[str, Any]],
     ) -> DebateResult:
+        ceilings = max_items_per_dimension(dimensions)
+
         # Step 1 — the two openings, in parallel (the attacker's own list
-        # must be built blind, so it is a separate call; it depends only
-        # on the reports, so it costs no wall-clock).
+        # must be built blind; it depends only on the reports).
         opening, attacker_opening = self._openings(
-            context, dimensions, data_dimensions, warnings
+            context, dimensions, data_dimensions, ceilings, warnings
         )
         if opening is None:
             warnings.append("defender opening invalid after retry — tier-2 verdict voided")
@@ -453,11 +566,9 @@ class DebateEngine:
             )
             items.extend(additions)
 
-        # Step 3 — defender responds to every challenge + adjusts. Skipped
-        # (score kept) when nothing was challenged.
+        # Step 3 — defender responds to every challenge. Skipped (nothing
+        # to say) when nothing was challenged.
         challenge_keys = self._challenge_keys(items)
-        adjusted_score = opening.initial_score
-        adjusted_kept = True
         if challenge_keys:
             reply = self._defender_reply(
                 context, dimensions, opening, items, challenge_keys, warnings
@@ -468,13 +579,9 @@ class DebateEngine:
                 )
                 return DebateResult(items=items, warnings=warnings)
             self._attach_responses(items, reply, dimensions, warnings)
-            if isinstance(reply.adjusted_score, int):
-                adjusted_score = reply.adjusted_score
-                adjusted_kept = adjusted_score == opening.initial_score
         else:
             warnings.append(
-                "attacker raised no challenges — defender response skipped, "
-                "initial score kept"
+                "attacker raised no challenges — defender response skipped"
             )
 
         # Step 4 — the judge's binary rulings, final say.
@@ -482,37 +589,35 @@ class DebateEngine:
         if judge is None:
             warnings.append("judge rulings invalid after retry — tier-2 verdict voided")
             return DebateResult(items=items, warnings=warnings)
-        numerator, denominator = self._apply_rulings(
-            items, judge, dimensions, warnings
-        )
+        self._apply_rulings(items, judge, dimensions, warnings)
 
-        weight = round(numerator / denominator, 4) if denominator else 0.0
-        if denominator == 0:
+        # The three pool snapshots, one counting formula.
+        pools = {
+            "initial": _pool_detail(i for i in items if not i["added_by_attacker"]),
+            "adjusted": _pool_detail(i for i in items if _in_adjusted_pool(i)),
+            "final": _pool_detail(i for i in items if i["final_status"] == "counted"),
+        }
+        initial_score = pools["initial"]["score"] if pools["initial"]["total"] else 5.0
+        adjusted_score = pools["adjusted"]["score"] if pools["adjusted"]["total"] else 5.0
+        if pools["final"]["total"]:
+            final = pools["final"]["score"]
+        else:
+            final = 5.0
             warnings.append(
                 "no surviving evidence to weigh — final score is neutral 5 by default"
             )
         defender_items = [i for i in items if not i["added_by_attacker"]]
-        survivors = sum(1 for i in defender_items if i["count"]["numerator"] == 1)
+        survivors = sum(1 for i in defender_items if i["final_status"] == "counted")
         if defender_items and survivors * 2 < len(defender_items):
             warnings.append(
                 "most of the defender's initial evidence did not survive — "
                 "the weight rests on a thin base"
             )
-
-        final = round(5 + weight * (adjusted_score - 5), 2)
         direction = direction_from_final(final)
 
         # Step 5 — the user-facing prose; its failure never voids anything.
         summary = self._summary(
-            context,
-            items,
-            opening.initial_score,
-            adjusted_score,
-            numerator,
-            denominator,
-            weight,
-            final,
-            direction,
+            context, items, initial_score, adjusted_score, final, pools, direction,
             warnings,
         )
 
@@ -520,12 +625,9 @@ class DebateEngine:
             direction=direction,
             final_score=final,
             summary=summary,
-            initial_score=opening.initial_score,
+            initial_score=initial_score,
             adjusted_score=adjusted_score,
-            adjusted_kept=adjusted_kept,
-            weight_numerator=numerator,
-            weight_denominator=denominator,
-            weight=weight,
+            pools=pools,
         )
         return DebateResult(items=items, verdict=verdict, warnings=warnings)
 
@@ -536,33 +638,43 @@ class DebateEngine:
         context: str,
         dimensions: Sequence[DimensionResult],
         data_dimensions: List[str],
+        ceilings: Dict[str, int],
         warnings: List[str],
     ) -> Tuple[Optional[DefenderOpeningModel], Optional[AttackerOpeningModel]]:
-        list_rules = _LIST_RULES.format(
-            min_items=MIN_ITEMS_PER_DIMENSION, max_items=MAX_ITEMS_PER_DIMENSION
+        ceiling_text = ", ".join(
+            f"{dim}: {MIN_ITEMS_PER_DIMENSION}-{ceilings[dim]}"
+            for dim in DIMENSIONS
+            if dim in ceilings and dim in data_dimensions
         )
+        list_rules = _LIST_RULES.format(ceilings=ceiling_text)
         defender_prompt = _DEFENDER_OPENING_TEMPLATE.format(
             context=context,
             list_rules=list_rules,
-            cite_rules=_CITE_RULES,
+            link_rules=_LINK_RULES,
             item_shape=_ITEM_SHAPE,
         )
         attacker_prompt = _ATTACKER_OPENING_TEMPLATE.format(
             context=context,
             list_rules=list_rules,
-            cite_rules=_CITE_RULES,
+            link_rules=_LINK_RULES,
             item_shape=_ITEM_SHAPE,
         )
 
-        def parse_defender(parsed: dict) -> DefenderOpeningModel:
-            model = DefenderOpeningModel.model_validate(parsed)
-            check_opening_items(model.items, data_dimensions)
-            return model
+        def parse_opening(model_cls):
+            def parse(parsed: dict, strict: bool):
+                model = model_cls.model_validate(parsed)
+                check_opening_items(model.items, data_dimensions, ceilings)
+                if strict:
+                    # First attempt: every link problem — including value
+                    # mismatches — is shown back for one correction pass.
+                    errors: List[str] = []
+                    for item in model.items:
+                        errors.extend(self._link_errors(item, dimensions))
+                    if errors:
+                        raise ValueError("; ".join(errors))
+                return model
 
-        def parse_attacker(parsed: dict) -> AttackerOpeningModel:
-            model = AttackerOpeningModel.model_validate(parsed)
-            check_opening_items(model.items, data_dimensions)
-            return model
+            return parse
 
         # The usage tracker is thread-local; hand it to the workers so
         # their calls still count toward the run's AI-calls number.
@@ -577,16 +689,107 @@ class DebateEngine:
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             defender_future = pool.submit(
-                run_stage, (defender_prompt, parse_defender, "defender opening")
+                run_stage,
+                (defender_prompt, parse_opening(DefenderOpeningModel), "defender opening"),
             )
             attacker_future = pool.submit(
-                run_stage, (attacker_prompt, parse_attacker, "attacker opening")
+                run_stage,
+                (attacker_prompt, parse_opening(AttackerOpeningModel), "attacker opening"),
             )
             defender_model, defender_warnings = defender_future.result()
             attacker_model, attacker_warnings = attacker_future.result()
         warnings.extend(defender_warnings)
         warnings.extend(attacker_warnings)
         return defender_model, attacker_model
+
+    # -- link verification -------------------------------------------------
+
+    def _link_errors(
+        self, item: EvidenceItemModel, dimensions: Sequence[DimensionResult]
+    ) -> List[str]:
+        """Structural + value problems, phrased for the retry prompt."""
+        errors: List[str] = []
+        claim = _squash(item.claim)
+        for link in item.links:
+            where = f"item {item.id} link {link.ref!r}"
+            if _squash(link.text) not in claim:
+                errors.append(f'{where}: "text" is not found verbatim in the claim')
+            citation = _CITATION_REF_RE.match(link.ref.strip())
+            if citation:
+                if not validate_evidence([link.ref], dimensions, leaf_only=True):
+                    errors.append(f"{where}: citation number out of range")
+                continue
+            resolves, actual = _payload_value(link.ref, dimensions)
+            if not resolves:
+                errors.append(
+                    f"{where}: does not resolve to a single report value"
+                )
+                continue
+            if link.value is None:
+                errors.append(f"{where}: payload links must carry the value")
+                continue
+            if not _values_match(link.value, actual):
+                errors.append(
+                    f"{where}: claimed value {link.value!r} does not match the "
+                    f"report's {actual!r}"
+                )
+            if not _value_in_text(link.value, item.claim):
+                errors.append(
+                    f"{where}: the value {link.value!r} must appear in the "
+                    "claim sentence itself"
+                )
+        return errors
+
+    def _verified_links(
+        self,
+        item: EvidenceItemModel,
+        dimensions: Sequence[DimensionResult],
+        owner: str,
+        warnings: List[str],
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """(surviving links, value problems). Structurally broken links are
+        dropped with a note; value mismatches keep the link but fail the
+        item's citation check mechanically — code overrules everyone."""
+        links: List[Dict[str, Any]] = []
+        problems: List[str] = []
+        claim = _squash(item.claim)
+        for link in item.links:
+            if _squash(link.text) not in claim:
+                warnings.append(
+                    f"{owner} {item.id}: link text {link.text!r} not found in "
+                    "the claim — link dropped"
+                )
+                continue
+            ref = link.ref.strip()
+            if _CITATION_REF_RE.match(ref):
+                if not validate_evidence([ref], dimensions, leaf_only=True):
+                    warnings.append(
+                        f"{owner} {item.id}: citation {ref!r} out of range — "
+                        "link dropped"
+                    )
+                    continue
+                links.append({"text": link.text, "ref": ref, "value": None})
+                continue
+            resolves, actual = _payload_value(ref, dimensions)
+            if not resolves:
+                warnings.append(
+                    f"{owner} {item.id}: link {ref!r} does not resolve to a "
+                    "single report value — link dropped"
+                )
+                continue
+            entry = {"text": link.text, "ref": ref, "value": link.value}
+            if link.value is None or not _values_match(link.value, actual):
+                problems.append(
+                    f"claimed {link.value!r} for {ref}, the report says {actual!r}"
+                )
+                entry["mismatch"] = True
+            elif not _value_in_text(link.value, item.claim):
+                problems.append(f"value {link.value!r} missing from the sentence")
+                entry["mismatch"] = True
+            links.append(entry)
+        if not links:
+            problems.append("no verifiable links survived")
+        return links, problems
 
     # -- step 2 ------------------------------------------------------------
 
@@ -607,18 +810,18 @@ class DebateEngine:
                 context=context,
                 defender_items=_items_json(opening.items),
                 own_items=_items_json(attacker_opening.items),
-                cite_rules=_CITE_RULES,
+                check_cite_rules=_CHECK_CITE_RULES,
                 defender_ids=", ".join(defender_ids),
             )
         else:
             prompt = _ATTACKER_CHECKS_ONLY_TEMPLATE.format(
                 context=context,
                 defender_items=_items_json(opening.items),
-                cite_rules=_CITE_RULES,
+                check_cite_rules=_CHECK_CITE_RULES,
                 defender_ids=", ".join(defender_ids),
             )
 
-        def parse(parsed: dict) -> AttackerReviewModel:
+        def parse(parsed: dict, strict: bool) -> AttackerReviewModel:
             model = AttackerReviewModel.model_validate(parsed)
             check_exact_keys(list(model.checks), defender_ids, "checks")
             check_match_map(model.match_map, own_ids, defender_ids)
@@ -693,12 +896,11 @@ class DebateEngine:
             context=context,
             defender_items=_items_json(opening.items),
             challenges=_challenges_text(items),
-            initial_score=opening.initial_score,
-            cite_rules=_CITE_RULES,
+            check_cite_rules=_CHECK_CITE_RULES,
             challenge_keys=", ".join(challenge_keys),
         )
 
-        def parse(parsed: dict) -> DefenderReplyModel:
+        def parse(parsed: dict, strict: bool) -> DefenderReplyModel:
             model = DefenderReplyModel.model_validate(parsed)
             check_exact_keys(list(model.responses), challenge_keys, "responses")
             return model
@@ -732,27 +934,22 @@ class DebateEngine:
         items: Sequence[Dict[str, Any]],
         warnings: List[str],
     ) -> Optional[JudgeModel]:
-        defender_ids = [i["id"] for i in items if not i["added_by_attacker"]]
-        addition_ids = [i["id"] for i in items if i["added_by_attacker"]]
+        item_ids = [i["id"] for i in items]
         attack_keys = [
             key for key in self._challenge_keys(items) if not key.startswith("add:")
         ]
         prompt = _JUDGE_TEMPLATE.format(
             context=context,
             tree=_tree_text(items),
-            cite_rules=_CITE_RULES,
-            defender_ids=", ".join(defender_ids) or "(none)",
+            check_cite_rules=_CHECK_CITE_RULES,
+            item_ids=", ".join(item_ids) or "(none)",
             attack_keys=", ".join(attack_keys) or "(none)",
-            addition_ids=", ".join(addition_ids) or "(none)",
         )
 
-        def parse(parsed: dict) -> JudgeModel:
+        def parse(parsed: dict, strict: bool) -> JudgeModel:
             model = JudgeModel.model_validate(parsed)
-            check_exact_keys(list(model.reason_checks), defender_ids, "reason_checks")
+            check_exact_keys(list(model.reason_checks), item_ids, "reason_checks")
             check_exact_keys(list(model.attack_rulings), attack_keys, "attack_rulings")
-            check_exact_keys(
-                list(model.addition_rulings), addition_ids, "addition_rulings"
-            )
             return model
 
         model, stage_warnings = self._call_validated(prompt, parse, "judge rulings")
@@ -765,107 +962,70 @@ class DebateEngine:
         judge: JudgeModel,
         dimensions: Sequence[DimensionResult],
         warnings: List[str],
-    ) -> Tuple[int, int]:
-        """The weight ledger: 1/1 correct keeps, 0/1 defender errors,
-        0/0 correctly removed. Returns (numerator, denominator)."""
-        numerator = 0
-        denominator = 0
+    ) -> None:
+        """Final-pool membership: code's value check + the judge's rulings.
+        The defender's stance is irrelevant here — wrongly conceded items
+        are restored, judge-approved additions count even if refused."""
         for item in items:
-            if item["added_by_attacker"]:
-                num, den = self._score_addition(item, judge, dimensions, warnings)
-            else:
-                num, den = self._score_defender_item(item, judge, dimensions, warnings)
-            item["count"] = {"numerator": num, "denominator": den}
-            item["outcome"] = (
-                "valid" if num == 1 else "invalid" if den == 1 else "neutral"
-            )
-            numerator += num
-            denominator += den
-        return numerator, denominator
-
-    def _score_defender_item(
-        self,
-        item: Dict[str, Any],
-        judge: JudgeModel,
-        dimensions: Sequence[DimensionResult],
-        warnings: List[str],
-    ) -> Tuple[int, int]:
-        own_checks = judge.reason_checks[item["id"]]
-        judge_detail: Dict[str, Any] = {}
-        any_bad = False
-        any_conceded = False
-        for axis in AXES:
-            attacker_check = (item.get("attacker_checks") or {}).get(axis)
-            attacked = attacker_check is not None and attacker_check["verdict"] == "invalid"
-            if attacked:
-                key = f"{item['id']}:{axis}"
-                ruling = judge.attack_rulings[key]
-                judge_detail[axis] = {
-                    "kind": "attack_ruling",
-                    "verdict": ruling.verdict,
-                    "reason": ruling.reason,
-                    "citations": self._clean_refs(
-                        ruling.citations, dimensions, "judge", warnings
-                    ),
-                }
-                response = item["responses"].get(axis)
-                accepted = bool(response and response["accepted"])
-                if ruling.verdict == "attack_wrong":
-                    if accepted:
-                        # Dropped good evidence — the judge overrules in the
-                        # defender's favor, but the score already excluded it.
-                        any_bad = True
-                        warnings.append(
-                            f"defender accepted an attack the judge ruled wrong "
-                            f"({key}) — counted against the defender, flagged"
-                        )
-                    # rejected + attack_wrong → the reason stands (axis ok)
-                else:  # attack_right
-                    if accepted:
-                        any_conceded = True  # correctly dropped → 0/0
+            own_checks = judge.reason_checks[item["id"]]
+            judge_detail: Dict[str, Any] = {}
+            reasons: List[str] = []
+            if item["value_check"]["verdict"] == "invalid":
+                reasons.append("value_mismatch")
+            for axis in AXES:
+                attacker_check = (item.get("attacker_checks") or {}).get(axis)
+                attacked = (
+                    not item["added_by_attacker"]
+                    and attacker_check is not None
+                    and attacker_check["verdict"] == "invalid"
+                )
+                if attacked:
+                    key = f"{item['id']}:{axis}"
+                    ruling = judge.attack_rulings[key]
+                    judge_detail[axis] = {
+                        "kind": "attack_ruling",
+                        "verdict": ruling.verdict,
+                        "reason": ruling.reason,
+                        "citations": self._clean_refs(
+                            ruling.citations, dimensions, "judge", warnings
+                        ),
+                    }
+                    if ruling.verdict == "attack_right":
+                        reasons.append("attack_upheld")
                     else:
-                        any_bad = True  # kept bad evidence
-            else:
-                check = getattr(own_checks, f"{axis}_check")
-                judge_detail[axis] = {
-                    "kind": "reason_check",
-                    "verdict": check.verdict,
-                    "reason": check.reason,
-                    "citations": self._clean_refs(
-                        check.citations, dimensions, "judge", warnings
-                    ),
-                }
-                if check.verdict == "invalid":
-                    any_bad = True  # the judge caught what the attacker waved through
-        item["judge"] = judge_detail
-        if any_bad:
-            return 0, 1
-        if any_conceded:
-            return 0, 0
-        return 1, 1
-
-    def _score_addition(
-        self,
-        item: Dict[str, Any],
-        judge: JudgeModel,
-        dimensions: Sequence[DimensionResult],
-        warnings: List[str],
-    ) -> Tuple[int, int]:
-        ruling = judge.addition_rulings[item["id"]]
-        item["judge"] = {
-            "kind": "addition_ruling",
-            "verdict": ruling.verdict,
-            "reason": ruling.reason,
-            "citations": self._clean_refs(
-                ruling.citations, dimensions, "judge", warnings
-            ),
-        }
-        response = item.get("response")
-        accepted = bool(response and response["accepted"])
-        if ruling.verdict == "real":
-            return (1, 1) if accepted else (0, 1)  # wrongly refused real evidence
-        # bogus addition: correctly filtered → excluded; adopted → error
-        return (0, 1) if accepted else (0, 0)
+                        response = item["responses"].get(axis)
+                        if response and response["accepted"]:
+                            warnings.append(
+                                "defender accepted an attack the judge ruled "
+                                f"wrong ({key}) — evidence restored to the "
+                                "final pool"
+                            )
+                else:
+                    check = getattr(own_checks, f"{axis}_check")
+                    judge_detail[axis] = {
+                        "kind": "reason_check",
+                        "verdict": check.verdict,
+                        "reason": check.reason,
+                        "citations": self._clean_refs(
+                            check.citations, dimensions, "judge", warnings
+                        ),
+                    }
+                    if check.verdict == "invalid":
+                        reasons.append("judge_invalid")
+            item["judge"] = judge_detail
+            counted = not reasons
+            item["final_status"] = "counted" if counted else "excluded"
+            item["exclusion_reason"] = reasons[0] if reasons else None
+            if (
+                counted
+                and item["added_by_attacker"]
+                and item.get("response") is not None
+                and not item["response"]["accepted"]
+            ):
+                warnings.append(
+                    "defender rejected added evidence the judge ruled valid "
+                    f"({item['id']}) — included in the final pool"
+                )
 
     # -- step 5 ------------------------------------------------------------
 
@@ -873,24 +1033,22 @@ class DebateEngine:
         self,
         context: str,
         items: Sequence[Dict[str, Any]],
-        initial: int,
-        adjusted: int,
-        numerator: int,
-        denominator: int,
-        weight: float,
+        initial: float,
+        adjusted: float,
         final: float,
+        pools: Dict[str, Any],
         direction: Direction,
         warnings: List[str],
     ) -> str:
         prompt = _SUMMARY_TEMPLATE.format(
             context=context,
             tree=_tree_text(items),
-            initial=initial,
-            adjusted=adjusted,
-            numerator=numerator,
-            denominator=denominator,
-            weight=f"{weight:.4f}",
+            initial=f"{initial:.2f}",
+            adjusted=f"{adjusted:.2f}",
             final=f"{final:.2f}",
+            final_bullish=pools["final"]["bullish"],
+            final_bearish=pools["final"]["bearish"],
+            final_total=pools["final"]["total"],
             direction=direction.value,
         )
         try:
@@ -913,7 +1071,9 @@ class DebateEngine:
         self, prompt: str, parse: _StageParse, stage: str
     ) -> Tuple[Optional[Any], List[str]]:
         """One LLM call against a Pydantic form, with ONE retry that shows
-        the model its validation errors. Returns (model|None, warnings)."""
+        the model its validation errors. The retry parse runs in lenient
+        mode (link problems degrade instead of failing the stage).
+        Returns (model|None, warnings)."""
         error = None
         raw = self._summarize(prompt)
         parsed = parse_llm_json(raw)
@@ -921,7 +1081,7 @@ class DebateEngine:
             error = "the reply was not a JSON object"
         else:
             try:
-                return parse(parsed), []
+                return parse(parsed, True), []
             except (ValidationError, ValueError) as exc:
                 error = _validation_text(exc)
 
@@ -935,7 +1095,7 @@ class DebateEngine:
             return None, [f"{stage} was not JSON even after a retry"]
         try:
             return (
-                parse(parsed),
+                parse(parsed, False),
                 [f"{stage} needed a retry — first reply was invalid"],
             )
         except (ValidationError, ValueError) as exc:
@@ -948,21 +1108,29 @@ class DebateEngine:
         owner: str,
         warnings: List[str],
     ) -> Dict[str, Any]:
+        links, problems = self._verified_links(model, dimensions, owner, warnings)
+        if problems:
+            warnings.append(
+                f"{owner} {model.id}: {'; '.join(problems)} — citation check "
+                "failed mechanically"
+            )
         return {
             "id": model.id,
             "dimension": model.dimension,
             "direction": model.direction,
             "claim": model.claim.strip(),
-            "citations": self._clean_refs(
-                model.citations, dimensions, owner, warnings
-            ),
+            "links": links,
+            "value_check": {
+                "verdict": "invalid" if problems else "valid",
+                "problems": problems,
+            },
             "added_by_attacker": False,
             "attacker_checks": None,
             "responses": {axis: None for axis in AXES},
             "response": None,
             "judge": None,
-            "count": None,
-            "outcome": None,
+            "final_status": None,
+            "exclusion_reason": None,
         }
 
     def _checks_detail(
@@ -1024,6 +1192,53 @@ class DebateEngine:
 
 
 # ---------------------------------------------------------------------------
+# Pool counting
+# ---------------------------------------------------------------------------
+
+
+def _in_adjusted_pool(item: Dict[str, Any]) -> bool:
+    """The pool as the defender's responses leave it: original items minus
+    conceded ones, plus additions it accepted."""
+    if item["added_by_attacker"]:
+        response = item.get("response")
+        return bool(response and response["accepted"])
+    for axis in AXES:
+        response = (item.get("responses") or {}).get(axis)
+        if response is not None and response["accepted"]:
+            return False  # conceded
+    return True
+
+
+def _pool_detail(items) -> Dict[str, Any]:
+    """Per-dimension 10 × bullish/total, averaged across dimensions."""
+    per_dimension: Dict[str, Dict[str, Any]] = {}
+    for item in items:
+        stats = per_dimension.setdefault(
+            item["dimension"], {"bullish": 0, "bearish": 0, "total": 0, "score": None}
+        )
+        stats["total"] += 1
+        stats["bullish" if item["direction"] == "bullish" else "bearish"] += 1
+    scores: List[float] = []
+    bullish = bearish = total = 0
+    for dimension in DIMENSIONS:
+        stats = per_dimension.get(dimension)
+        if not stats:
+            continue
+        stats["score"] = round(10 * stats["bullish"] / stats["total"], 2)
+        scores.append(10 * stats["bullish"] / stats["total"])
+        bullish += stats["bullish"]
+        bearish += stats["bearish"]
+        total += stats["total"]
+    return {
+        "dimensions": per_dimension,
+        "bullish": bullish,
+        "bearish": bearish,
+        "total": total,
+        "score": round(sum(scores) / len(scores), 2) if scores else None,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Prompt-side rendering helpers
 # ---------------------------------------------------------------------------
 
@@ -1044,6 +1259,18 @@ def _items_json(items: Sequence[EvidenceItemModel]) -> str:
     )
 
 
+def _links_text(links: Sequence[Dict[str, Any]]) -> str:
+    parts = []
+    for link in links:
+        text = f"{link['text']} → {link['ref']}"
+        if link.get("value") is not None:
+            text += f" = {link['value']}"
+        if link.get("mismatch"):
+            text += " (VALUE MISMATCH — auto-failed by code)"
+        parts.append(text)
+    return "; ".join(parts)
+
+
 def _check_text(check: Dict[str, Any]) -> str:
     if check["verdict"] == "valid":
         return "valid"
@@ -1054,13 +1281,12 @@ def _check_text(check: Dict[str, Any]) -> str:
 
 
 def _response_text(response: Dict[str, Any]) -> str:
-    if response["accepted"]:
-        return "defender response: ACCEPTED (both checks on the challenge came back valid)"
     parts = [
         f"{axis} check on the challenge: {_check_text(response[f'{axis}_check'])}"
         for axis in AXES
     ]
-    return "defender response: REJECTED — " + "; ".join(parts)
+    verdict = "ACCEPTED" if response["accepted"] else "REJECTED"
+    return f"defender response ({verdict}): " + "; ".join(parts)
 
 
 def _tree_text(items: Sequence[Dict[str, Any]]) -> str:
@@ -1073,10 +1299,16 @@ def _tree_text(items: Sequence[Dict[str, Any]]) -> str:
         lines.append(f"- {dimension}")
         for item in group:
             source = "added by the ATTACKER" if item["added_by_attacker"] else "defender"
-            cites = f" [cites: {', '.join(item['citations'])}]" if item["citations"] else ""
             lines.append(
-                f"  - [{item['id']}] ({item['direction']}, {source}) {item['claim']}{cites}"
+                f"  - [{item['id']}] ({item['direction']}, {source}) {item['claim']}"
             )
+            if item["links"]:
+                lines.append(f"    links: {_links_text(item['links'])}")
+            if item["value_check"]["verdict"] == "invalid":
+                lines.append(
+                    "    - CODE: citation check auto-failed — "
+                    + "; ".join(item["value_check"]["problems"])
+                )
             if item["added_by_attacker"]:
                 if item["response"] is not None:
                     lines.append(f"    - {_response_text(item['response'])}")
@@ -1100,12 +1332,10 @@ def _challenges_text(items: Sequence[Dict[str, Any]]) -> str:
     lines: List[str] = []
     for item in items:
         if item["added_by_attacker"]:
-            cites = (
-                f" [cites: {', '.join(item['citations'])}]" if item["citations"] else ""
-            )
+            links = f" [{_links_text(item['links'])}]" if item["links"] else ""
             lines.append(
                 f'- key "add:{item["id"]}" — the attacker says you MISSED this '
-                f"evidence: ({item['direction']}) {item['claim']}{cites}"
+                f"evidence: ({item['direction']}) {item['claim']}{links}"
             )
             continue
         checks = item.get("attacker_checks")
