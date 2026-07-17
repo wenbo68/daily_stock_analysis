@@ -179,8 +179,15 @@ def parse_llm_json(raw: str) -> Optional[dict]:
     return parsed if isinstance(parsed, dict) else None
 
 
-def resolve_payload_ref(ref: str, dimensions: Sequence[DimensionResult]) -> bool:
-    """True when ``dimension.key[.subkey…]`` points at real payload data."""
+def resolve_payload_ref(
+    ref: str, dimensions: Sequence[DimensionResult], leaf_only: bool = False
+) -> bool:
+    """True when ``dimension.key[.subkey…]`` points at real payload data.
+
+    ``leaf_only=True`` (the v5 debate's citation rule) additionally
+    requires the path to land on an actual value — a number, text, flag,
+    or simple list — never on a grouping like ``technicals.macd``.
+    """
     parts = ref.split(".")
     if len(parts) < 2:
         return False
@@ -194,13 +201,15 @@ def resolve_payload_ref(ref: str, dimensions: Sequence[DimensionResult]) -> bool
                 node = None
                 break
             node = node[segment]
-        if node is not None:
+        if node is not None and not (leaf_only and isinstance(node, dict)):
             return True
     return False
 
 
 def validate_evidence(
-    refs: Sequence[Any], dimensions: Sequence[DimensionResult]
+    refs: Sequence[Any],
+    dimensions: Sequence[DimensionResult],
+    leaf_only: bool = False,
 ) -> List[str]:
     """Keep only refs that resolve: payload paths or in-range citations."""
     citation_count = max(
@@ -215,7 +224,7 @@ def validate_evidence(
             if 1 <= int(citation.group(1)) <= citation_count:
                 valid.append(ref)
             continue
-        if resolve_payload_ref(ref, dimensions):
+        if resolve_payload_ref(ref, dimensions, leaf_only=leaf_only):
             valid.append(ref)
     return valid
 

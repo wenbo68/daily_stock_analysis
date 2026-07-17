@@ -71,12 +71,71 @@ export type TieredDebaterScore = {
   notes?: string | null;
 };
 
-// Bull/bear debate audit trail (tier-2 section). Three generations coexist
+// --- v5 debate tree (defender/attacker/judge) ---
+
+// One citation-or-logic check; 'invalid' carries the reason + citations.
+export type TieredDebateCheck = {
+  verdict: 'valid' | 'invalid';
+  reason: string | null;
+  citations: string[];
+};
+
+// The defender's response to one challenge: its own checks ON the
+// attack/addition; both valid → accepted (conceded/adopted).
+export type TieredDebateResponse = {
+  accepted: boolean;
+  citation_check: TieredDebateCheck;
+  logic_check: TieredDebateCheck;
+};
+
+// The judge's word on one axis of a defender item: its own check when the
+// axis was unattacked, a ruling on the attack when it was.
+export type TieredDebateJudgeAxis = {
+  kind: 'reason_check' | 'attack_ruling';
+  verdict: 'valid' | 'invalid' | 'attack_right' | 'attack_wrong';
+  reason: string | null;
+  citations: string[];
+};
+
+export type TieredDebateJudgeAddition = {
+  kind: 'addition_ruling';
+  verdict: 'real' | 'bogus';
+  reason: string | null;
+  citations: string[];
+};
+
+// One evidence item of the v5 tree with everything that happened to it.
+export type TieredDebateItem = {
+  id: string;
+  dimension: string;
+  direction: 'bullish' | 'bearish';
+  claim: string;
+  citations: string[];
+  added_by_attacker: boolean;
+  attacker_checks: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;
+  responses: {
+    citation: TieredDebateResponse | null;
+    logic: TieredDebateResponse | null;
+  };
+  response: TieredDebateResponse | null;
+  judge:
+    | { citation: TieredDebateJudgeAxis; logic: TieredDebateJudgeAxis }
+    | TieredDebateJudgeAddition
+    | null;
+  count: { numerator: number; denominator: number } | null;
+  outcome: 'valid' | 'invalid' | 'neutral' | null;
+};
+
+// Bull/bear debate audit trail (tier-2 section). Four generations coexist
 // in stored runs: the v2 judged shape (confidence, reasons, would_change_
 // mind), the v3 scored shape (final_score, scoring, corrected bull/bear
-// summaries), and the v4 threaded shape (turn kinds, axis-grade comments)
-// — every generation-specific field is optional.
+// summaries), the v4 threaded shape (turn kinds, axis-grade comments),
+// and the v5 tree (format: 5, items, weight ledger) — every
+// generation-specific field is optional.
 export type TieredDebateDetail = {
+  // 5 on v5 runs; absent on everything stored before.
+  format?: number;
+  items?: TieredDebateItem[];
   turns: {
     role: string;
     // v2/v3 runs number their rounds; v4 turns carry a kind instead.
@@ -101,6 +160,11 @@ export type TieredDebateDetail = {
     bull_summary?: string | null;
     bear_summary?: string | null;
     scoring?: { bull: TieredDebaterScore; bear: TieredDebaterScore } | null;
+    // v5 tree shape
+    initial_score?: number | null;
+    adjusted_score?: number | null;
+    adjusted_kept?: boolean | null;
+    weight?: { numerator: number; denominator: number; value: number } | null;
   } | null;
   warnings: string[];
 };

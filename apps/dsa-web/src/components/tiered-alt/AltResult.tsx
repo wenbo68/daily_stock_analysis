@@ -23,6 +23,7 @@ import {
   FVar,
 } from './AltUi';
 import { AltDebateScoring } from './AltDebateScoring';
+import { AltDebateTree } from './AltDebateTree';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -335,6 +336,33 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
   const detail = section.debate_detail;
   const verdict = detail?.verdict ?? null;
+  // v5 runs carry the defender/attacker/judge tree and render it whole —
+  // no scoring foldable, no bull/bear columns; the arithmetic lives in
+  // the tree's own scores block.
+  if (detail?.format === 5 && Array.isArray(detail.items)) {
+    return (
+      <AltCard testId="alt-tier2">
+        <TierHeader
+          section={section}
+          notes={section.warnings}
+          side={
+            verdict?.final_score != null ? (
+              <AltFact label={t('tiered.score')} helpKey="tiered.help.debateScore">
+                <span className="tabular-nums">{verdict.final_score.toFixed(2)}/10</span>
+              </AltFact>
+            ) : null
+          }
+        />
+        {section.narrative ? (
+          <p className="mb-2 text-sm leading-relaxed">{section.narrative}</p>
+        ) : null}
+        {!verdict ? (
+          <p className="text-sm text-amber-300">{t('tiered.debate.noVerdict')}</p>
+        ) : null}
+        <AltDebateTree detail={detail} />
+      </AltCard>
+    );
+  }
   // Scored (v3) runs carry the formula's audit trail; older stored runs
   // carry the judged shape and keep their original layout. TierScore
   // expects 0-100, so both generations scale up to it.

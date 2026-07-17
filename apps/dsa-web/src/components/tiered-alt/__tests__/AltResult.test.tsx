@@ -266,6 +266,127 @@ function makeThreadedDebate(): TieredDebateDetail {
   };
 }
 
+
+// A v5 tree audit trail: defender/attacker/judge over one evidence pool.
+// Ledger: T1 kept 1/1, T2 attacked+rejected but the judge upholds the
+// attack → 0/1, S1 kept 1/1, addition S2 accepted+real → 1/1 → weight
+// 3/4 = 0.75; initial 8, adjusted 7 → final 5 + 0.75 × 2 = 6.50 → buy.
+function makeTreeDebate(): TieredDebateDetail {
+  const valid = { verdict: 'valid' as const, reason: null, citations: [] };
+  return {
+    format: 5,
+    turns: [],
+    items: [
+      {
+        id: 'T1',
+        dimension: 'technicals',
+        direction: 'bullish',
+        claim: 'RSI shows strong momentum.',
+        citations: ['technicals.rsi_14'],
+        added_by_attacker: false,
+        attacker_checks: { citation: valid, logic: valid },
+        responses: { citation: null, logic: null },
+        response: null,
+        judge: {
+          citation: { kind: 'reason_check', verdict: 'valid', reason: null, citations: [] },
+          logic: { kind: 'reason_check', verdict: 'valid', reason: null, citations: [] },
+        },
+        count: { numerator: 1, denominator: 1 },
+        outcome: 'valid',
+      },
+      {
+        id: 'T2',
+        dimension: 'technicals',
+        direction: 'bullish',
+        claim: 'The price trend is up.',
+        citations: ['technicals.close'],
+        added_by_attacker: false,
+        attacker_checks: {
+          citation: valid,
+          logic: {
+            verdict: 'invalid',
+            reason: 'One price point is not a trend.',
+            citations: ['technicals.close'],
+          },
+        },
+        responses: {
+          citation: null,
+          logic: {
+            accepted: false,
+            citation_check: valid,
+            logic_check: {
+              verdict: 'invalid',
+              reason: 'The attack ignores the moving averages.',
+              citations: ['technicals.sma_20'],
+            },
+          },
+        },
+        response: null,
+        judge: {
+          citation: { kind: 'reason_check', verdict: 'valid', reason: null, citations: [] },
+          logic: {
+            kind: 'attack_ruling',
+            verdict: 'attack_right',
+            reason: 'The averages do not rescue a single print.',
+            citations: [],
+          },
+        },
+        count: { numerator: 0, denominator: 1 },
+        outcome: 'invalid',
+      },
+      {
+        id: 'S1',
+        dimension: 'sentiment',
+        direction: 'bullish',
+        claim: 'A big deal was announced.',
+        citations: ['citation:1'],
+        added_by_attacker: false,
+        attacker_checks: { citation: valid, logic: valid },
+        responses: { citation: null, logic: null },
+        response: null,
+        judge: {
+          citation: { kind: 'reason_check', verdict: 'valid', reason: null, citations: [] },
+          logic: { kind: 'reason_check', verdict: 'valid', reason: null, citations: [] },
+        },
+        count: { numerator: 1, denominator: 1 },
+        outcome: 'valid',
+      },
+      {
+        id: 'S2',
+        dimension: 'sentiment',
+        direction: 'bearish',
+        claim: 'The deal is not closed yet.',
+        citations: ['citation:1'],
+        added_by_attacker: true,
+        attacker_checks: null,
+        responses: { citation: null, logic: null },
+        response: { accepted: true, citation_check: valid, logic_check: valid },
+        judge: { kind: 'addition_ruling', verdict: 'real', reason: 'Genuinely missed.', citations: [] },
+        count: { numerator: 1, denominator: 1 },
+        outcome: 'valid',
+      },
+    ],
+    verdict: {
+      direction: 'buy',
+      summary: 'The surviving evidence leans bullish.',
+      final_score: 6.5,
+      final_score_rounded: 7,
+      initial_score: 8,
+      adjusted_score: 7,
+      adjusted_kept: false,
+      weight: { numerator: 3, denominator: 4, value: 0.75 },
+      confidence: null,
+      reasons_for: [],
+      reasons_against: [],
+      would_change_mind: null,
+      bull_summary: null,
+      bear_summary: null,
+      scoring: null,
+    },
+    warnings: [],
+  };
+}
+
 function renderResult(result: TieredResult) {
   render(
     <MemoryRouter>
@@ -574,5 +695,91 @@ describe('AltResult', () => {
     expect(
       screen.getByText('some brand-new warning shape the frontend has never seen'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('AltResult v5 debate tree', () => {
+  function renderTree() {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeTreeDebate();
+    deep.tier2!.narrative = 'The surviving evidence leans bullish.';
+    renderResult(deep);
+  }
+
+  it('renders the tree with the full step-4 view by default — no scoring foldable, no bull/bear columns', () => {
+    renderTree();
+    expect(screen.getByTestId('alt-debate-tree')).toBeInTheDocument();
+    // The old v3/v4 surfaces are gone on v5 runs.
+    expect(screen.queryByText(/Scoring and calculation|评分与计算/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Bull case|多方总结/)).not.toBeInTheDocument();
+    // Header score is the 2-decimal final.
+    expect(within(screen.getByTestId('alt-tier2')).getByText('6.50/10')).toBeInTheDocument();
+    // Judge rulings and counted badges are visible at step 4.
+    const t2 = screen.getByTestId('alt-tree-item-T2');
+    expect(t2).toHaveTextContent(/attack upheld|质疑成立/);
+    expect(t2).toHaveTextContent(/counted 0\/1|计 0\/1/);
+    // The addition is tagged and ruled real.
+    const s2 = screen.getByTestId('alt-tree-item-S2');
+    expect(s2).toHaveTextContent(/added by attacker|攻方补充/);
+    expect(s2).toHaveTextContent(/real|成立/);
+  });
+
+  it('shows the weight ledger and the final-score formula with this run’s numbers', () => {
+    renderTree();
+    const scores = screen.getByTestId('alt-tree-scores');
+    expect(scores).toHaveTextContent(/initial position score|初始立场分/);
+    expect(scores).toHaveTextContent('8/10');
+    expect(scores).toHaveTextContent('7/10');
+    expect(scores).toHaveTextContent('= 3/4');
+    expect(scores).toHaveTextContent('0.75');
+    expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent(
+      '= 5 + 0.75 × (7 − 5)',
+    );
+    expect(scores).toHaveTextContent('= 6.50');
+    expect(screen.getByTestId('alt-tree-verdict')).toHaveTextContent(/buy|买入/i);
+  });
+
+  it('step 1 shows only the defender’s list and the initial score', () => {
+    renderTree();
+    fireEvent.click(screen.getByTestId('alt-tree-step-1'));
+    // Attacker material and judge rulings disappear…
+    expect(screen.queryByText(/added by attacker|攻方补充/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/attack upheld|质疑成立/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/counted|计 /)).not.toBeInTheDocument();
+    // …the defender items and initial score stay.
+    expect(screen.getByTestId('alt-tree-item-T2')).toHaveTextContent('The price trend is up.');
+    const scores = screen.getByTestId('alt-tree-scores');
+    expect(scores).toHaveTextContent('8/10');
+    expect(scores).not.toHaveTextContent(/adjusted position score|调整后立场分/);
+  });
+
+  it('step 2 adds the attacker’s checks and additions but no responses yet', () => {
+    renderTree();
+    fireEvent.click(screen.getByTestId('alt-tree-step-2'));
+    const t2 = screen.getByTestId('alt-tree-item-T2');
+    expect(t2).toHaveTextContent('One price point is not a trend.');
+    expect(t2).not.toHaveTextContent('The attack ignores the moving averages.');
+    expect(screen.getByTestId('alt-tree-item-S2')).toHaveTextContent(
+      /added by attacker|攻方补充/,
+    );
+    expect(t2).not.toHaveTextContent(/attack upheld|质疑成立/);
+  });
+
+  it('a voided v5 run still renders its partial tree with the no-verdict note', () => {
+    const deep = makeDeepResult();
+    const detail = makeTreeDebate();
+    detail.verdict = null;
+    detail.items = detail.items!.map((item) => ({
+      ...item,
+      judge: null,
+      count: null,
+      outcome: null,
+    }));
+    deep.tier2!.debate_detail = detail;
+    deep.tier2!.narrative = null;
+    renderResult(deep);
+    expect(screen.getByText(/no usable verdict|未产生可用结论/)).toBeInTheDocument();
+    expect(screen.getByTestId('alt-debate-tree')).toBeInTheDocument();
+    expect(screen.queryByTestId('alt-tree-scores')).not.toBeInTheDocument();
   });
 });

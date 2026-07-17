@@ -189,47 +189,55 @@ they can't be known in advance.
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 
-## 6. Tier-2 threaded debate (v4 redesign, `debate.py`)
+## 6. Tier-2 evidence debate (v5 redesign, `debate.py` + `debate_models.py`)
 
-Two symmetric threads, each shaped like a real investment-committee
-pitch — the stages run their two LLM calls in parallel:
-
-```
-thread A: bull argues → bear attacks it → bull responds + position score
-thread B: bear argues → bull attacks it → bear responds + position score
-```
-
-Attacks are structured along the same three axes the judge grades on.
-The tier-2 direction is computed, not judged. Inputs (all whole numbers,
-off-spec values void the verdict and tier 2 degrades to the tier-1
-direction):
-
-- each side's `position_score` ∈ {0..10} (0 = strongly bearish, 5 =
-  neutral, 10 = strongly bullish), given only in its response turn —
-  after seeing the attack on its case (v3 called this `bullishness`)
-- the grading judge's three validity grades per side, each ∈ {0..5}:
-  `citation_validity`, `knowledge_validity`, `logical_validity`. The
-  grade covers everything the side wrote (argument + attack + response —
-  a lazy or false attack costs the attacker points). Any grade below 5
-  must carry a verbatim `quote` of the offending sentence plus a `why`;
-  code checks the quote against the transcript (whitespace-insensitive)
-  and flags a mismatch or a missing quote without voiding the grade.
-
-Formulas (code, not LLM):
+One evidence pool, three roles, no forced bull/bear personas
+(owner spec 2026-07-17; full design in `.claude/reviews/tier2-v5-design.md`):
 
 ```
-weight      = (citation + knowledge + logic) / 15          per side
-final_score = (w_bull × s_bull + w_bear × s_bear) / (w_bull + w_bear)
-              (both weights 0 → final_score = 5, flagged in warnings)
-rounded     = floor(final_score + 0.5)                     half-up
-direction   = sell if rounded ≤ 3, hold if ≤ 6, else buy
+step 1  DEFENDER lists ALL evidence (bullish + bearish) per dimension
+        (2-4 items per dimension with data) + initial position score
+     ‖  ATTACKER independently builds its own list (blind, in parallel)
+step 2  ATTACKER matches the two lists (uncovered own items become
+        additions), then checks every defender item on two axes:
+        citation and logic
+step 3  DEFENDER responds to every challenge by running the same two
+        checks ON the challenge itself: both valid → accept (concede /
+        adopt), either invalid → rejection; then the adjusted score
+        (whole 0-10 or "keep"). Skipped when nothing was challenged.
+step 4  JUDGE, final say, binary rulings only: its own checks on every
+        defender item, attack_right/attack_wrong per attack,
+        real/bogus per addition
+step 5  summary prose around the computed numbers (never voids)
 ```
 
-Weighting by validity is what keeps the role bias from cancelling out: a
-plain average of a bull (always high) and a bear (always low) would land
-near 5.5 on every stock; weighted, the better-argued side pulls the final
-number toward itself. A summary judge then writes the user-facing prose
-(decision summary + corrected bull/bear cases) *around* the computed
-number — its failure never voids the verdict. All tier-2 LLM calls run at
-temperature 0 (`deterministic_summarizer`); 8 calls per run (2 arguments
-‖ 2 attacks ‖ 2 responses, then grading and summary), wall-clock ≈ 5.
+Every stage fills a strict Pydantic form; an invalid reply gets one
+retry with the validation errors shown. Defender/judge failures void the
+tier-2 verdict (direction falls back to tier 1); attacker failures
+degrade loudly (checks-only review, or no challenges at all). Citations
+must resolve to a single payload value (leaf paths — `technicals.macd`
+is rejected, `technicals.macd.signal` passes) or an in-range sentiment
+`citation:N`; invalid refs are stripped by code.
+
+The weight ledger (code, not LLM — one principle):
+
+```
+1/1  every item the defender correctly kept in the pool
+0/1  every item the defender got wrong (kept bad / dropped good,
+     per the judge)
+0/0  items correctly removed (conceded reasons, rejected bogus
+     additions) — they don't count at all
+
+weight = correct keeps / (correct keeps + errors)      (0 on 0/0 ledger)
+final  = 5 + weight × (adjusted − 5)                   2 decimals
+direction = sell if final < 4, hold if 4 ≤ final ≤ 6, else buy
+```
+
+The weight shrinks the defender's conviction toward neutral 5 by exactly
+the share of the evidence pool it mishandled; garbage arguments can
+never produce a strong verdict, only "do nothing". Flags that never
+change numbers: the defender accepting an attack the judge ruled wrong,
+and a thin base (more than half the initial reasons died). All tier-2
+LLM calls run at temperature 0 (`deterministic_summarizer`); 6 calls per
+run across 5 sequential steps (the two openings run in parallel; the
+defender-reply call is skipped when there are no challenges).

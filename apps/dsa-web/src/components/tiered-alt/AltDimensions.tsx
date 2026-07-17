@@ -185,7 +185,14 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
           </div>
           <ul className="flex flex-col gap-1">
             {listedCitations.map(({ citation, number }) => (
-              <li key={number} className="flex gap-2 text-xs">
+              // id: the debate tree's "sentiment.citation:N" chips jump here
+              // instead of leaving the page — the external link stays one
+              // click away.
+              <li
+                key={number}
+                id={`alt-src-${dimension.dimension}-${number}`}
+                className="flex scroll-mt-24 gap-2 text-xs"
+              >
                 {dimension.narrative ? (
                   <span className="shrink-0 text-gray-500">[{number}]</span>
                 ) : null}

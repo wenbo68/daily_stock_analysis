@@ -117,6 +117,45 @@ const NOTE_RULES: NoteRule[] = [
     pattern: /^no usable entry price — cannot place a stop$/,
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
+  // --- v5 tree-debate notes ---
+  {
+    pattern: /^(?:defender opening|defender reply|judge rulings) invalid after retry — tier-2 verdict voided$/,
+    toText: (_m, t) => t('tiered.note.stageInvalid'),
+  },
+  {
+    pattern: /^attacker (?:opening|review) invalid after retry — proceeding without/,
+    toText: (_m, t) => t('tiered.note.attackerDegraded'),
+  },
+  {
+    pattern: / needed a retry — first reply was invalid$/,
+    toText: (_m, t) => t('tiered.note.stageRetried'),
+  },
+  {
+    pattern: /(?: was not JSON even after a retry| invalid after retry: )/,
+    toText: (_m, t) => t('tiered.note.stageInvalid'),
+  },
+  {
+    pattern: /^defender accepted an attack the judge ruled wrong/,
+    toText: (_m, t) => t('tiered.note.concededFlawedAttack'),
+  },
+  {
+    pattern: /^attacker raised no challenges — defender response skipped/,
+    toText: (_m, t) => t('tiered.note.noChallenges'),
+  },
+  {
+    pattern: /^no surviving evidence to weigh/,
+    toText: (_m, t) => t('tiered.note.emptyLedger'),
+  },
+  {
+    pattern: / — the weight rests on a thin base$/,
+    toText: (_m, t) => t('tiered.note.thinBase'),
+  },
+  {
+    pattern: /^(defender|attacker|judge) cited evidence that does not resolve to a single value/,
+    toText: (m, t) =>
+      t('tiered.note.treeBadRefs', { side: t(`tiered.tree.${m[1]}` as UiTextKey) }),
+  },
+  // --- pre-v5 debate notes (old stored runs) ---
   {
     // v3: "bull reply was not JSON — argument kept as plain text, no score"
     // v4: "bull argument|attack|response was not JSON — kept as plain text[, no score]"
