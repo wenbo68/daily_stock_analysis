@@ -623,14 +623,14 @@ function makeTreeDebateV7(): TieredDebateDetail {
   };
 }
 
-// A v8 evidence-vote audit trail: no roles, majority votes. T1 listed by
-// both analysts (confirmed 2-0); T2 outvoted 1-2 (checker + deciding
-// vote against); T3 struck by the code citation check; S1 counted 2-0
-// with a trailing [2] source link. Pools: initial (10·1/2 + 0)/2 = 2.50;
-// final (10 + 0)/2 = 5.00 → hold.
-function makeTreeDebateV8(): TieredDebateDetail {
+// A v9 evidence-vote audit trail: arrows and marks, majority votes.
+// T1 listed by both analysts (confirmed 2-0); T2 outvoted 1-2 (checker
+// + deciding vote against, crossed out); T3 struck by the code citation
+// check (crossed out); S1 counted 2-0 with a trailing [2] source link.
+// Final pool: 1 bullish of 2 → flat score 10 × 1/2 = 5.00 → hold.
+function makeTreeDebateV9(): TieredDebateDetail {
   return {
-    format: 8,
+    format: 9,
     turns: [],
     items: [
       {
@@ -719,23 +719,23 @@ function makeTreeDebateV8(): TieredDebateDetail {
       summary: 'Only balanced evidence survived.',
       final_score: 5.0,
       final_score_rounded: 5,
-      initial_score: 2.5,
+      initial_score: 3.33,
       adjusted_score: null,
       pools: {
         initial: {
           dimensions: {
-            technicals: { bullish: 1, bearish: 1, total: 2, score: 5.0 },
-            sentiment: { bullish: 0, bearish: 1, total: 1, score: 0.0 },
+            technicals: { bullish: 1, bearish: 1, total: 2 },
+            sentiment: { bullish: 0, bearish: 1, total: 1 },
           },
           bullish: 1,
           bearish: 2,
           total: 3,
-          score: 2.5,
+          score: 3.33,
         },
         final: {
           dimensions: {
-            technicals: { bullish: 1, bearish: 0, total: 1, score: 10.0 },
-            sentiment: { bullish: 0, bearish: 1, total: 1, score: 0.0 },
+            technicals: { bullish: 1, bearish: 0, total: 1 },
+            sentiment: { bullish: 0, bearish: 1, total: 1 },
           },
           bullish: 1,
           bearish: 1,
@@ -1289,37 +1289,75 @@ describe('AltResult v7 debate tree', () => {
   });
 });
 
-describe('AltResult v8 evidence vote', () => {
-  function renderTreeV8() {
+describe('AltResult v9 evidence vote', () => {
+  function renderTreeV9() {
     const deep = makeDeepResult();
-    deep.tier2!.debate_detail = makeTreeDebateV8();
+    deep.tier2!.debate_detail = makeTreeDebateV9();
     deep.tier2!.narrative = 'Only balanced evidence survived.';
     renderResult(deep);
   }
 
-  it('underlines cited values inline and renders sources as trailing [N] links', () => {
-    renderTreeV8();
-    const t1 = screen.getByTestId('alt-tree-item-T1');
-    expect(within(t1).getByRole('button', { name: '71.20' })).toBeInTheDocument();
-    const s1 = screen.getByTestId('alt-tree-item-S1');
-    expect(within(s1).getAllByRole('button', { name: '[2]' }).length).toBeGreaterThan(0);
-    // No underlined words for sentiment — the claim text is plain.
-    expect(within(s1).queryByRole('button', { name: /deal/ })).not.toBeInTheDocument();
+  it('shows arrows instead of direction words and counts them in the section headers', () => {
+    renderTreeV9();
+    const tree = screen.getByTestId('alt-debate-tree');
+    // The direction words are gone from the bullets (the score formula
+    // still names its bullish/total variables).
+    expect(screen.getByTestId('alt-tree-item-T1')).not.toHaveTextContent(
+      /bullish|bearish|看多|看空/,
+    );
+    expect(within(screen.getByTestId('alt-tree-item-T1')).getByText('↑')).toBeInTheDocument();
+    expect(within(screen.getByTestId('alt-tree-item-T2')).getByText('↓')).toBeInTheDocument();
+    // Headers count only the surviving bullets: technicals ↑1, ↓0.
+    expect(tree).toHaveTextContent('↑1, ↓0');
   });
 
-  it('shows the both-listed line, the vote lines, and no counted/excluded pills', () => {
-    renderTreeV8();
-    const t1 = screen.getByTestId('alt-tree-item-T1');
-    expect(t1).toHaveTextContent(/listed independently by both analysts|两位分析师独立列出/);
-    const t2 = screen.getByTestId('alt-tree-item-T2');
-    expect(t2).toHaveTextContent(/checker|复核/);
-    expect(t2).toHaveTextContent(/deciding vote|决胜票/);
-    expect(screen.queryByText(/^counted$|^计入$/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^excluded$|^不计入$/)).not.toBeInTheDocument();
+  it('tells each bullet’s history as marks: ✓✓ both-listed, ✓/✗ votes, code ✗', () => {
+    renderTreeV9();
+    expect(
+      within(screen.getByTestId('alt-tree-item-T1')).getByRole('button', { name: '✓✓' }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('alt-tree-item-T2')).getAllByRole('button', { name: '✗' }),
+    ).toHaveLength(2);
+    expect(
+      within(screen.getByTestId('alt-tree-item-T3')).getByRole('button', { name: '✗' }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('alt-tree-item-S1')).getByRole('button', { name: '✓' }),
+    ).toBeInTheDocument();
+    // The prose vote lines are gone from the page itself.
+    expect(screen.queryByText(/listed independently by both analysts|两位分析师独立列出/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/A single close below one level/)).not.toBeInTheDocument();
   });
 
-  it('crosses out outvoted and citation-struck bullets at the final step', () => {
-    renderTreeV8();
+  it('clicking a vote mark opens the reasoning in a modal', () => {
+    renderTreeV9();
+    fireEvent.click(
+      within(screen.getByTestId('alt-tree-item-T2')).getAllByRole('button', { name: '✗' })[0],
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/checker|复核/);
+    expect(dialog).toHaveTextContent('A single close below one level is not a trend.');
+  });
+
+  it('clicking the double check mark explains the two author votes', () => {
+    renderTreeV9();
+    fireEvent.click(
+      within(screen.getByTestId('alt-tree-item-T1')).getByRole('button', { name: '✓✓' }),
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(/two valid votes|两张有效票|各算一张有效票/);
+  });
+
+  it('clicking the code ✗ on a struck bullet shows the citation errors', () => {
+    renderTreeV9();
+    fireEvent.click(
+      within(screen.getByTestId('alt-tree-item-T3')).getByRole('button', { name: '✗' }),
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent('must be copied exactly');
+  });
+
+  it('crosses out every bullet that is not in the final score, with no pills or steps', () => {
+    renderTreeV9();
     expect(
       screen.getByTestId('alt-tree-item-T2').querySelector('.line-through'),
     ).not.toBeNull();
@@ -1329,35 +1367,22 @@ describe('AltResult v8 evidence vote', () => {
     expect(
       screen.getByTestId('alt-tree-item-T1').querySelector('.line-through'),
     ).toBeNull();
+    expect(screen.queryByTestId('alt-tree-step-1')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^counted$|^excluded$/)).not.toBeInTheDocument();
   });
 
-  it('uses a three-step selector; step 1 shows the plain list with only code strikes', () => {
-    renderTreeV8();
-    expect(screen.getByTestId('alt-tree-step-3')).toBeInTheDocument();
-    expect(screen.queryByTestId('alt-tree-step-4')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('alt-tree-step-1'));
-    expect(
-      screen.queryByText(/listed independently by both analysts|两位分析师独立列出/),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText(/checker|复核/)).not.toBeInTheDocument();
-    // The outvoted bullet is not crossed out yet; the code-struck one is.
-    expect(
-      screen.getByTestId('alt-tree-item-T2').querySelector('.line-through'),
-    ).toBeNull();
-    expect(
-      screen.getByTestId('alt-tree-item-T3').querySelector('.line-through'),
-    ).not.toBeNull();
-  });
-
-  it('shows initial and final scores with no adjusted line', () => {
-    renderTreeV8();
+  it('shows only the flat final-score formula', () => {
+    renderTreeV9();
     const scores = screen.getByTestId('alt-tree-scores');
-    expect(scores).toHaveTextContent('2.50');
-    expect(scores).toHaveTextContent(/average of 2 dimensions|2 个维度的平均分/);
-    expect(scores).not.toHaveTextContent(/adjusted position score|调整后立场分/);
-    expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent(
-      '= (10.00 + 0.00) / 2',
-    );
+    expect(scores).not.toHaveTextContent(/initial position score|adjusted position score|初始立场分|调整后立场分/);
+    expect(scores).not.toHaveTextContent(/average of|个维度的平均分/);
+    expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent('= 10 × 1 / 2');
+    expect(scores).toHaveTextContent('= 5.00');
     expect(screen.getByTestId('alt-tree-verdict')).toHaveTextContent(/hold|持有/i);
+  });
+
+  it('wraps long claims with a hanging indent (two-column grid rows)', () => {
+    renderTreeV9();
+    expect(screen.getByTestId('alt-tree-item-T1').className).toContain('grid');
   });
 });

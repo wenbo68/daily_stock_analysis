@@ -189,7 +189,7 @@ they can't be known in advance.
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 
-## 6. Tier-2 evidence vote (v8, `debate.py` + `debate_models.py`)
+## 6. Tier-2 evidence vote (v8/v9, `debate.py` + `debate_models.py`)
 
 No roles, no personas — membership in the evidence pool is a majority
 vote with at most three votes per bullet, and no AI authors any number
@@ -234,19 +234,22 @@ contract (a reason stating a decimal or percentage must cite it; links
 inside reasons are code-checked with the same fix loop) — votes that
 cannot be fixed are discarded and carry no weight.
 
-The score (code, pure counting):
+The score (code, pure counting — v9 flat, no per-dimension averaging):
 
 ```
-per dimension  score_d = 10 × bullish_d / total_d
-overall        mean of the dimension scores present in the pool
-                                                       (2 decimals)
+score = 10 × bullish / total          over the whole pool (2 decimals)
 
-initial   = the merged list (struck bullets excluded)
-final     = the bullets holding a majority of valid votes
+initial = the merged list (struck bullets excluded; stored for the
+          audit trail, not displayed)
+final   = the bullets holding a majority of valid votes — the
+          displayed score
 
 direction = sell if final < 4, hold if 4 ≤ final ≤ 6, else buy
 empty final pool → 5.00, hold, warning
 ```
+
+Every vote requires a short reason (the UI shows it when the user
+clicks the vote's ✓/✗ mark).
 
 5-6 base calls per run (the two lists parallel, each with its fix loop;
 the deciding round only when there are ties; fix rounds add one call

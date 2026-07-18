@@ -1004,13 +1004,11 @@ const zh = {
   'tiered.tree.finalScore': '最终立场分',
   'tiered.tree.total': '总条数',
   'tiered.tree.dimensionAverage': '{n} 个维度的平均分',
-  'tiered.tree.step.list': '证据清单',
-  'tiered.tree.step.votes': '投票',
-  'tiered.tree.step.final': '最终得分',
   'tiered.tree.checker': '复核',
   'tiered.tree.decider': '决胜票',
-  'tiered.tree.vote': '投票',
-  'tiered.tree.bothListed': '两位分析师独立列出——已确认',
+  'tiered.tree.bothListed': '两位分析师独立列出',
+  'tiered.tree.bothListedDetail':
+    '两位分析师在互相看不到对方清单的情况下都列出了这条证据——各算一张有效票，共两票，直接确认，无需复核。',
   'tiered.note.listerDegraded': '一位分析师的证据清单连续不合规——本次只使用另一份清单。',
   'tiered.note.mergeDegraded': '清单合并连续不合规——第二份清单被放弃。',
   'tiered.note.checkDegraded': '复核投票连续不合规——各条证据仅按作者一票计入。',
@@ -1036,7 +1034,7 @@ const zh = {
   'tiered.note.thinBase': '守方最初的证据大多未能成立——权重建立在较薄的证据基础上。',
   'tiered.note.treeBadRefs': '{side}引用的证据无法解析为单一数值——无效引用已剔除。',
   'tiered.help.debateScore':
-    '辩论得出的最终立场分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 卖出，4–6 持有，高于 6 买入。\n完全由代码计数得出：每个维度得分 = 10 × 看多条数 ÷ 总条数，再对各维度取平均；只统计经受住检验的证据——见辩论树底部的「评分」。',
+    '辩论得出的最终立场分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 卖出，4–6 持有，高于 6 买入。\n完全由代码计数得出：得分 = 10 × 看多条数 ÷ 总条数，只统计经受住检验的证据——见证据清单底部的「评分」。',
   'tiered.risk.title': '第 3 层 · 风险压力测试',
   'tiered.help.risk':
     '三个风险审查者——保守、激进、中立——分别挑剔层级 2 的结论。\n风险裁判汇总成本结论、仓位倍数和止损。',
@@ -2206,13 +2204,11 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.finalScore': 'final position score',
   'tiered.tree.total': 'total items',
   'tiered.tree.dimensionAverage': 'average of {n} dimensions',
-  'tiered.tree.step.list': 'evidence list',
-  'tiered.tree.step.votes': 'votes',
-  'tiered.tree.step.final': 'final score',
   'tiered.tree.checker': 'checker',
   'tiered.tree.decider': 'deciding vote',
-  'tiered.tree.vote': 'vote',
-  'tiered.tree.bothListed': 'listed independently by both analysts — confirmed',
+  'tiered.tree.bothListed': 'listed independently by both analysts',
+  'tiered.tree.bothListedDetail':
+    'Both analysts listed this evidence without seeing each other’s list — that counts as two valid votes, so it is confirmed with no further checking.',
   'tiered.note.listerDegraded':
     'One analyst’s evidence list kept coming back invalid — this run used the other list only.',
   'tiered.note.mergeDegraded':
@@ -2254,7 +2250,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.treeBadRefs':
     'The {side} cited evidence that does not point at a single value — invalid references were dropped.',
   'tiered.help.debateScore':
-    'The debate’s final position score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 sell, 4–6 hold, above 6 buy.\nPure counting by code: each dimension scores 10 × bullish items ÷ total items, averaged across dimensions — over only the evidence that survived checking. See Scores at the bottom of the debate tree.',
+    'The debate’s final position score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 sell, 4–6 hold, above 6 buy.\nPure counting by code: 10 × bullish bullets ÷ total bullets, over only the evidence that survived checking. See Scores at the bottom of the evidence list.',
   'tiered.risk.title': 'Tier 3 · Risk stress test',
   'tiered.help.risk':
     'Three risk reviewers — conservative, aggressive, neutral — critique the tier-2 verdict.\nA risk judge merges them into this verdict, the size and the stop loss.',

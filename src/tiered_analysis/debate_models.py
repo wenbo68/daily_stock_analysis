@@ -120,18 +120,19 @@ class MergeModel(_StageModel):
 
 
 class VoteModel(_StageModel):
-    """One vote on a bullet: valid/invalid with a short reason. Numbers
-    inside the reason must be cited with the same code-checked links the
-    bullets use; 'invalid' requires a reason."""
+    """One vote on a bullet: valid/invalid with a short reason — required
+    either way, because the UI shows the reason when the user clicks the
+    vote's mark. Numbers inside the reason must be cited with the same
+    code-checked links the bullets use."""
 
     verdict: Literal["valid", "invalid"]
     reason: Optional[str] = None
     links: List[LinkModel] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _invalid_needs_reason(self) -> "VoteModel":
-        if self.verdict == "invalid" and not (self.reason or "").strip():
-            raise ValueError("an 'invalid' vote must carry a non-empty reason")
+    def _needs_reason(self) -> "VoteModel":
+        if not (self.reason or "").strip():
+            raise ValueError("every vote must carry a short non-empty reason")
         return self
 
 

@@ -5,8 +5,8 @@ Fake-LLM tests covering: the vote choreography (two blind analyst lists
 in parallel, each with a code citation check + fix loop → merge → check
 round on single-author bullets → deciding round on 1-1 ties → summary),
 the vote arithmetic (author = first valid vote; both-listed = confirmed
-2-0; majority of three decides), the deterministic pool scores (per
-dimension 10 × bullish/total, averaged; two snapshots initial/final),
+2-0; majority of three decides), the deterministic flat-count score
+(10 × bullish/total over the whole pool; snapshots initial/final),
 the display-value citation contract (links are {ref, value} copied
 exactly as the report pages display it; sentiment links are bare
 {ref: citation:N}), the vote citation contract (reasons stating numbers
@@ -105,8 +105,7 @@ def _tier1(direction=Direction.BUY, dimensions=()):
 #   check round on T2/T3/S3: T2 voted invalid (→ tied), T3/S3 valid
 #   deciding round on T2: valid → counted 2-1
 #
-# Pools (per dimension 10 × bullish/total, averaged):
-#   initial = final = (tech 2/3 → 6.67 + sent 1/3 → 3.33) / 2 = 5.00 → hold
+# Score (flat counting): initial = final = 10 × 3 bullish / 6 = 5.00 → hold
 # ---------------------------------------------------------------------------
 
 
@@ -412,12 +411,15 @@ class ChoreographyTest(unittest.TestCase):
         )
         verdict = result.verdict
         self.assertIsNotNone(verdict)
-        # tech 2 bullish / 1 bearish → 6.67; sent 1/3 → 3.33; mean 5.0
+        # flat counting: 3 bullish of 6 bullets → 5.0
         self.assertEqual(verdict.initial_score, 5.0)
         self.assertEqual(verdict.final_score, 5.0)
         self.assertEqual(verdict.direction, Direction.HOLD)
         self.assertEqual(verdict.summary, "The evidence splits down the middle.")
-        self.assertEqual(verdict.pools["initial"]["dimensions"]["technicals"]["score"], 6.67)
+        self.assertEqual(
+            verdict.pools["initial"]["dimensions"]["technicals"],
+            {"bullish": 2, "bearish": 1, "total": 3},
+        )
         self.assertEqual(verdict.pools["final"]["bullish"], 3)
         self.assertEqual(verdict.pools["final"]["bearish"], 3)
 
@@ -543,9 +545,9 @@ class VoteOutcomeTest(unittest.TestCase):
         t2 = _item_by_id(result, "T2")
         self.assertEqual(t2["final_status"], "excluded")  # 1-2
         self.assertEqual(t2["exclusion_reason"], "outvoted")
-        # final: tech T1+T3 → 10, sent 1/3 → 3.33 → 6.67 buy
-        self.assertEqual(result.verdict.final_score, 6.67)
-        self.assertEqual(result.verdict.direction, Direction.BUY)
+        # final: 3 bullish of the 5 remaining bullets → 6.0 hold
+        self.assertEqual(result.verdict.final_score, 6.0)
+        self.assertEqual(result.verdict.direction, Direction.HOLD)
 
     def test_failed_deciding_round_excludes_ties_as_unresolved(self):
         result, _ = _run(_replies(decider="not json"))
@@ -632,8 +634,8 @@ class StruckBulletTest(unittest.TestCase):
         self.assertNotIn("999", check_prompt)
         # …and never enters a pool: initial = T1, S1, S2, T3, S3.
         self.assertEqual(result.verdict.pools["initial"]["total"], 5)
-        # tech T1+T3 all bullish → 10; sent 1/3 → 3.33 → 6.67
-        self.assertEqual(result.verdict.initial_score, 6.67)
+        # flat counting: 3 bullish of the 5 surviving bullets → 6.0
+        self.assertEqual(result.verdict.initial_score, 6.0)
 
     def test_an_unfixable_second_list_bullet_is_struck_too(self):
         broken_s3 = _item("S3", "sentiment", "bearish",
@@ -953,18 +955,19 @@ class PromptContentTest(unittest.TestCase):
     def test_summary_prompt_carries_the_computed_pool_scores(self):
         _, fake = _run()
         summary = next(p for p in fake.prompts if "Write the user-facing report" in p)
-        self.assertIn("initial score 5.00", summary)
+        self.assertNotIn("initial score", summary)
         self.assertIn("final score 5.00", summary)
-        self.assertIn("3 bullish vs 3 bearish of 6", summary)
+        self.assertIn("3 bullish vs 3", summary)
+        self.assertIn("bearish of 6", summary)
         self.assertIn("verdict: hold", summary)
 
 
 class DetailShapeTest(unittest.TestCase):
-    def test_to_detail_is_json_ready_with_the_v8_marker_and_legacy_keys(self):
+    def test_to_detail_is_json_ready_with_the_v9_marker_and_legacy_keys(self):
         result, _ = _run()
         detail = result.to_detail()
         json.dumps(detail)  # must not raise
-        self.assertEqual(detail["format"], 8)
+        self.assertEqual(detail["format"], 9)
         self.assertEqual(detail["turns"], [])
         self.assertEqual(len(detail["items"]), 6)
         verdict = detail["verdict"]
@@ -1031,7 +1034,7 @@ class TestTier2Stage(unittest.TestCase):
         self.assertAlmostEqual(report.levels.entry, 96.0)
         self.assertEqual(report.narrative, "ruling")
         self.assertIsNotNone(report.debate_detail)
-        self.assertEqual(report.debate_detail["format"], 8)
+        self.assertEqual(report.debate_detail["format"], 9)
 
     def test_no_verdict_falls_back_to_tier1_direction(self):
         engine = _FakeEngine(DebateResult(warnings=["judge exploded"]))

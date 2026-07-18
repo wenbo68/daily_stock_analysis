@@ -167,12 +167,14 @@ export type TieredDebateItem = {
   exclusion_reason?: string | null;
 };
 
-// v6 pool snapshot: per-dimension bullish/bearish counts and 10×b/n
-// scores, plus the pool-wide totals and the averaged score.
+// Pool snapshot: per-dimension bullish/bearish counts plus the
+// pool-wide totals and score. v6-v8 store a per-dimension score and an
+// averaged overall score; v9 stores flat counting (10 × bullish/total)
+// and no per-dimension score.
 export type TieredDebatePool = {
   dimensions: Record<
     string,
-    { bullish: number; bearish: number; total: number; score: number | null }
+    { bullish: number; bearish: number; total: number; score?: number | null }
   >;
   bullish: number;
   bearish: number;

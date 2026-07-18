@@ -26,11 +26,12 @@ focused fix calls; bullets that cannot be fixed are STRUCK (crossed
 out, never voted on, in no pool) and unfixable votes are discarded.
 
 NO AI authors any number. The position score is computed by code from
-the direction tags: per dimension ``10 × bullish / total``, averaged
-across dimensions, at two snapshots — initial (the merged list) and
-final (the bullets the votes left standing). Verdict on the 2-decimal
-final: < 4 sell, 4-6 hold, > 6 buy. Empty final pool → 5.00, hold,
-warning.
+the direction tags: ``10 × bullish / total`` over the whole pool (flat
+counting — v9 owner spec; per-dimension counts are stored for the
+section headers). Two snapshots: initial (the merged list, stored for
+the audit trail only) and final (the bullets the votes left standing —
+the displayed score). Verdict on the 2-decimal final: < 4 sell, 4-6
+hold, > 6 buy. Empty final pool → 5.00, hold, warning.
 
 5-6 base LLM calls (two lists parallel with their fix loops → merge →
 check round → deciding round only when there are ties → summary), all
@@ -87,7 +88,9 @@ HOLD_MAX = 6.0
 MAX_FIX_ROUNDS = 3
 
 #: Stored-detail version marker — the frontend picks its renderer by this.
-DETAIL_FORMAT = 8
+#: 9 = the flat-count score (10 × bullish / total over the whole pool);
+#: stored format-8 runs share the same shapes with a per-dimension mean.
+DETAIL_FORMAT = 9
 
 _CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
@@ -309,8 +312,8 @@ _LINK_RULES = """Link rules (all checked mechanically by code):
 - Use only the evidence above; never invent facts or numbers."""
 
 _VOTE_RULES = """Vote rules (checked mechanically by code):
-- Every vote: "verdict" is "valid" or "invalid", with a short plain
-  reason either way; an "invalid" vote MUST carry a reason.
+- Every vote: "verdict" is "valid" or "invalid", plus a short plain
+  "reason" — REQUIRED either way; a vote without a reason is rejected.
 - If your reason states a number from the reports, cite it with a link
   {{"ref": the leaf field, "value": the value copied EXACTLY as the
   report displays it}} and write that exact value in your reason.
@@ -473,12 +476,11 @@ _SUMMARY_TEMPLATE = """{context}
 The voted evidence list:
 {tree}
 
-Computed result (fixed formula, already decided by code — per dimension
-the score is 10 × bullish bullets / total bullets, averaged across the
-dimensions present in the pool):
-- initial score {initial} (the merged evidence list)
-- final score {final} (only the bullets the votes left standing:
-  {final_bullish} bullish vs {final_bearish} bearish of {final_total})
+Computed result (fixed formula, already decided by code — the score is
+10 × bullish bullets / total bullets over the pool the votes left
+standing):
+- final score {final} ({final_bullish} bullish vs {final_bearish}
+  bearish of {final_total})
 - verdict: {direction} (below 4 sell, 4-6 hold, above 6 buy)
 
 Write the user-facing report. Reply with JSON only:
@@ -661,8 +663,7 @@ class DebateEngine:
         direction = direction_from_final(final)
 
         # Step 5 — the user-facing prose; its failure never voids anything.
-        summary = self._summary(context, items, initial_score, final, pools,
-                                direction, warnings)
+        summary = self._summary(context, items, final, pools, direction, warnings)
 
         verdict = DebateVerdict(
             direction=direction,
@@ -1086,7 +1087,6 @@ class DebateEngine:
         self,
         context: str,
         items: Sequence[Dict[str, Any]],
-        initial: float,
         final: float,
         pools: Dict[str, Any],
         direction: Direction,
@@ -1095,7 +1095,6 @@ class DebateEngine:
         prompt = _SUMMARY_TEMPLATE.format(
             context=context,
             tree=_tree_text(items),
-            initial=f"{initial:.2f}",
             final=f"{final:.2f}",
             final_bullish=pools["final"]["bullish"],
             final_bearish=pools["final"]["bearish"],
@@ -1180,22 +1179,20 @@ class DebateEngine:
 
 
 def _pool_detail(items) -> Dict[str, Any]:
-    """Per-dimension 10 × bullish/total, averaged across dimensions."""
+    """Flat counting: 10 × bullish / total over the whole pool. The
+    per-dimension counts feed the section headers (`Technicals: ↑3 ↓4`)."""
     per_dimension: Dict[str, Dict[str, Any]] = {}
     for item in items:
         stats = per_dimension.setdefault(
-            item["dimension"], {"bullish": 0, "bearish": 0, "total": 0, "score": None}
+            item["dimension"], {"bullish": 0, "bearish": 0, "total": 0}
         )
         stats["total"] += 1
         stats["bullish" if item["direction"] == "bullish" else "bearish"] += 1
-    scores: List[float] = []
     bullish = bearish = total = 0
     for dimension in DIMENSIONS:
         stats = per_dimension.get(dimension)
         if not stats:
             continue
-        stats["score"] = round(10 * stats["bullish"] / stats["total"], 2)
-        scores.append(10 * stats["bullish"] / stats["total"])
         bullish += stats["bullish"]
         bearish += stats["bearish"]
         total += stats["total"]
@@ -1204,7 +1201,7 @@ def _pool_detail(items) -> Dict[str, Any]:
         "bullish": bullish,
         "bearish": bearish,
         "total": total,
-        "score": round(sum(scores) / len(scores), 2) if scores else None,
+        "score": round(10 * bullish / total, 2) if total else None,
     }
 
 
