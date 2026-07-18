@@ -941,7 +941,7 @@ const zh = {
   'tiered.levelModal.rejectedNote': '该调整未通过程序校验，已被拒绝——实际使用公式基准价。',
   'tiered.debate.title': '第 2 层 · 多空辩论',
   'tiered.help.debate':
-    '守方通读四份报告，列出全部看多与看空证据。\n每条证据引用的数值都由代码逐一校验：数值必须与报告显示的完全一致、且出现在句子里；不合格的引用会退回给 AI 修正（最多 3 次），仍失败的整条划线剔除。\n攻方先独立列出自己的证据清单，再逐条检查守方证据的逻辑，并补上守方遗漏的证据。\n守方对每条质疑做一次检查：成立就接受，否则驳回。\n裁判对每个争议做二选一裁定；代码按看多/看空条数算出得分——AI 不经手任何数字。',
+    '两位分析师各自独立通读四份报告，列出全部看多与看空证据；一次合并调用把两份清单对齐去重。\n每条证据引用的数值都由代码逐一校验：数值必须与报告显示的完全一致、且出现在句子里；不合格的引用会退回给 AI 修正（最多 3 次），仍失败的整条划线剔除。\n每条证据按多数票决定去留（最多 3 票）：作者自动算一张有效票，两位分析师都独立列出的证据直接确认；只有一位列出的证据由复核 AI 投第二票；1 比 1 平局时由决胜票裁定。\n代码按看多/看空条数算出得分——AI 不经手任何数字。',
   'tiered.debate.confidence': '裁判信心',
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
@@ -1004,6 +1004,20 @@ const zh = {
   'tiered.tree.finalScore': '最终立场分',
   'tiered.tree.total': '总条数',
   'tiered.tree.dimensionAverage': '{n} 个维度的平均分',
+  'tiered.tree.step.list': '证据清单',
+  'tiered.tree.step.votes': '投票',
+  'tiered.tree.step.final': '最终得分',
+  'tiered.tree.checker': '复核',
+  'tiered.tree.decider': '决胜票',
+  'tiered.tree.vote': '投票',
+  'tiered.tree.bothListed': '两位分析师独立列出——已确认',
+  'tiered.note.listerDegraded': '一位分析师的证据清单连续不合规——本次只使用另一份清单。',
+  'tiered.note.mergeDegraded': '清单合并连续不合规——第二份清单被放弃。',
+  'tiered.note.checkDegraded': '复核投票连续不合规——各条证据仅按作者一票计入。',
+  'tiered.note.tiebreakDegraded': '决胜投票连续不合规——平票的证据按未决处理，不计入得分。',
+  'tiered.note.voteDiscarded': '一张投票的引用经多次修正仍未通过代码校验——该票作废。',
+  'tiered.note.unresolved': '某条证据 1 比 1 平票且没有决胜票——按未决处理，不计入得分。',
+  'tiered.note.allConfirmed': '每条证据都被两位分析师独立列出——无需复核投票。',
   'tiered.note.struckBullet':
     '某条证据的引用经 3 次修正仍未通过代码校验——该条已划线剔除，不计入任何得分。',
   'tiered.note.attackerBulletDropped':
@@ -2126,7 +2140,7 @@ const en: Record<UiTextKey, string> = {
     'This proposal failed the code-side safety checks and was rejected — the formula base is used instead.',
   'tiered.debate.title': 'Tier 2 · Bull/bear debate',
   'tiered.help.debate':
-    'A defender reads the four reports and lists ALL the evidence — bullish and bearish.\nCode verifies every cited value: it must match the report’s displayed number exactly and appear in the sentence; failed citations go back to the AI to fix (up to 3 times), and bullets still broken are crossed out and dropped.\nAn attacker first builds its own independent list, then checks the logic of every defender item and adds what was missed.\nThe defender runs one check on each challenge: it holds → accept, it fails → reject.\nA judge makes a binary ruling on every dispute; code counts the surviving bullish vs bearish items into the score — no AI touches the numbers.',
+    'Two analysts independently read the four reports and each lists ALL the evidence — bullish and bearish; a merge call lines the two lists up.\nCode verifies every cited value: it must match the report’s displayed number exactly and appear in the sentence; failed citations go back to the AI to fix (up to 3 times), and bullets still broken are crossed out and dropped.\nEach bullet lives or dies by majority vote (at most 3 votes): its author counts as one valid vote, so a bullet both analysts listed independently is confirmed on the spot; a checker AI casts the second vote on single-author bullets; a deciding vote breaks 1-1 ties.\nCode counts the surviving bullish vs bearish bullets into the score — no AI touches the numbers.',
   'tiered.debate.confidence': 'Judge confidence',
   'tiered.help.debateConfidence':
     'How sure the judge AI is of its own verdict, from 0 to 1 — higher means more confident.',
@@ -2192,6 +2206,27 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.finalScore': 'final position score',
   'tiered.tree.total': 'total items',
   'tiered.tree.dimensionAverage': 'average of {n} dimensions',
+  'tiered.tree.step.list': 'evidence list',
+  'tiered.tree.step.votes': 'votes',
+  'tiered.tree.step.final': 'final score',
+  'tiered.tree.checker': 'checker',
+  'tiered.tree.decider': 'deciding vote',
+  'tiered.tree.vote': 'vote',
+  'tiered.tree.bothListed': 'listed independently by both analysts — confirmed',
+  'tiered.note.listerDegraded':
+    'One analyst’s evidence list kept coming back invalid — this run used the other list only.',
+  'tiered.note.mergeDegraded':
+    'The list merge kept coming back invalid — the second list was dropped.',
+  'tiered.note.checkDegraded':
+    'The check round kept coming back invalid — bullets were counted on their author’s vote alone.',
+  'tiered.note.tiebreakDegraded':
+    'The deciding round kept coming back invalid — tied bullets were treated as unresolved and left out of the score.',
+  'tiered.note.voteDiscarded':
+    'A vote’s citations still failed the code check after the fix attempts — that vote was discarded.',
+  'tiered.note.unresolved':
+    'A bullet was tied 1-1 with no deciding vote — it was treated as unresolved and left out of the score.',
+  'tiered.note.allConfirmed':
+    'Every bullet was listed independently by both analysts — no check votes were needed.',
   'tiered.note.struckBullet':
     'A bullet’s citations still failed the code check after 3 fix attempts — it is crossed out and counts toward nothing.',
   'tiered.note.attackerBulletDropped':

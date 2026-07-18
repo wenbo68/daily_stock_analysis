@@ -272,7 +272,7 @@ def _buy_verdicts():
 
     debate = DebateVerdict(direction=Direction.BUY, final_score=7.4,
                            summary="bull case holds up", initial_score=7.5,
-                           adjusted_score=7.4, pools={})
+                           pools={})
     risk = RiskVerdict(stance=Direction.BUY, size_multiplier=0.5,
                        stop_advice="keep", tightened_stop=None,
                        summary="half size")

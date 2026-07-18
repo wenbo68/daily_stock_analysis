@@ -1,21 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the tier-2 defender/attacker/judge debate (v7).
+"""Offline tests for the tier-2 evidence vote (v8).
 
-Fake-LLM tests covering: the 5-step choreography (parallel openings, each
-with its own code citation-check + fix loop → attacker review → defender
-reply → judge → summary), the deterministic pool scores (per dimension
-10 × bullish/total, averaged; three snapshots initial/adjusted/final),
-final-pool membership (judge decides; the defender's stance never does —
-resurrection included), the display-value citation contract (links are
-{ref, value} with the value copied exactly as the report pages display
-it; sentiment links are {ref, text}), the citation-fix loop (broken
-bullets go back to the same AI up to 3 times; unfixable defender bullets
-are struck, unfixable attacker bullets are dropped), the Pydantic
-retry-once contract, and every failure rule — defender/judge failures
-void the verdict (tier 2 falls back to tier 1), attacker failures degrade
-loudly, and a broken summary never voids a computed verdict.
+Fake-LLM tests covering: the vote choreography (two blind analyst lists
+in parallel, each with a code citation check + fix loop → merge → check
+round on single-author bullets → deciding round on 1-1 ties → summary),
+the vote arithmetic (author = first valid vote; both-listed = confirmed
+2-0; majority of three decides), the deterministic pool scores (per
+dimension 10 × bullish/total, averaged; two snapshots initial/final),
+the display-value citation contract (links are {ref, value} copied
+exactly as the report pages display it; sentiment links are bare
+{ref: citation:N}), the vote citation contract (reasons stating numbers
+must cite them; unfixable votes are discarded), struck bullets from
+either analyst, the Pydantic retry-once contract, and every failure
+rule — both lists failing voids the verdict (tier 2 falls back to
+tier 1), one list failing proceeds with the other, a failed merge drops
+the second list, a failed check round counts bullets on the author's
+vote alone, a failed deciding round excludes ties as unresolved, and a
+broken summary never voids a computed verdict.
 
-The two opening calls (and their fix loops) run in parallel threads, so
+The two list calls (and their fix loops) run in parallel threads, so
 the fake LLM routes replies by prompt content, not call order.
 """
 from __future__ import annotations
@@ -94,14 +97,16 @@ def _tier1(direction=Direction.BUY, dimensions=()):
 
 
 # ---------------------------------------------------------------------------
-# Reply builders — the default run: 4 defender items (T bullish ×2,
-# S bullish + bearish), one attack on T2 (rejected, judge sides with the
-# defender), one bearish addition S3 (adopted, judge check passes).
+# Reply builders — the default run:
+#   first list:  T1 bullish (RSI), T2 bearish (close), S1 bullish, S2 bearish
+#   second list: T1/S1/S2 identical (→ covered, confirmed 2-0),
+#                T2 bullish (tech score, → renumbered T3),
+#                S3 bearish (→ stays S3)
+#   check round on T2/T3/S3: T2 voted invalid (→ tied), T3/S3 valid
+#   deciding round on T2: valid → counted 2-1
 #
-# Scores (per dimension 10 × bullish/total, averaged):
-#   initial  = (tech 10 + sent 5) / 2      = 7.50
-#   adjusted = (tech 10 + sent 10/3) / 2   = 6.67   (S3 joins the pool)
-#   final    = same pool                    = 6.67 → buy
+# Pools (per dimension 10 × bullish/total, averaged):
+#   initial = final = (tech 2/3 → 6.67 + sent 1/3 → 3.33) / 2 = 5.00 → hold
 # ---------------------------------------------------------------------------
 
 
@@ -109,8 +114,8 @@ def _vlink(ref, value):
     return {"ref": ref, "value": value}
 
 
-def _slink(ref, text):
-    return {"ref": ref, "text": text}
+def _slink(number):
+    return {"ref": f"citation:{number}"}
 
 
 def _item(item_id, dimension, direction, claim, links):
@@ -123,145 +128,124 @@ def _item(item_id, dimension, direction, claim, links):
     }
 
 
-def _check(verdict="valid", reason=None, citations=()):
-    return {"verdict": verdict, "reason": reason, "citations": list(citations)}
+def _vote(verdict="valid", reason=None, links=()):
+    return {"verdict": verdict, "reason": reason, "links": list(links)}
 
 
-DEFENDER_ITEMS = [
+LIST_1 = [
     _item("T1", "technicals", "bullish",
           "The 14-day RSI (71.20) is above 70, showing strong momentum.",
           [_vlink("technicals.rsi_14", "71.20")]),
-    _item("T2", "technicals", "bullish",
-          "The closing price (100) holds above the 95 support.",
+    _item("T2", "technicals", "bearish",
+          "The closing price (100) is below the 105 resistance.",
           [_vlink("technicals.close", "100")]),
     _item("S1", "sentiment", "bullish",
           "A big deal was announced.",
-          [_slink("citation:1", "big deal")]),
+          [_slink(1)]),
     _item("S2", "sentiment", "bearish",
           "Doubts remain about the coverage.",
-          [_slink("citation:2", "Doubts remain")]),
+          [_slink(2)]),
 ]
 
-ATTACKER_ITEMS = DEFENDER_ITEMS + [
+LIST_2 = [
+    LIST_1[0],
+    _item("T2", "technicals", "bullish",
+          "The technical score (68) is strong.",
+          [_vlink("technicals.score", "68")]),
+    LIST_1[2],
+    LIST_1[3],
     _item("S3", "sentiment", "bearish",
           "The deal is not closed yet.",
-          [_slink("citation:2", "deal")]),
+          [_slink(2)]),
 ]
 
-BROKEN_T2 = _item("T2", "technicals", "bullish",
-                  "The closing price (999) holds above the 95 support.",
+DEFAULT_MATCH_MAP = [
+    {"own_id": "T1", "covered_by": "T1"},
+    {"own_id": "T2", "covered_by": None},
+    {"own_id": "S1", "covered_by": "S1"},
+    {"own_id": "S2", "covered_by": "S2"},
+    {"own_id": "S3", "covered_by": None},
+]
+
+BROKEN_T2 = _item("T2", "technicals", "bearish",
+                  "The closing price (999) is below the 105 resistance.",
                   [_vlink("technicals.close", "999")])
 
 
-def _defender_opening(items=None):
-    return json.dumps(
-        {"items": items or DEFENDER_ITEMS, "no_data_dimensions": []}
-    )
-
-
-def _attacker_opening(items=None):
-    return json.dumps({"items": items or ATTACKER_ITEMS, "no_data_dimensions": []})
+def _list_reply(items):
+    return json.dumps({"items": items, "no_data_dimensions": []})
 
 
 def _fix(items):
     return json.dumps({"items": items})
 
 
-def _review(checks=None, match_map=None):
+def _vote_fix(votes):
+    return json.dumps({"votes": votes})
+
+
+def _merge(match_map=None):
+    return json.dumps(
+        {"match_map": match_map if match_map is not None else DEFAULT_MATCH_MAP}
+    )
+
+
+def _check(votes=None):
     return json.dumps(
         {
-            "match_map": match_map
-            if match_map is not None
-            else [
-                {"own_id": "T1", "covered_by": "T1"},
-                {"own_id": "T2", "covered_by": "T2"},
-                {"own_id": "S1", "covered_by": "S1"},
-                {"own_id": "S2", "covered_by": "S2"},
-                {"own_id": "S3", "covered_by": None},
-            ],
-            "checks": checks
-            or {
-                "T1": _check(),
-                "T2": _check("invalid", "One price point is not support.",
-                             ["technicals.close"]),
-                "S1": _check(),
-                "S2": _check(),
-            },
+            "votes": votes
+            if votes is not None
+            else {
+                "T2": _vote("invalid",
+                            "A single close below one level is not a trend."),
+                "T3": _vote("valid", "The score reading is fair."),
+                "S3": _vote("valid", "Supported by the source.", [_slink(2)]),
+            }
         }
     )
 
 
-def _reply(responses=None):
+def _decider(votes=None):
     return json.dumps(
         {
-            "responses": responses
-            if responses is not None
+            "votes": votes
+            if votes is not None
             else {
-                "T2": _check(
-                    "invalid",
-                    "The claim was about the level, not the trend.",
-                    ["technicals.close"],
-                ),
-                "add:S3": _check(),
-            },
-        }
-    )
-
-
-def _judge(reason_checks=None, attack_rulings=None):
-    return json.dumps(
-        {
-            # T2 is attacked → it gets an attack ruling, not a reason check.
-            "reason_checks": reason_checks
-            or {
-                "T1": _check(),
-                "S1": _check(),
-                "S2": _check(),
-                "S3": _check(),
-            },
-            "attack_rulings": attack_rulings
-            if attack_rulings is not None
-            else {
-                "T2": {
-                    "verdict": "attack_wrong",
-                    "reason": "The item claimed a level, which the data shows.",
-                    "citations": ["technicals.close"],
-                }
-            },
+                "T2": _vote("valid",
+                            "The bearish reading of the close is defensible."),
+            }
         }
     )
 
 
 def _summary():
-    return json.dumps({"summary": "The surviving evidence leans bullish."})
+    return json.dumps({"summary": "The evidence splits down the middle."})
 
 
 def _replies(**overrides):
     replies = {
-        "defender_opening": _defender_opening(),
-        "attacker_opening": _attacker_opening(),
-        "review": _review(),
-        "review_checks_only": _review(match_map=[]),
-        "reply": _reply(),
-        "judge": _judge(),
+        "lister1": _list_reply(LIST_1),
+        "lister2": _list_reply(LIST_2),
+        "merge": _merge(),
+        "check": _check(),
+        "decider": _decider(),
         "summary": _summary(),
     }
     replies.update(overrides)
     return replies
 
 
-# Marker → stage, checked in order — the specific markers (fix, reply,
-# checks-only review) must match before the generic role openers. The
-# default reply set has no "fix" entry, so an unexpected fix round fails
-# the test loudly.
+# Marker → stage, checked in order — the fix markers must match before
+# the generic role openers. The default reply set has no fix entries, so
+# an unexpected fix round fails the test loudly.
 MARKERS = [
-    ("failed the code's citation check", "fix"),
-    ("The attacker has challenged your evidence", "reply"),
-    ("independent list is unavailable", "review_checks_only"),
-    ("Compare the two evidence lists", "review"),
-    ("You are the DEFENDER analyst", "defender_opening"),
-    ("You are the ATTACKER analyst, working alone", "attacker_opening"),
-    ("You are the JUDGE with the final say", "judge"),
+    ("votes failed the code's citation check", "vote_fix"),
+    ("bullets failed the code's citation check", "fix"),
+    ("You are the FIRST analyst", "lister1"),
+    ("You are the SECOND analyst", "lister2"),
+    ("Match the two evidence lists", "merge"),
+    ("cast the deciding vote", "decider"),
+    ("cast the second vote", "check"),
     ("Write the user-facing report", "summary"),
 ]
 
@@ -276,8 +260,8 @@ def stage_of(prompt):
 
 
 class RoutedSummarizer:
-    """Routes replies by prompt content; thread-safe (openings and their
-    fix loops run in parallel). ``retry_replies`` serve the second
+    """Routes replies by prompt content; thread-safe (the two lists and
+    their fix loops run in parallel). ``retry_replies`` serve the second
     attempt of a stage."""
 
     def __init__(self, replies, retry_replies=None):
@@ -393,28 +377,28 @@ class CeilingsTest(unittest.TestCase):
         self.assertEqual(max_items_per_dimension(dims)["technicals"], 2)
 
     def test_too_many_items_for_the_ceiling_is_rejected(self):
-        # 5 technicals items against a ceiling of 4 → retry with the error.
-        extra = _item("T5", "technicals", "bullish",
-                      "The technical score (68) is high.",
-                      [_vlink("technicals.score", "68")])
+        # 5 technicals bullets against a ceiling of 4 → retry with the error.
         many = [
-            DEFENDER_ITEMS[0], DEFENDER_ITEMS[1],
+            LIST_1[0], LIST_1[1],
             _item("T3", "technicals", "bullish",
                   "The technical score (68) is high.",
                   [_vlink("technicals.score", "68")]),
             _item("T4", "technicals", "bullish",
                   "The MACD signal (1.20) is positive.",
                   [_vlink("technicals.macd.signal", "1.20")]),
-            extra, DEFENDER_ITEMS[2], DEFENDER_ITEMS[3],
+            _item("T5", "technicals", "bullish",
+                  "The technical score (68) is strong.",
+                  [_vlink("technicals.score", "68")]),
+            LIST_1[2], LIST_1[3],
         ]
         result, fake = _run(
-            _replies(defender_opening=_defender_opening(items=many)),
-            retry_replies={"defender_opening": _defender_opening()},
+            _replies(lister1=_list_reply(many)),
+            retry_replies={"lister1": _list_reply(LIST_1)},
         )
         self.assertIsNotNone(result.verdict)
         retry_prompt = next(
             p for p in fake.prompts
-            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
+            if RETRY_MARKER in p and "You are the FIRST analyst" in p
         )
         self.assertIn("the maximum is 4", retry_prompt)
 
@@ -424,136 +408,277 @@ class ChoreographyTest(unittest.TestCase):
         result, fake = _run()
         self.assertEqual(
             sorted(fake.stages()),
-            sorted(
-                ["defender_opening", "attacker_opening", "review", "reply", "judge", "summary"]
-            ),
+            sorted(["lister1", "lister2", "merge", "check", "decider", "summary"]),
         )
         verdict = result.verdict
         self.assertIsNotNone(verdict)
-        # initial: tech 10.0, sentiment 5.0 → 7.5
-        self.assertEqual(verdict.initial_score, 7.5)
-        # adjusted/final: S3 (bearish) joins → sentiment 10/3 → (10+3.33)/2
-        self.assertEqual(verdict.adjusted_score, 6.67)
-        self.assertEqual(verdict.final_score, 6.67)
-        self.assertEqual(verdict.direction, Direction.BUY)
-        self.assertEqual(verdict.summary, "The surviving evidence leans bullish.")
-        self.assertEqual(verdict.pools["initial"]["dimensions"]["technicals"]["score"], 10.0)
-        self.assertEqual(verdict.pools["initial"]["dimensions"]["sentiment"]["score"], 5.0)
+        # tech 2 bullish / 1 bearish → 6.67; sent 1/3 → 3.33; mean 5.0
+        self.assertEqual(verdict.initial_score, 5.0)
+        self.assertEqual(verdict.final_score, 5.0)
+        self.assertEqual(verdict.direction, Direction.HOLD)
+        self.assertEqual(verdict.summary, "The evidence splits down the middle.")
+        self.assertEqual(verdict.pools["initial"]["dimensions"]["technicals"]["score"], 6.67)
         self.assertEqual(verdict.pools["final"]["bullish"], 3)
-        self.assertEqual(verdict.pools["final"]["bearish"], 2)
+        self.assertEqual(verdict.pools["final"]["bearish"], 3)
 
-    def test_the_openings_run_before_everything_else(self):
+    def test_the_two_lists_run_before_everything_else(self):
         _, fake = _run()
         stages = fake.stages()
-        self.assertEqual(sorted(stages[:2]), ["attacker_opening", "defender_opening"])
-        self.assertEqual(stages[2:], ["review", "reply", "judge", "summary"])
+        self.assertEqual(sorted(stages[:2]), ["lister1", "lister2"])
+        self.assertEqual(stages[2:], ["merge", "check", "decider", "summary"])
 
-    def test_healthy_items_are_not_struck(self):
+    def test_both_listed_bullets_are_confirmed_without_any_vote(self):
         result, _ = _run()
-        for item in result.items:
-            self.assertFalse(item["struck"])
-            self.assertEqual(item["problems"], [])
+        for item_id in ("T1", "S1", "S2"):
+            item = _item_by_id(result, item_id)
+            self.assertEqual(item["authors"], 2)
+            self.assertEqual(item["votes"], [])
+            self.assertEqual(item["final_status"], "counted")
 
-    def test_links_store_display_values_and_sentiment_text(self):
+    def test_the_uncovered_second_list_bullet_is_renumbered_in(self):
         result, _ = _run()
-        t1 = _item_by_id(result, "T1")
+        t3 = _item_by_id(result, "T3")
+        self.assertEqual(t3["authors"], 1)
+        self.assertEqual(t3["claim"], "The technical score (68) is strong.")
+        self.assertEqual(t3["final_status"], "counted")
+
+    def test_a_tied_bullet_carries_both_votes_and_the_majority_wins(self):
+        result, _ = _run()
+        t2 = _item_by_id(result, "T2")
+        self.assertEqual(t2["authors"], 1)
         self.assertEqual(
-            t1["links"],
-            [{"ref": "technicals.rsi_14", "value": "71.20", "text": None}],
+            [(v["role"], v["verdict"]) for v in t2["votes"]],
+            [("checker", "invalid"), ("decider", "valid")],
         )
-        s1 = _item_by_id(result, "S1")
-        self.assertEqual(
-            s1["links"], [{"ref": "citation:1", "value": None, "text": "big deal"}]
-        )
+        self.assertEqual(t2["final_status"], "counted")  # 2-1
 
-    def test_the_addition_joins_the_tree_renumbered_and_counted(self):
-        result, _ = _run()
-        addition = _item_by_id(result, "S3")
-        self.assertTrue(addition["added_by_attacker"])
-        self.assertEqual(addition["dimension"], "sentiment")
-        self.assertTrue(addition["response"]["accepted"])
-        self.assertEqual(addition["judge"]["kind"], "reason_check")
-        self.assertEqual(addition["judge"]["verdict"], "valid")
-        self.assertEqual(addition["final_status"], "counted")
-
-    def test_defended_attack_is_recorded_on_the_item(self):
-        result, _ = _run()
-        item = _item_by_id(result, "T2")
-        self.assertEqual(item["attacker_check"]["verdict"], "invalid")
-        self.assertFalse(item["response"]["accepted"])
-        self.assertEqual(item["response"]["check"]["verdict"], "invalid")
-        self.assertEqual(item["judge"]["kind"], "attack_ruling")
-        self.assertEqual(item["judge"]["verdict"], "attack_wrong")
-        self.assertEqual(item["final_status"], "counted")
-
-    def test_macro_econ_items_use_the_e_prefix(self):
-        macro = DimensionResult(
-            dimension="macro_econ",
-            kind=SourceKind.NUMERIC,
-            coverage=Coverage.FULL,
-            payload={"unemployment_pct": 4.2, "cpi_yoy_pct": 3.4},
-        )
-        dims = [_technicals(), macro, _sentiment()]
-        e_items = [
-            _item("E1", "macro_econ", "bullish",
-                  "Unemployment (4.20%) is low.",
-                  [_vlink("macro_econ.unemployment_pct", "4.20")]),
-            _item("E2", "macro_econ", "bearish",
-                  "CPI inflation (3.40%) is above target.",
-                  [_vlink("macro_econ.cpi_yoy_pct", "3.40")]),
-        ]
-        items = DEFENDER_ITEMS + e_items
+    def test_all_covered_lists_skip_both_vote_rounds(self):
         match_map = [
-            {"own_id": i["id"], "covered_by": i["id"]} for i in items
+            {"own_id": item["id"], "covered_by": item["id"]} for item in LIST_1
         ]
-        checks = {i["id"]: _check() for i in items}
-        reason_checks = {i["id"]: _check() for i in items}
+        result, fake = _run(
+            _replies(lister2=_list_reply(LIST_1), merge=_merge(match_map))
+        )
+        self.assertEqual(
+            sorted(fake.stages()),
+            sorted(["lister1", "lister2", "merge", "summary"]),
+        )
+        self.assertTrue(
+            any("check round skipped" in w for w in result.warnings)
+        )
+        for item in result.items:
+            self.assertEqual(item["authors"], 2)
+            self.assertEqual(item["final_status"], "counted")
+
+    def test_no_ties_skips_the_deciding_round(self):
+        votes = {
+            "T2": _vote("valid", "Fair reading."),
+            "T3": _vote("valid", "Fair reading."),
+            "S3": _vote("valid", "Fair reading."),
+        }
+        result, fake = _run(_replies(check=_check(votes)))
+        self.assertNotIn("decider", fake.stages())
+        self.assertEqual(len(fake.prompts), 5)
+        for item in result.items:
+            self.assertEqual(item["final_status"], "counted")
+
+    def test_model_written_source_markers_are_stripped(self):
+        # The UI appends its own [N] hyperlinks, so a literal "[2]" the
+        # model wrote in the sentence would show twice — code strips it
+        # from claims and vote reasons alike.
+        marked = _item("S3", "sentiment", "bearish",
+                       "The deal is not closed yet [2].", [_slink(2)])
+        second = [LIST_2[0], LIST_2[1], LIST_2[2], LIST_2[3], marked]
+        votes = {
+            "T2": _vote("valid", "Fair reading."),
+            "T3": _vote("valid", "Fair reading."),
+            "S3": _vote("valid", "Supported by the source [2].", [_slink(2)]),
+        }
         result, _ = _run(
-            _replies(
-                defender_opening=_defender_opening(items=items),
-                attacker_opening=_attacker_opening(items=items),
-                review=_review(checks=checks, match_map=match_map),
-                judge=_judge(reason_checks=reason_checks, attack_rulings={}),
-            ),
-            dimensions=dims,
+            _replies(lister2=_list_reply(second), check=_check(votes))
+        )
+        s3 = _item_by_id(result, "S3")
+        self.assertEqual(s3["claim"], "The deal is not closed yet.")
+        self.assertEqual(s3["votes"][0]["reason"], "Supported by the source.")
+
+    def test_an_opposite_direction_match_is_rejected_and_becomes_a_dispute(self):
+        # The second analyst reads the same RSI as bearish; matching it to
+        # the first analyst's bullish bullet must be rejected — both
+        # versions face the votes instead.
+        rsi_bear = _item("T2", "technicals", "bearish",
+                         "The 14-day RSI (71.20) is overbought territory.",
+                         [_vlink("technicals.rsi_14", "71.20")])
+        second = [LIST_1[0], rsi_bear, LIST_1[2], LIST_1[3], LIST_2[4]]
+        bad_map = [
+            {"own_id": "T1", "covered_by": "T1"},
+            {"own_id": "T2", "covered_by": "T1"},  # opposite direction!
+            {"own_id": "S1", "covered_by": "S1"},
+            {"own_id": "S2", "covered_by": "S2"},
+            {"own_id": "S3", "covered_by": None},
+        ]
+        good_map = [dict(row) for row in bad_map]
+        good_map[1] = {"own_id": "T2", "covered_by": None}
+        result, fake = _run(
+            _replies(lister2=_list_reply(second), merge=_merge(bad_map)),
+            retry_replies={"merge": _merge(good_map)},
         )
         self.assertIsNotNone(result.verdict)
-        self.assertEqual(_item_by_id(result, "E1")["dimension"], "macro_econ")
-        # macro pool: 1 bullish of 2 → 5.0
-        self.assertEqual(
-            result.verdict.pools["initial"]["dimensions"]["macro_econ"]["score"], 5.0
+        retry_prompt = next(
+            p for p in fake.prompts
+            if RETRY_MARKER in p and "Match the two evidence lists" in p
+        )
+        self.assertIn("must be left unmatched", retry_prompt)
+        t3 = _item_by_id(result, "T3")  # the bearish RSI, renumbered in
+        self.assertEqual(t3["direction"], "bearish")
+        self.assertEqual(t3["final_status"], "counted")
+
+
+class VoteOutcomeTest(unittest.TestCase):
+    """Majority of at most three votes; the author is always valid."""
+
+    def test_outvoted_bullet_is_excluded(self):
+        result, _ = _run(
+            _replies(decider=_decider({"T2": _vote("invalid", "The objection holds.")}))
+        )
+        t2 = _item_by_id(result, "T2")
+        self.assertEqual(t2["final_status"], "excluded")  # 1-2
+        self.assertEqual(t2["exclusion_reason"], "outvoted")
+        # final: tech T1+T3 → 10, sent 1/3 → 3.33 → 6.67 buy
+        self.assertEqual(result.verdict.final_score, 6.67)
+        self.assertEqual(result.verdict.direction, Direction.BUY)
+
+    def test_failed_deciding_round_excludes_ties_as_unresolved(self):
+        result, _ = _run(_replies(decider="not json"))
+        t2 = _item_by_id(result, "T2")
+        self.assertEqual(t2["final_status"], "excluded")
+        self.assertEqual(t2["exclusion_reason"], "unresolved")
+        self.assertTrue(
+            any("deciding round invalid after retry — tied bullets excluded" in w
+                for w in result.warnings)
+        )
+        self.assertTrue(
+            any("no deciding vote for T2" in w for w in result.warnings)
+        )
+
+    def test_failed_check_round_counts_bullets_on_the_author_alone(self):
+        result, fake = _run(_replies(check="not json"))
+        self.assertIsNotNone(result.verdict)
+        self.assertTrue(
+            any("check round invalid after retry — bullets counted on" in w
+                for w in result.warnings)
+        )
+        self.assertNotIn("decider", fake.stages())
+        for item in result.items:
+            self.assertEqual(item["final_status"], "counted")
+
+    def test_empty_final_pool_defaults_to_neutral_five(self):
+        # Everything single-authored dies; the both-listed bullets are the
+        # only survivors — so kill them too by making the second list fail
+        # and voting every bullet down, unbreakable ties resolved against.
+        votes = {
+            item_id: _vote("invalid", "Flawed.")
+            for item_id in ("T1", "T2", "S1", "S2")
+        }
+        deciders = {
+            item_id: _vote("invalid", "The objection holds.")
+            for item_id in ("T1", "T2", "S1", "S2")
+        }
+        result, _ = _run(
+            _replies(
+                lister2="not json",
+                check=_check(votes),
+                decider=_decider(deciders),
+            )
+        )
+        verdict = result.verdict
+        self.assertEqual(verdict.pools["final"]["total"], 0)
+        self.assertEqual(verdict.final_score, 5.0)
+        self.assertEqual(verdict.direction, Direction.HOLD)
+        self.assertTrue(any("no surviving evidence to weigh" in w for w in result.warnings))
+        self.assertTrue(
+            any("the final score rests on a thin base" in w for w in result.warnings)
         )
 
 
-class CitationFixTest(unittest.TestCase):
-    """Code checks every link; broken bullets get up to 3 focused fix
-    calls; unfixable defender bullets are struck, attacker ones dropped."""
+class StruckBulletTest(unittest.TestCase):
+    """Bullets whose citations code cannot fix are struck — crossed out,
+    never voted on, in no pool — from either analyst."""
 
-    def _broken_opening(self):
-        return _defender_opening(
-            items=[DEFENDER_ITEMS[0], BROKEN_T2, DEFENDER_ITEMS[2], DEFENDER_ITEMS[3]]
-        )
-
-    def test_a_fixed_bullet_rejoins_the_debate_without_a_trace(self):
+    def test_an_unfixable_first_list_bullet_is_struck_and_sits_out(self):
+        broken_first = [LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]
         result, fake = _run(
             _replies(
-                defender_opening=self._broken_opening(),
-                fix=_fix([DEFENDER_ITEMS[1]]),
+                lister1=_list_reply(broken_first),
+                fix=_fix([BROKEN_T2]),
+                check=_check({
+                    "T3": _vote("valid", "Fair reading."),
+                    "S3": _vote("valid", "Fair reading."),
+                }),
+            )
+        )
+        self.assertEqual(fake.stages().count("fix"), 3)
+        t2 = _item_by_id(result, "T2")
+        self.assertTrue(t2["struck"])
+        self.assertEqual(t2["final_status"], "excluded")
+        self.assertEqual(t2["exclusion_reason"], "citation_failed")
+        self.assertTrue(any("must be copied exactly" in p for p in t2["problems"]))
+        self.assertTrue(
+            any("struck from the list" in w for w in result.warnings)
+        )
+        # The struck bullet never reaches the merge or the votes…
+        merge_prompt = next(p for p in fake.prompts if stage_of(p) == "merge")
+        self.assertNotIn("999", merge_prompt)
+        check_prompt = next(p for p in fake.prompts if stage_of(p) == "check")
+        self.assertNotIn("999", check_prompt)
+        # …and never enters a pool: initial = T1, S1, S2, T3, S3.
+        self.assertEqual(result.verdict.pools["initial"]["total"], 5)
+        # tech T1+T3 all bullish → 10; sent 1/3 → 3.33 → 6.67
+        self.assertEqual(result.verdict.initial_score, 6.67)
+
+    def test_an_unfixable_second_list_bullet_is_struck_too(self):
+        broken_s3 = _item("S3", "sentiment", "bearish",
+                          "The deal is not closed yet.", [_slink(9)])
+        second = [LIST_2[0], LIST_2[1], LIST_2[2], LIST_2[3], broken_s3]
+        match_map = [row for row in DEFAULT_MATCH_MAP if row["own_id"] != "S3"]
+        result, fake = _run(
+            _replies(
+                lister2=_list_reply(second),
+                fix=_fix([broken_s3]),
+                merge=_merge(match_map),
+                check=_check({
+                    "T2": _vote("valid", "Fair reading."),
+                    "T3": _vote("valid", "Fair reading."),
+                }),
+            )
+        )
+        self.assertEqual(fake.stages().count("fix"), 3)
+        s3 = _item_by_id(result, "S3")  # renumbered into the tree, struck
+        self.assertTrue(s3["struck"])
+        self.assertEqual(s3["exclusion_reason"], "citation_failed")
+        self.assertEqual(s3["votes"], [])
+        self.assertEqual(result.verdict.pools["initial"]["total"], 5)
+
+    def test_a_fixed_bullet_rejoins_without_a_trace(self):
+        broken_first = [LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]
+        result, fake = _run(
+            _replies(
+                lister1=_list_reply(broken_first),
+                fix=_fix([LIST_1[1]]),
             )
         )
         self.assertEqual(fake.stages().count("fix"), 1)
-        item = _item_by_id(result, "T2")
-        self.assertFalse(item["struck"])
-        self.assertEqual(item["links"][0]["value"], "100")
-        self.assertEqual(item["final_status"], "counted")
-        self.assertEqual(result.verdict.final_score, 6.67)
+        t2 = _item_by_id(result, "T2")
+        self.assertFalse(t2["struck"])
+        self.assertEqual(t2["links"][0]["value"], "100")
+        self.assertEqual(t2["final_status"], "counted")
         self.assertFalse(any("struck" in w for w in result.warnings))
 
     def test_the_fix_prompt_carries_only_the_broken_bullets_and_errors(self):
+        broken_first = [LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]
         _, fake = _run(
             _replies(
-                defender_opening=self._broken_opening(),
-                fix=_fix([DEFENDER_ITEMS[1]]),
+                lister1=_list_reply(broken_first),
+                fix=_fix([LIST_1[1]]),
             )
         )
         fix_prompt = next(p for p in fake.prompts if stage_of(p) == "fix")
@@ -563,450 +688,157 @@ class CitationFixTest(unittest.TestCase):
         self.assertIn("must be copied exactly", fix_prompt)
         self.assertIn("'100'", fix_prompt)  # the correct display string is shown
 
-    def test_an_unfixable_defender_bullet_is_struck_and_sits_out(self):
-        # The fix reply repeats the broken bullet 3 times → struck.
-        review = _review(
-            checks={"T1": _check(), "S1": _check(), "S2": _check()},
-            match_map=[
-                {"own_id": "T1", "covered_by": "T1"},
-                {"own_id": "T2", "covered_by": "T1"},
-                {"own_id": "S1", "covered_by": "S1"},
-                {"own_id": "S2", "covered_by": "S2"},
-                {"own_id": "S3", "covered_by": None},
-            ],
-        )
+
+class VoteCitationTest(unittest.TestCase):
+    """Vote reasons follow the same code-checked citation contract."""
+
+    def test_a_numeric_reason_without_links_is_sent_back_to_fix(self):
+        votes = {
+            "T2": _vote("invalid", "The close of 100.00 tells nothing."),
+            "T3": _vote("valid", "Fair reading."),
+            "S3": _vote("valid", "Fair reading."),
+        }
+        fixed = {
+            "T2": _vote("invalid",
+                        "The close of 100 tells nothing on its own.",
+                        [_vlink("technicals.close", "100")]),
+        }
         result, fake = _run(
-            _replies(
-                defender_opening=self._broken_opening(),
-                fix=_fix([BROKEN_T2]),
-                review=review,
-                reply=_reply(responses={"add:S3": _check()}),
-                judge=_judge(
-                    reason_checks={
-                        "T1": _check(), "S1": _check(),
-                        "S2": _check(), "S3": _check(),
-                    },
-                    attack_rulings={},
-                ),
-            )
+            _replies(check=_check(votes), vote_fix=_vote_fix(fixed))
         )
-        self.assertEqual(fake.stages().count("fix"), 3)
-        item = _item_by_id(result, "T2")
-        self.assertTrue(item["struck"])
-        self.assertEqual(item["final_status"], "excluded")
-        self.assertEqual(item["exclusion_reason"], "citation_failed")
-        self.assertTrue(any("must be copied exactly" in p for p in item["problems"]))
+        self.assertEqual(fake.stages().count("vote_fix"), 1)
+        vote_fix_prompt = next(p for p in fake.prompts if stage_of(p) == "vote_fix")
+        self.assertIn("states a number — cite it with a link", vote_fix_prompt)
+        t2 = _item_by_id(result, "T2")
+        self.assertEqual(t2["votes"][0]["links"][0]["ref"], "technicals.close")
+        self.assertEqual(t2["final_status"], "counted")  # decider still saves it
+
+    def test_a_vote_with_an_unfixable_citation_is_discarded(self):
+        bad_vote = _vote("invalid", "The close is 999.00 which is wrong.",
+                         [_vlink("technicals.close", "999")])
+        votes = {
+            "T2": bad_vote,
+            "T3": _vote("valid", "Fair reading."),
+            "S3": _vote("valid", "Fair reading."),
+        }
+        result, fake = _run(
+            _replies(check=_check(votes), vote_fix=_vote_fix({"T2": bad_vote}))
+        )
+        self.assertEqual(fake.stages().count("vote_fix"), 3)
         self.assertTrue(
-            any("struck from the debate" in w for w in result.warnings)
-        )
-        # The struck bullet never reaches the other debaters…
-        review_prompt = next(p for p in fake.prompts if stage_of(p) == "review")
-        self.assertNotIn("999", review_prompt)
-        judge_prompt = next(p for p in fake.prompts if stage_of(p) == "judge")
-        self.assertNotIn("999", judge_prompt)
-        # …and never enters a pool: initial = T1 + S1 + S2.
-        self.assertEqual(result.verdict.pools["initial"]["total"], 3)
-        self.assertEqual(result.verdict.initial_score, 7.5)
-        self.assertEqual(result.verdict.pools["final"]["total"], 4)  # + S3
-
-    def test_an_unfixable_attacker_bullet_is_dropped(self):
-        broken_s3 = _item("S3", "sentiment", "bearish",
-                          "The deal is not closed yet.",
-                          [_slink("citation:9", "deal")])
-        attacker = _attacker_opening(items=DEFENDER_ITEMS + [broken_s3])
-        match_map = [
-            {"own_id": i["id"], "covered_by": i["id"]} for i in DEFENDER_ITEMS
-        ]
-        result, fake = _run(
-            _replies(
-                attacker_opening=attacker,
-                fix=_fix([broken_s3]),
-                review=_review(
-                    checks={i["id"]: _check() for i in DEFENDER_ITEMS},
-                    match_map=match_map,
-                ),
-                judge=_judge(
-                    reason_checks={i["id"]: _check() for i in DEFENDER_ITEMS},
-                    attack_rulings={},
-                ),
-            )
-        )
-        self.assertEqual(fake.stages().count("fix"), 3)
-        self.assertTrue(any("bullet dropped" in w for w in result.warnings))
-        self.assertEqual(len(result.items), 4)  # no S3 anywhere
-        self.assertEqual(result.verdict.pools["final"]["total"], 4)
-
-    def test_a_numeric_link_value_normalizes_through_the_formatter(self):
-        # The model sends 71.2 as a JSON number; display form is "71.20".
-        items = [
-            _item("T1", "technicals", "bullish",
-                  "The 14-day RSI (71.20) is above 70, showing strong momentum.",
-                  [{"ref": "technicals.rsi_14", "value": 71.2}]),
-        ] + DEFENDER_ITEMS[1:]
-        result, fake = _run(_replies(defender_opening=_defender_opening(items=items)))
-        self.assertNotIn("fix", fake.stages())
-        self.assertEqual(_item_by_id(result, "T1")["links"][0]["value"], "71.20")
-
-    def test_a_rounded_value_in_the_sentence_is_sent_back_to_fix(self):
-        # Sentence says 71.2 where the report displays 71.20 → fix round.
-        items = [
-            _item("T1", "technicals", "bullish",
-                  "The 14-day RSI (71.2) is above 70.",
-                  [_vlink("technicals.rsi_14", "71.20")]),
-        ] + DEFENDER_ITEMS[1:]
-        result, fake = _run(
-            _replies(
-                defender_opening=_defender_opening(items=items),
-                fix=_fix([DEFENDER_ITEMS[0]]),
-            )
-        )
-        self.assertEqual(fake.stages().count("fix"), 1)
-        fix_prompt = next(p for p in fake.prompts if stage_of(p) == "fix")
-        self.assertIn("must appear in the claim", fix_prompt)
-        self.assertFalse(_item_by_id(result, "T1")["struck"])
-
-    def test_a_group_path_ref_is_sent_back_to_fix(self):
-        items = [
-            _item("T1", "technicals", "bullish",
-                  "The 14-day RSI (71.20) is above 70 and MACD confirms.",
-                  [_vlink("technicals.rsi_14", "71.20"),
-                   _vlink("technicals.macd", "1.20")]),
-        ] + DEFENDER_ITEMS[1:]
-        _, fake = _run(
-            _replies(
-                defender_opening=_defender_opening(items=items),
-                fix=_fix([DEFENDER_ITEMS[0]]),
-            )
-        )
-        fix_prompt = next(p for p in fake.prompts if stage_of(p) == "fix")
-        self.assertIn("does not resolve to a single report value", fix_prompt)
-
-    def test_missing_sentiment_text_is_sent_back_to_fix(self):
-        items = DEFENDER_ITEMS[:2] + [
-            _item("S1", "sentiment", "bullish",
-                  "A big deal was announced.",
-                  [_slink("citation:1", "merger agreement")]),
-            DEFENDER_ITEMS[3],
-        ]
-        _, fake = _run(
-            _replies(
-                defender_opening=_defender_opening(items=items),
-                fix=_fix([DEFENDER_ITEMS[2]]),
-            )
-        )
-        fix_prompt = next(p for p in fake.prompts if stage_of(p) == "fix")
-        self.assertIn("not found verbatim in the claim", fix_prompt)
-
-    def test_an_unreadable_fix_reply_loses_the_round(self):
-        review = _review(
-            checks={"T1": _check(), "S1": _check(), "S2": _check()},
-            match_map=[
-                {"own_id": "T1", "covered_by": "T1"},
-                {"own_id": "T2", "covered_by": "T1"},
-                {"own_id": "S1", "covered_by": "S1"},
-                {"own_id": "S2", "covered_by": "S2"},
-                {"own_id": "S3", "covered_by": None},
-            ],
-        )
-        result, fake = _run(
-            _replies(
-                defender_opening=self._broken_opening(),
-                fix="not json",
-                review=review,
-                reply=_reply(responses={"add:S3": _check()}),
-                judge=_judge(
-                    reason_checks={
-                        "T1": _check(), "S1": _check(),
-                        "S2": _check(), "S3": _check(),
-                    },
-                    attack_rulings={},
-                ),
-            )
-        )
-        self.assertEqual(fake.stages().count("fix"), 3)
-        self.assertTrue(
-            any("citation-fix reply invalid — fix round lost" in w
+            any("vote on T2 discarded — citations unfixable" in w
                 for w in result.warnings)
         )
-        self.assertTrue(_item_by_id(result, "T2")["struck"])
+        t2 = _item_by_id(result, "T2")
+        # The discarded objection carries no weight: author unopposed.
+        self.assertEqual(t2["votes"], [])
+        self.assertEqual(t2["final_status"], "counted")
+        self.assertNotIn("decider", fake.stages())
 
-
-class FinalPoolTest(unittest.TestCase):
-    """Membership: the judge decides; the defender's stance never does."""
-
-    def test_unattacked_item_judged_invalid_is_excluded(self):
-        reason_checks = {
-            "T1": _check("invalid", "Does not follow."),
-            "S1": _check(),
-            "S2": _check(),
-            "S3": _check(),
+    def test_a_vote_link_value_must_match_the_display_string(self):
+        votes = {
+            "T2": _vote("invalid", "The close of 100 is neutral.",
+                        [_vlink("technicals.close", "100.0")]),
+            "T3": _vote("valid", "Fair reading."),
+            "S3": _vote("valid", "Fair reading."),
         }
-        result, _ = _run(_replies(judge=_judge(reason_checks=reason_checks)))
-        item = _item_by_id(result, "T1")
-        self.assertEqual(item["final_status"], "excluded")
-        self.assertEqual(item["exclusion_reason"], "judge_invalid")
-        # final pool: tech = T2 only (10.0), sentiment 10/3 → 6.67 buy
-        self.assertEqual(result.verdict.final_score, 6.67)
-
-    def test_upheld_attack_excludes_the_item(self):
-        attack_rulings = {
-            "T2": {"verdict": "attack_right", "reason": "The attack is correct.",
-                   "citations": []}
+        fixed = {
+            "T2": _vote("invalid", "The close of 100 is neutral.",
+                        [_vlink("technicals.close", "100")]),
         }
-        result, _ = _run(_replies(judge=_judge(attack_rulings=attack_rulings)))
-        item = _item_by_id(result, "T2")
-        self.assertEqual(item["final_status"], "excluded")
-        self.assertEqual(item["exclusion_reason"], "attack_upheld")
-
-    def test_wrongly_conceded_item_is_restored_and_flagged(self):
-        responses = {
-            "T2": _check(),  # check of the attack is valid → conceded…
-            "add:S3": _check(),
-        }
-        # …but the judge (default) rules the attack wrong → restored.
-        result, _ = _run(_replies(reply=_reply(responses=responses)))
-        item = _item_by_id(result, "T2")
-        self.assertTrue(item["response"]["accepted"])
-        self.assertEqual(item["final_status"], "counted")
-        self.assertTrue(
-            any("evidence restored to the final pool" in w for w in result.warnings)
-        )
-        # The concession still shows in the adjusted pool (T2 out of it).
-        self.assertEqual(result.verdict.pools["adjusted"]["total"], 4)
-        self.assertEqual(result.verdict.pools["final"]["total"], 5)
-
-    def test_wrongly_rejected_addition_is_included_and_flagged(self):
-        responses = {
-            "T2": _check("invalid", "The claim was about the level.",
-                         ["technicals.close"]),
-            "add:S3": _check("invalid", "Not relevant."),
-        }
-        # Judge (default) says S3's check passes → included anyway.
-        result, _ = _run(_replies(reply=_reply(responses=responses)))
-        item = _item_by_id(result, "S3")
-        self.assertEqual(item["final_status"], "counted")
-        self.assertTrue(
-            any("included in the final pool" in w for w in result.warnings)
-        )
-        # The refusal shows in the adjusted pool (S3 not in it).
-        self.assertEqual(result.verdict.pools["adjusted"]["total"], 4)
-
-    def test_addition_failing_the_judge_check_is_excluded(self):
-        reason_checks = {
-            "T1": _check(), "S1": _check(), "S2": _check(),
-            "S3": _check("invalid", "The source does not say that."),
-        }
-        result, _ = _run(_replies(judge=_judge(reason_checks=reason_checks)))
-        item = _item_by_id(result, "S3")
-        self.assertEqual(item["final_status"], "excluded")
-        self.assertEqual(item["exclusion_reason"], "judge_invalid")
-        # final: tech 10, sentiment (S1 bullish, S2 bearish) 5 → 7.5
-        self.assertEqual(result.verdict.final_score, 7.5)
-
-    def test_empty_final_pool_defaults_to_neutral_five(self):
-        reason_checks = {
-            "T1": _check("invalid", "Flawed."),
-            "S1": _check("invalid", "Flawed."),
-            "S2": _check("invalid", "Flawed."),
-            "S3": _check("invalid", "Flawed."),
-        }
-        attack_rulings = {
-            "T2": {"verdict": "attack_right", "reason": "Correct.", "citations": []}
-        }
-        result, _ = _run(
-            _replies(judge=_judge(reason_checks=reason_checks,
-                                  attack_rulings=attack_rulings))
-        )
-        verdict = result.verdict
-        self.assertEqual(verdict.pools["final"]["total"], 0)
-        self.assertEqual(verdict.final_score, 5.0)
-        self.assertEqual(verdict.direction, Direction.HOLD)
-        self.assertTrue(any("no surviving evidence to weigh" in w for w in result.warnings))
-
-    def test_thin_base_is_flagged_when_most_initial_evidence_dies(self):
-        reason_checks = {
-            "T1": _check("invalid", "Flawed."),
-            "S1": _check("invalid", "Flawed."),
-            "S2": _check("invalid", "Flawed."),
-            "S3": _check(),
-        }
-        result, _ = _run(_replies(judge=_judge(reason_checks=reason_checks)))
-        self.assertTrue(
-            any("the weight rests on a thin base" in w for w in result.warnings)
-        )
-
-
-class ScoreHandlingTest(unittest.TestCase):
-    def test_no_challenges_skips_the_defender_reply(self):
-        match_map = [
-            {"own_id": item["id"], "covered_by": item["id"]} for item in DEFENDER_ITEMS
-        ]
-        result, fake = _run(
-            _replies(
-                attacker_opening=_attacker_opening(items=DEFENDER_ITEMS),
-                review=_review(
-                    checks={i["id"]: _check() for i in DEFENDER_ITEMS},
-                    match_map=match_map,
-                ),
-                judge=_judge(
-                    reason_checks={i["id"]: _check() for i in DEFENDER_ITEMS},
-                    attack_rulings={},
-                ),
-            )
-        )
-        self.assertNotIn("reply", fake.stages())
-        self.assertEqual(len(fake.prompts), 5)
-        # Nothing challenged → adjusted pool = initial pool.
-        self.assertEqual(result.verdict.adjusted_score, result.verdict.initial_score)
-        self.assertTrue(any("defender response skipped" in w for w in result.warnings))
+        _, fake = _run(_replies(check=_check(votes), vote_fix=_vote_fix(fixed)))
+        vote_fix_prompt = next(p for p in fake.prompts if stage_of(p) == "vote_fix")
+        self.assertIn("must be copied exactly", vote_fix_prompt)
 
 
 class RetryContractTest(unittest.TestCase):
     def test_an_invalid_first_reply_is_retried_with_the_errors_shown(self):
-        bad = _defender_opening(
-            items=[DEFENDER_ITEMS[0], DEFENDER_ITEMS[2], DEFENDER_ITEMS[3]]
-        )
+        bad = _list_reply([LIST_1[0], LIST_1[2], LIST_1[3]])
         result, fake = _run(
-            _replies(defender_opening=bad),
-            retry_replies={"defender_opening": _defender_opening()},
+            _replies(lister1=bad),
+            retry_replies={"lister1": _list_reply(LIST_1)},
         )
         self.assertIsNotNone(result.verdict)
         self.assertTrue(
-            any("defender opening needed a retry" in w for w in result.warnings)
+            any("first analyst list needed a retry" in w for w in result.warnings)
         )
         retry_prompt = next(
             p for p in fake.prompts
-            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
+            if RETRY_MARKER in p and "You are the FIRST analyst" in p
         )
         self.assertIn("only 1 item(s)", retry_prompt)
-
-    def test_items_in_a_dimension_without_data_are_rejected(self):
-        items = DEFENDER_ITEMS + [
-            _item("F1", "fundamentals", "bullish", "Margins are widening.",
-                  [_vlink("technicals.close", "100")]),
-            _item("F2", "fundamentals", "bullish", "Revenue grew.",
-                  [_vlink("technicals.close", "100")]),
-        ]
-        result, fake = _run(
-            _replies(defender_opening=_defender_opening(items=items)),
-            retry_replies={"defender_opening": _defender_opening()},
-        )
-        self.assertIsNotNone(result.verdict)
-        retry_prompt = next(
-            p for p in fake.prompts
-            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
-        )
-        self.assertIn("no collected data", retry_prompt)
 
     def test_a_link_without_a_value_is_rejected_by_the_form(self):
         items = [
             _item("T1", "technicals", "bullish",
                   "The 14-day RSI (71.20) is above 70.",
                   [{"ref": "technicals.rsi_14"}]),
-        ] + DEFENDER_ITEMS[1:]
+        ] + LIST_1[1:]
         result, fake = _run(
-            _replies(defender_opening=_defender_opening(items=items)),
-            retry_replies={"defender_opening": _defender_opening()},
+            _replies(lister1=_list_reply(items)),
+            retry_replies={"lister1": _list_reply(LIST_1)},
         )
         self.assertIsNotNone(result.verdict)
         retry_prompt = next(
             p for p in fake.prompts
-            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
+            if RETRY_MARKER in p and "You are the FIRST analyst" in p
         )
         self.assertIn('must carry "value"', retry_prompt)
 
-    def test_a_sentiment_link_without_text_is_rejected_by_the_form(self):
-        items = DEFENDER_ITEMS[:2] + [
-            _item("S1", "sentiment", "bullish",
-                  "A big deal was announced.",
-                  [{"ref": "citation:1"}]),
-            DEFENDER_ITEMS[3],
-        ]
-        result, fake = _run(
-            _replies(defender_opening=_defender_opening(items=items)),
-            retry_replies={"defender_opening": _defender_opening()},
-        )
-        self.assertIsNotNone(result.verdict)
-        retry_prompt = next(
-            p for p in fake.prompts
-            if RETRY_MARKER in p and "You are the DEFENDER analyst" in p
-        )
-        self.assertIn('must carry "text"', retry_prompt)
-
     def test_a_match_map_pointing_at_unknown_ids_is_rejected(self):
-        bad_map = [
-            {"own_id": "T1", "covered_by": "T9"},
-            {"own_id": "T2", "covered_by": "T2"},
-            {"own_id": "S1", "covered_by": "S1"},
-            {"own_id": "S2", "covered_by": "S2"},
-            {"own_id": "S3", "covered_by": None},
-        ]
+        bad_map = [dict(row) for row in DEFAULT_MATCH_MAP]
+        bad_map[0] = {"own_id": "T1", "covered_by": "T9"}
         result, _ = _run(
-            _replies(review=_review(match_map=bad_map)),
-            retry_replies={"review": _review()},
+            _replies(merge=_merge(bad_map)),
+            retry_replies={"merge": _merge()},
         )
         self.assertIsNotNone(result.verdict)
-        self.assertTrue(any("attacker review needed a retry" in w for w in result.warnings))
+        self.assertTrue(any("merge needed a retry" in w for w in result.warnings))
 
 
 class FailureRulesTest(unittest.TestCase):
-    def test_defender_opening_invalid_twice_voids(self):
-        result, _ = _run(_replies(defender_opening="not json"))
+    def test_both_lists_invalid_twice_voids(self):
+        result, _ = _run(_replies(lister1="not json", lister2="not json"))
         self.assertIsNone(result.verdict)
         self.assertEqual(result.items, [])
         self.assertTrue(
-            any("defender opening invalid after retry — tier-2 verdict voided" in w
+            any("both analyst lists invalid after retry — tier-2 verdict voided" in w
                 for w in result.warnings)
         )
 
-    def test_attacker_opening_invalid_twice_degrades_to_checks_only(self):
-        responses = {
-            "T2": _check("invalid", "The claim was about the level.",
-                         ["technicals.close"])
+    def test_one_list_invalid_twice_proceeds_with_the_other(self):
+        votes = {
+            item_id: _vote("valid", "Fair reading.")
+            for item_id in ("T1", "T2", "S1", "S2", "S3")
         }
         result, fake = _run(
-            _replies(
-                attacker_opening="not json",
-                reply=_reply(responses=responses),
-                # No S3 addition on this path — the judge covers T1/S1/S2
-                # plus the T2 attack ruling.
-                judge=_judge(
-                    reason_checks={"T1": _check(), "S1": _check(), "S2": _check()}
-                ),
-            )
+            _replies(lister1="not json", check=_check(votes))
         )
         self.assertIsNotNone(result.verdict)
-        self.assertIn("review_checks_only", fake.stages())
+        self.assertNotIn("merge", fake.stages())
         self.assertTrue(
-            any("attacker opening invalid after retry — proceeding without additions" in w
-                for w in result.warnings)
+            any("first analyst list invalid after retry — proceeding with "
+                "the other list only" in w for w in result.warnings)
         )
-        self.assertEqual(len(result.items), 4)
-
-    def test_attacker_review_invalid_twice_degrades_to_no_challenges(self):
-        reason_checks = {i["id"]: _check() for i in DEFENDER_ITEMS}
-        result, fake = _run(
-            _replies(
-                review="not json",
-                judge=_judge(reason_checks=reason_checks, attack_rulings={}),
-            )
-        )
-        self.assertIsNotNone(result.verdict)
-        self.assertTrue(
-            any("attacker review invalid after retry" in w for w in result.warnings)
-        )
-        self.assertNotIn("reply", fake.stages())
-        # No additions → pools count only the defender's list.
-        self.assertEqual(result.verdict.pools["final"]["total"], 4)
-
-    def test_judge_invalid_twice_voids_but_keeps_the_tree(self):
-        result, _ = _run(_replies(judge="not json"))
-        self.assertIsNone(result.verdict)
+        # The surviving list's bullets are all single-author.
         self.assertEqual(len(result.items), 5)
+        for item in result.items:
+            self.assertEqual(item["authors"], 1)
+
+    def test_merge_invalid_twice_drops_the_second_list(self):
+        votes = {
+            item_id: _vote("valid", "Fair reading.")
+            for item_id in ("T1", "T2", "S1", "S2")
+        }
+        result, fake = _run(
+            _replies(merge="not json", check=_check(votes))
+        )
+        self.assertIsNotNone(result.verdict)
         self.assertTrue(
-            any("judge rulings invalid after retry — tier-2 verdict voided" in w
+            any("merge invalid after retry — second list dropped" in w
                 for w in result.warnings)
         )
+        self.assertEqual(len(result.items), 4)  # first list only
 
     def test_broken_summary_never_voids_a_computed_verdict(self):
         result, _ = _run(_replies(summary="not json"))
@@ -1025,15 +857,14 @@ class FailureRulesTest(unittest.TestCase):
                 for w in result.warnings)
         )
 
-    def test_llm_failure_mid_debate_keeps_the_partial_tree(self):
-        result, _ = _run(_replies(review=RuntimeError("llm down")))
+    def test_llm_failure_mid_debate_fails_loud_without_a_verdict(self):
+        result, _ = _run(_replies(merge=RuntimeError("llm down")))
         self.assertIsNone(result.verdict)
-        self.assertEqual(len(result.items), 4)  # the defender's list survives
         self.assertTrue(any("debate LLM call failed" in w for w in result.warnings))
 
 
 class UsageTrackingTest(unittest.TestCase):
-    def test_parallel_opening_calls_report_into_the_active_tracker(self):
+    def test_parallel_list_calls_report_into_the_active_tracker(self):
         routed = RoutedSummarizer(_replies())
 
         def fake(prompt):
@@ -1054,11 +885,8 @@ class UsageTrackingTest(unittest.TestCase):
     def test_fix_round_calls_are_counted_too(self):
         routed = RoutedSummarizer(
             _replies(
-                defender_opening=_defender_opening(
-                    items=[DEFENDER_ITEMS[0], BROKEN_T2,
-                           DEFENDER_ITEMS[2], DEFENDER_ITEMS[3]]
-                ),
-                fix=_fix([DEFENDER_ITEMS[1]]),
+                lister1=_list_reply([LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]),
+                fix=_fix([LIST_1[1]]),
             )
         )
 
@@ -1078,91 +906,87 @@ class UsageTrackingTest(unittest.TestCase):
 
 
 class PromptContentTest(unittest.TestCase):
-    def test_opening_prompts_carry_the_ceilings_and_the_link_rules(self):
+    def test_list_prompts_carry_the_ceilings_and_the_link_rules(self):
         _, fake = _run()
-        defender = next(p for p in fake.prompts if "You are the DEFENDER analyst" in p)
-        self.assertIn("technicals: 2-4", defender)
-        self.assertIn("sentiment: 2-4", defender)
-        self.assertIn("room, not a quota", defender)
-        self.assertIn("Link rules", defender)
-        self.assertIn("copied EXACTLY", defender)
-        self.assertIn("You give no score", defender)
-        attacker = next(
-            p for p in fake.prompts if "You are the ATTACKER analyst, working alone" in p
-        )
-        self.assertIn("you have NOT seen it", attacker)
+        first = next(p for p in fake.prompts if "You are the FIRST analyst" in p)
+        self.assertIn("technicals: 2-4", first)
+        self.assertIn("sentiment: 2-4", first)
+        self.assertIn("room, not a quota", first)
+        self.assertIn("Link rules", first)
+        self.assertIn("copied EXACTLY", first)
+        self.assertIn("do not wrap them in quotation marks", first)
+        self.assertIn("You give no score", first)
+        second = next(p for p in fake.prompts if "You are the SECOND analyst" in p)
+        self.assertIn("you have NOT seen it", second)
 
     def test_the_evidence_block_shows_display_values(self):
         _, fake = _run()
-        defender = next(p for p in fake.prompts if "You are the DEFENDER analyst" in p)
+        first = next(p for p in fake.prompts if "You are the FIRST analyst" in p)
         # The model never sees the raw floats — only the display strings.
-        self.assertIn('"rsi_14": "71.20"', defender)
-        self.assertIn('"close": "100"', defender)
-        self.assertIn('"signal": "1.20"', defender)
+        self.assertIn('"rsi_14": "71.20"', first)
+        self.assertIn('"close": "100"', first)
+        self.assertIn('"signal": "1.20"', first)
 
-    def test_review_prompt_shows_both_lists_and_the_verified_values_rule(self):
+    def test_merge_prompt_shows_both_lists_and_the_direction_rule(self):
         _, fake = _run()
-        review = next(p for p in fake.prompts if "Compare the two evidence lists" in p)
-        self.assertIn("The deal is not closed yet.", review)
-        self.assertIn("The 14-day RSI (71.20)", review)
-        self.assertIn("Code has already", review)
-        self.assertIn("T1, T2, S1, S2", review)
+        merge = next(p for p in fake.prompts if "Match the two evidence lists" in p)
+        self.assertIn("The technical score (68) is strong.", merge)
+        self.assertIn("The 14-day RSI (71.20)", merge)
+        self.assertIn("OPPOSITE direction", merge)
+        self.assertIn("code assembles the merged list", merge)
 
-    def test_reply_prompt_lists_every_challenge_with_its_key(self):
+    def test_check_prompt_names_the_single_author_bullets_only(self):
         _, fake = _run()
-        reply = next(
-            p for p in fake.prompts if "The attacker has challenged your evidence" in p
-        )
-        self.assertIn('key "T2"', reply)
-        self.assertIn('"add:S3"', reply)
-        self.assertIn("you MISSED this", reply)
-        self.assertIn("give no score", reply)
+        check = next(p for p in fake.prompts if "cast the second vote" in p)
+        self.assertIn("T2, T3, S3", check)
+        self.assertIn("already code-verified", check)
+        self.assertIn("listed by BOTH analysts", check)  # the tree shows authorship
+        self.assertIn("Vote rules", check)
 
-    def test_judge_prompt_requires_checks_and_rulings_with_exact_keys(self):
+    def test_decider_prompt_shows_the_claim_and_the_objection(self):
         _, fake = _run()
-        judge = next(p for p in fake.prompts if "You are the JUDGE with the final say" in p)
-        self.assertIn('"reason_checks" must cover exactly: T1, S1, S2, S3', judge)
-        self.assertIn('"attack_rulings" must cover exactly: T2', judge)
-        self.assertIn("added by the ATTACKER", judge)
-        self.assertIn("regardless of what the", judge)
+        decider = next(p for p in fake.prompts if "cast the deciding vote" in p)
+        self.assertIn('"votes" must cover exactly these bullet ids: T2', decider)
+        self.assertIn("objection: A single close below one level", decider)
+        self.assertIn("The closing price (100) is below the 105 resistance.", decider)
 
     def test_summary_prompt_carries_the_computed_pool_scores(self):
         _, fake = _run()
         summary = next(p for p in fake.prompts if "Write the user-facing report" in p)
-        self.assertIn("initial score 7.50", summary)
-        self.assertIn("adjusted score 6.67", summary)
-        self.assertIn("final score 6.67", summary)
-        self.assertIn("3 bullish vs 2 bearish of 5", summary)
-        self.assertIn("verdict: buy", summary)
+        self.assertIn("initial score 5.00", summary)
+        self.assertIn("final score 5.00", summary)
+        self.assertIn("3 bullish vs 3 bearish of 6", summary)
+        self.assertIn("verdict: hold", summary)
 
 
 class DetailShapeTest(unittest.TestCase):
-    def test_to_detail_is_json_ready_with_the_v7_marker_and_legacy_keys(self):
+    def test_to_detail_is_json_ready_with_the_v8_marker_and_legacy_keys(self):
         result, _ = _run()
         detail = result.to_detail()
         json.dumps(detail)  # must not raise
-        self.assertEqual(detail["format"], 7)
+        self.assertEqual(detail["format"], 8)
         self.assertEqual(detail["turns"], [])
-        self.assertEqual(len(detail["items"]), 5)
+        self.assertEqual(len(detail["items"]), 6)
         verdict = detail["verdict"]
-        self.assertEqual(verdict["direction"], "buy")
-        self.assertEqual(verdict["final_score"], 6.67)
-        self.assertEqual(verdict["initial_score"], 7.5)
-        self.assertEqual(verdict["adjusted_score"], 6.67)
+        self.assertEqual(verdict["direction"], "hold")
+        self.assertEqual(verdict["final_score"], 5.0)
+        self.assertEqual(verdict["initial_score"], 5.0)
         self.assertIn("final", verdict["pools"])
-        self.assertEqual(verdict["pools"]["final"]["total"], 5)
-        # Legacy keys pre-v6 readers touch must exist and be inert.
+        self.assertNotIn("adjusted", verdict["pools"])
+        self.assertEqual(verdict["pools"]["final"]["total"], 6)
+        # Legacy keys pre-v8 readers touch must exist and be inert.
+        self.assertIsNone(verdict["adjusted_score"])
         self.assertIsNone(verdict["confidence"])
         self.assertIsNone(verdict["scoring"])
         self.assertIsNone(verdict["weight"])
         self.assertEqual(verdict["reasons_for"], [])
 
-    def test_voided_run_still_serializes_its_partial_tree(self):
-        result, _ = _run(_replies(judge="not json"))
+    def test_voided_run_still_serializes(self):
+        result, _ = _run(_replies(lister1="not json", lister2="not json"))
         detail = result.to_detail()
         json.dumps(detail)
         self.assertIsNone(detail["verdict"])
-        self.assertEqual(len(detail["items"]), 5)
+        self.assertEqual(detail["items"], [])
 
 
 class _FakeEngine:
@@ -1192,7 +1016,6 @@ class TestTier2Stage(unittest.TestCase):
                 final_score=6.0,
                 summary="ruling",
                 initial_score=7.5,
-                adjusted_score=6.5,
                 pools={},
             ),
         )
@@ -1208,7 +1031,7 @@ class TestTier2Stage(unittest.TestCase):
         self.assertAlmostEqual(report.levels.entry, 96.0)
         self.assertEqual(report.narrative, "ruling")
         self.assertIsNotNone(report.debate_detail)
-        self.assertEqual(report.debate_detail["format"], 7)
+        self.assertEqual(report.debate_detail["format"], 8)
 
     def test_no_verdict_falls_back_to_tier1_direction(self):
         engine = _FakeEngine(DebateResult(warnings=["judge exploded"]))

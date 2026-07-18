@@ -117,6 +117,47 @@ const NOTE_RULES: NoteRule[] = [
     pattern: /^no usable entry price — cannot place a stop$/,
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
+  // --- v8 evidence-vote notes ---
+  {
+    pattern: /^(?:first|second) analyst list invalid after retry — proceeding with/,
+    toText: (_m, t) => t('tiered.note.listerDegraded'),
+  },
+  {
+    pattern: /^both analyst lists invalid after retry — tier-2 verdict voided$/,
+    toText: (_m, t) => t('tiered.note.stageInvalid'),
+  },
+  {
+    pattern: /^merge invalid after retry — second list dropped$/,
+    toText: (_m, t) => t('tiered.note.mergeDegraded'),
+  },
+  {
+    pattern: /^check round invalid after retry — bullets counted on/,
+    toText: (_m, t) => t('tiered.note.checkDegraded'),
+  },
+  {
+    pattern: /^deciding round invalid after retry — tied bullets excluded/,
+    toText: (_m, t) => t('tiered.note.tiebreakDegraded'),
+  },
+  {
+    pattern: /^analyst \S+: citations unfixable .* — struck from the list$/,
+    toText: (_m, t) => t('tiered.note.struckBullet'),
+  },
+  {
+    pattern: /^vote on \S+ discarded — citations unfixable/,
+    toText: (_m, t) => t('tiered.note.voteDiscarded'),
+  },
+  {
+    pattern: /^no deciding vote for \S+ — excluded as unresolved$/,
+    toText: (_m, t) => t('tiered.note.unresolved'),
+  },
+  {
+    pattern: /^every bullet was listed by both analysts — check round skipped$/,
+    toText: (_m, t) => t('tiered.note.allConfirmed'),
+  },
+  {
+    pattern: / — the final score rests on a thin base$/,
+    toText: (_m, t) => t('tiered.note.thinBase'),
+  },
   // --- v7 tree-debate notes ---
   {
     pattern: /^defender \S+: citations unfixable .* — struck from the debate$/,

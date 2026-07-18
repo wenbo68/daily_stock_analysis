@@ -189,48 +189,50 @@ they can't be known in advance.
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 
-## 6. Tier-2 evidence debate (v7, `debate.py` + `debate_models.py`)
+## 6. Tier-2 evidence vote (v8, `debate.py` + `debate_models.py`)
 
-One evidence pool, three roles, no forced bull/bear personas, no
-AI-authored numbers anywhere, and citation checking owned entirely by
-code (owner spec 2026-07-18; full design in
-`.claude/reviews/tier2-v5-design.md`, v6/v7 revision sections):
+No roles, no personas — membership in the evidence pool is a majority
+vote with at most three votes per bullet, and no AI authors any number
+(owner spec 2026-07-18; full design in
+`.claude/reviews/tier2-v5-design.md`, v6/v7/v8 revision sections):
 
 ```
-step 1  DEFENDER lists ALL evidence (bullish + bearish) per dimension
-     ‖  ATTACKER independently builds its own list (blind, in parallel)
-        — each list runs through the code citation check + fix loop
-step 2  ATTACKER matches the two lists (uncovered own items become
-        additions), then files ONE logic check per defender item
-step 3  DEFENDER responds to every challenge with ONE check ON the
-        challenge itself: valid → accept (concede / adopt), invalid →
-        rejection. Skipped when nothing was challenged. No score output.
-step 4  JUDGE, final say: one reason check per unattacked item
-        (defender-listed and attacker-added alike), plus
-        attack_right/attack_wrong per attacked item
+step 1  Two ANALYSTS independently list ALL evidence (bullish +
+     ‖  bearish) per dimension, blind to each other — each list runs
+        through the code citation check + fix loop
+step 2  MERGE call: a match map only (same evidence + same direction =
+        the same bullet; an opposite-direction clash is a dispute and
+        stays unmatched so both versions face the votes). Code
+        assembles the merged list.
+step 3  CHECK round: every bullet's author is automatically its first
+        valid vote, so a bullet BOTH analysts listed independently is
+        confirmed 2-0 on the spot; single-author bullets get the second
+        vote here (2-0 in, or 1-1 tied)
+step 4  DECIDING round, only when there are ties: sees the claim and
+        the objection, casts the third vote — 2-1 in, 1-2 out. Three
+        votes, so a tie is impossible.
 step 5  summary prose around the computed numbers (never voids)
 ```
 
-Per-dimension item counts: floor 2, ceiling = the number of leaf fields
-in that dimension's report (sentiment: verified sources × 2) — room for
-the whole report, not a quota. Macro-econ ids are E1, E2….
+Per-dimension bullet counts: floor 2, ceiling = the number of leaf
+fields in that dimension's report (sentiment: verified sources × 2) —
+room for the whole report, not a quota. Macro-econ ids are E1, E2….
 
-Citations are `{ref, value}` (sentiment: `{ref: citation:N, text}`).
-The prompts render every payload number through `display_value` — the
-same formatting the web report pages use (whole numbers whole, decimals
-to 2 places, millions/billions/trillions worded) — so the model never
-sees raw floats. Code verifies each link: the ref resolves to a single
-leaf (`technicals.macd` rejected, `technicals.macd.signal` passes), the
+Citations are `{ref, value}`; sentiment bullets cite sources with bare
+`{ref: citation:N}`, rendered by the UI as trailing [N] hyperlinks (a
+model-written literal "[N]" in the sentence is stripped by code). The
+prompts render every payload number through `display_value` — the same
+formatting the web report pages use — so the model never sees raw
+floats. Code verifies each link: the ref resolves to a single leaf, the
 value equals the report's display string exactly, and that string
-appears in the claim sentence (thousands separators tolerated; digit
+appears in the sentence (thousands separators tolerated; digit
 boundaries stop `205` matching inside `1205` or `205.4`). Failures go
 back to the same AI in up to `MAX_FIX_ROUNDS = 3` focused fix calls
-carrying only the broken bullets; successful fixes leave no trace.
-Bullets still broken after that: defender bullets are STRUCK — rendered
-crossed out, never debated, never counted in any pool; attacker bullets
-are dropped. There are no AI citation checks — the debate's single
-check axis is logic (does the sentence say something true about the
-code-verified values, and does the direction tag follow).
+carrying only the broken bullets; bullets still broken are STRUCK —
+crossed out, never voted on, in no pool. VOTE reasons follow the same
+contract (a reason stating a decimal or percentage must cite it; links
+inside reasons are code-checked with the same fix loop) — votes that
+cannot be fixed are discarded and carry no weight.
 
 The score (code, pure counting):
 
@@ -239,22 +241,18 @@ per dimension  score_d = 10 × bullish_d / total_d
 overall        mean of the dimension scores present in the pool
                                                        (2 decimals)
 
-initial   = the defender's surviving (non-struck) list
-adjusted  = the pool as the defender's responses leave it
-            (conceded items out, adopted additions in)
-final     = the pool as the judge ruled it: an item counts unless an
-            attack on it was upheld or the judge's check is invalid.
-            The defender's stance is irrelevant here — wrongly conceded
-            items are restored, judge-approved additions count even if
-            refused (flag notes).
+initial   = the merged list (struck bullets excluded)
+final     = the bullets holding a majority of valid votes
 
 direction = sell if final < 4, hold if 4 ≤ final ≤ 6, else buy
 empty final pool → 5.00, hold, warning
 ```
 
-6 base calls per run across 5 sequential steps (openings parallel, each
-with its own fix loop; the reply call skipped when there are no
-challenges), all at temperature 0 (`deterministic_summarizer`). Fix
-rounds add one call each. Defender/judge failures void (tier-1
-direction stands); attacker failures degrade loudly; the summary's
+5-6 base calls per run (the two lists parallel, each with its fix loop;
+the deciding round only when there are ties; fix rounds add one call
+each), all at temperature 0 (`deterministic_summarizer`). Failure
+rules: both lists failing voids (tier-1 direction stands); one list
+failing proceeds with the other; a failed merge drops the second list;
+a failed check round counts bullets on the author's vote alone; a
+failed deciding round excludes ties as unresolved; the summary's
 failure never voids anything.

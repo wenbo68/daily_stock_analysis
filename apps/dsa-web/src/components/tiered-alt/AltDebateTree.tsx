@@ -6,6 +6,7 @@ import type {
   TieredDebateJudgeAxis,
   TieredDebateLink,
   TieredDebateResponse,
+  TieredDebateVote,
 } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
@@ -31,6 +32,14 @@ const STEPS = [
   { n: 2, labelKey: 'tiered.tree.step.attack' },
   { n: 3, labelKey: 'tiered.tree.step.response' },
   { n: 4, labelKey: 'tiered.tree.step.judge' },
+] as const;
+
+// v8 has no roles — the steps are: the merged list, the votes, the
+// final pool (strikethrough + scores).
+const STEPS_V8 = [
+  { n: 1, labelKey: 'tiered.tree.step.list' },
+  { n: 2, labelKey: 'tiered.tree.step.votes' },
+  { n: 3, labelKey: 'tiered.tree.step.final' },
 ] as const;
 
 const DIMENSION_ORDER = ['technicals', 'fundamentals', 'macro_econ', 'sentiment'];
@@ -442,6 +451,141 @@ const AdditionThread = ({ item, step }: { item: TieredDebateItem; step: number }
   );
 };
 
+// v8 text with links: payload links underline exactly their cited
+// display value inside the sentence; sentiment links render as trailing
+// [N] hyperlinks that jump to source N. Used for claims AND vote reasons.
+const LinkedTextV8 = ({
+  text,
+  links,
+  struck = false,
+}: {
+  text: string;
+  links: TieredDebateLink[];
+  struck?: boolean;
+}) => {
+  const payloadLinks = links.filter((link) => !CITATION_REF_RE.test(link.ref));
+  const citationLinks = links.filter((link) => CITATION_REF_RE.test(link.ref));
+  const markers: { start: number; end: number; link: TieredDebateLink }[] = [];
+  let cursor = 0;
+  payloadLinks.forEach((link) => {
+    if (link.value == null) {
+      return;
+    }
+    const match = valuePattern(String(link.value)).exec(text.slice(cursor));
+    if (match) {
+      const start = cursor + match.index;
+      markers.push({ start, end: start + match[0].length, link });
+      cursor = start + match[0].length;
+    }
+  });
+  const segments: ReactNode[] = [];
+  let from = 0;
+  markers.forEach((marker, index) => {
+    if (marker.start > from) {
+      segments.push(<span key={`t${index}`}>{text.slice(from, marker.start)}</span>);
+    }
+    segments.push(
+      <button
+        key={`v${index}`}
+        type="button"
+        className="cursor-pointer text-blue-300 underline decoration-1 decoration-blue-400/60 underline-offset-2 hover:text-blue-200"
+        onClick={() => jumpToRef(marker.link.ref)}
+      >
+        {text.slice(marker.start, marker.end)}
+      </button>,
+    );
+    from = marker.end;
+  });
+  if (from < text.length) {
+    segments.push(<span key="tail">{text.slice(from)}</span>);
+  }
+  return (
+    <span
+      className={cn(
+        // The strikethrough IS the verdict: struck by the code citation
+        // check, or voted out of the final pool.
+        struck && 'line-through decoration-gray-500 opacity-60',
+      )}
+    >
+      {segments}
+      {citationLinks.map((link, index) => {
+        const number = CITATION_REF_RE.exec(link.ref)?.[1];
+        return (
+          <button
+            key={`c${index}`}
+            type="button"
+            className="ml-1 cursor-pointer text-blue-300 underline decoration-1 decoration-blue-400/60 underline-offset-2 hover:text-blue-200"
+            onClick={() => jumpToRef(link.ref)}
+          >
+            [{number}]
+          </button>
+        );
+      })}
+    </span>
+  );
+};
+
+// One "checker/deciding vote · vote · verdict — reason" line (v8).
+const VoteLine = ({ vote }: { vote: TieredDebateVote }) => {
+  const { t } = useUiLanguage();
+  const ok = vote.verdict === 'valid';
+  const decider = vote.role === 'decider';
+  return (
+    <p className="text-xs text-gray-400">
+      <span className={cn('font-semibold', decider ? ROLE_TINT.judge : ROLE_TINT.attacker)}>
+        {t(decider ? 'tiered.tree.decider' : 'tiered.tree.checker')}
+      </span>
+      {' · '}
+      {t('tiered.tree.vote')}
+      {' · '}
+      <VerdictWord ok={ok} label={t(ok ? 'tiered.tree.valid' : 'tiered.tree.invalid')} />
+      {vote.reason ? (
+        <span className="text-gray-500">
+          {' — '}
+          <LinkedTextV8 text={vote.reason} links={vote.links ?? []} />
+        </span>
+      ) : null}
+    </p>
+  );
+};
+
+// One v8 bullet: the claim (values underlined, [N] sources trailing),
+// the "listed by both analysts" line or its votes underneath. No
+// counted/excluded badges — a bullet out of the final pool is simply
+// crossed out at the final step.
+const TreeItemV8 = ({ item, step }: { item: TieredDebateItem; step: number }) => {
+  const { t } = useUiLanguage();
+  const dead = !!item.struck || (step >= 3 && item.final_status === 'excluded');
+  const votes = item.votes ?? [];
+  const confirmed = (item.authors ?? 1) >= 2;
+  const showThread = step >= 2 && !item.struck && (confirmed || votes.length > 0);
+  return (
+    <li data-testid={`alt-tree-item-${item.id}`} className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="font-mono text-gray-500">{item.id}</span>
+        <span className={cn('font-semibold', DIRECTION_TEXT[item.direction])}>
+          {t(item.direction === 'bullish' ? 'tiered.tree.bullish' : 'tiered.tree.bearish')}
+        </span>
+        <span className="text-gray-200">
+          <LinkedTextV8 text={item.claim} links={item.links ?? []} struck={dead} />
+        </span>
+      </div>
+      {showThread ? (
+        <div className="flex flex-col gap-1 border-l border-gray-700/60 pl-3">
+          {confirmed ? (
+            <p className="text-xs text-gray-400">{t('tiered.tree.bothListed')}</p>
+          ) : null}
+          {votes.map((vote, index) => (
+            <div key={index} className={vote.role === 'decider' ? 'pl-3' : undefined}>
+              <VoteLine vote={vote} />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </li>
+  );
+};
+
 // One "role · logic check · verdict" line (v7 has a single axis).
 const SingleCheckLine = ({
   role,
@@ -625,8 +769,11 @@ interface AltDebateTreeProps {
 
 export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
   const { t } = useUiLanguage();
-  const [step, setStep] = useState(4);
   const v7 = detail.format === 7;
+  const v8 = detail.format === 8;
+  const steps = v8 ? STEPS_V8 : STEPS;
+  const finalStep = v8 ? 3 : 4;
+  const [step, setStep] = useState(finalStep);
   const items = detail.items ?? [];
   const verdict = detail.verdict;
   const pools = verdict?.pools ?? null;
@@ -650,9 +797,9 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
 
   return (
     <div data-testid="alt-debate-tree" className="mt-4 flex flex-col gap-3">
-      {/* The four-step selector; the complete tree is the default view. */}
+      {/* The step selector; the complete tree is the default view. */}
       <div className="flex flex-wrap gap-1 text-xs">
-        {STEPS.map(({ n, labelKey }) => (
+        {steps.map(({ n, labelKey }) => (
           <button
             key={n}
             type="button"
@@ -679,9 +826,13 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
                 : group.dimension}
             </AltSectionLabel>
             <ul className="flex flex-col gap-2">
-              {group.items.map((item) => (
-                <TreeItem key={item.id} item={item} step={step} v7={v7} />
-              ))}
+              {group.items.map((item) =>
+                v8 ? (
+                  <TreeItemV8 key={item.id} item={item} step={step} />
+                ) : (
+                  <TreeItem key={item.id} item={item} step={step} v7={v7} />
+                ),
+              )}
             </ul>
           </div>
         ))}
@@ -705,7 +856,7 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
               {t('tiered.tree.dimensionAverage', { n: initialDims })}
             </span>
           </p>
-          {step >= 3 ? (
+          {!v8 && step >= 3 && pools.adjusted ? (
             <p className="text-xs text-gray-400">
               {t('tiered.tree.adjustedScore')}
               {' · '}
@@ -716,7 +867,7 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
               </span>
             </p>
           ) : null}
-          {step >= 4 ? (
+          {step >= finalStep ? (
             <>
               <div className="mt-2 flex flex-col gap-1 overflow-x-auto text-sm">
                 <p className={FORMULA_LINE}>

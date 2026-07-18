@@ -119,12 +119,23 @@ export type TieredDebateJudgeAddition = {
   citations: string[];
 };
 
+// One v8 vote on a bullet: the check round's second vote or the
+// deciding round's tiebreaker. Reasons carry the same code-verified
+// links the bullets use.
+export type TieredDebateVote = {
+  role: 'checker' | 'decider';
+  verdict: 'valid' | 'invalid';
+  reason: string | null;
+  links: TieredDebateLink[];
+};
+
 // One evidence item of the tree with everything that happened to it.
 // v5 runs store citations + the count/outcome ledger; v6 runs store
 // links + value_check + the per-axis checks; v7 runs store single-axis
 // fields (attacker_check, one response, one judge line) plus struck +
-// problems for bullets whose citations code could not fix — all optional
-// so every generation renders.
+// problems for bullets whose citations code could not fix; v8 runs
+// store authors (how many analysts listed it independently) + votes —
+// all optional so every generation renders.
 export type TieredDebateItem = {
   id: string;
   dimension: string;
@@ -135,7 +146,9 @@ export type TieredDebateItem = {
   value_check?: { verdict: 'valid' | 'invalid'; problems: string[] } | null;
   struck?: boolean;
   problems?: string[];
-  added_by_attacker: boolean;
+  authors?: number;
+  votes?: TieredDebateVote[];
+  added_by_attacker?: boolean;
   attacker_checks?: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;
   attacker_check?: TieredDebateCheck | null;
   responses?: {
@@ -207,9 +220,10 @@ export type TieredDebateDetail = {
     adjusted_score?: number | null;
     adjusted_kept?: boolean | null;
     weight?: { numerator: number; denominator: number; value: number } | null;
+    // v8 pools drop the adjusted snapshot (no concede/adopt step).
     pools?: {
       initial: TieredDebatePool;
-      adjusted: TieredDebatePool;
+      adjusted?: TieredDebatePool;
       final: TieredDebatePool;
     } | null;
   } | null;

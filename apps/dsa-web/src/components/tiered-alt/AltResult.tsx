@@ -340,7 +340,10 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   // whole — no scoring foldable, no bull/bear columns; the arithmetic
   // lives in the tree's own scores block.
   if (
-    (detail?.format === 5 || detail?.format === 6 || detail?.format === 7) &&
+    (detail?.format === 5 ||
+      detail?.format === 6 ||
+      detail?.format === 7 ||
+      detail?.format === 8) &&
     Array.isArray(detail.items)
   ) {
     return (

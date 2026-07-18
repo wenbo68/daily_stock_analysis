@@ -1,19 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Pydantic forms the tier-2 debate (v7) forces its LLM calls to fill.
+"""Pydantic forms the tier-2 debate (v8) forces its LLM calls to fill.
 
-Every stage of the debate (defender opening, attacker opening, citation
-fixes, attacker review, defender reply, judge rulings) is a strict typed
-form, not free prose: the engine hands the model the exact JSON shape,
-validates the reply against these models, retries once with the validation
-errors shown, and degrades/voids per the failure rules if the retry is
-still invalid.
+Every stage of the debate (two analyst lists, the merge match-map, the
+check round, the deciding round, citation fixes) is a strict typed form,
+not free prose: the engine hands the model the exact JSON shape,
+validates the reply against these models, retries once with the
+validation errors shown, and degrades/voids per the failure rules if the
+retry is still invalid.
 
-v7: citation checking is code's job alone — every link is ``{ref, value}``
-(sentiment: ``{ref, text}``) and the engine verifies it mechanically, so
-the AI check forms carry a single check per object (the logic check).
-Structural rules that depend on run-time data (which dimensions actually
-have evidence, which item ids exist) live in the validator helpers at the
-bottom — they raise ``ValueError`` with retry-friendly messages.
+v8: no defender/attacker/judge roles. Two analysts list evidence
+independently; a merge call matches the two lists; every bullet's author
+is its first valid vote (a bullet both analysts listed independently is
+confirmed 2-0 on the spot); a check round casts the second vote on
+single-author bullets; a deciding round breaks 1-1 ties. Citations are
+code's job alone — links are ``{ref, value}`` (sentiment: bare
+``{ref: citation:N}`` rendered as a trailing [N]) and every link,
+including the ones inside vote reasons, is verified mechanically with a
+fix loop. Structural rules that depend on run-time data live in the
+validator helpers at the bottom — they raise ``ValueError`` with
+retry-friendly messages.
 """
 from __future__ import annotations
 
@@ -51,26 +56,20 @@ class _StageModel(BaseModel):
 
 
 class LinkModel(_StageModel):
-    """One inline citation. Payload refs carry "value" — the value copied
-    exactly as the report displays it (code verifies the copy AND that the
-    claim sentence contains it). Sentiment refs ("citation:N") carry
-    "text" — the words of the sentence resting on that news source."""
+    """One citation. Payload refs carry "value" — the value copied exactly
+    as the report displays it (code verifies the copy AND that the
+    sentence contains it). Sentiment refs ("citation:N") carry nothing
+    extra — the UI renders them as trailing [N] links."""
 
     ref: str = Field(min_length=1)
     value: Optional[Union[float, str]] = None
-    text: Optional[str] = None
 
     @model_validator(mode="after")
-    def _shape_by_ref(self) -> "LinkModel":
+    def _payload_needs_value(self) -> "LinkModel":
         ref = self.ref.strip()
-        if _CITATION_REF_RE.match(ref):
-            if not (self.text or "").strip():
-                raise ValueError(
-                    f'sentiment link {ref!r} must carry "text" — the exact '
-                    "words of the claim that rest on that news source"
-                )
-        elif self.value is None or (
-            isinstance(self.value, str) and not self.value.strip()
+        if not _CITATION_REF_RE.match(ref) and (
+            self.value is None
+            or (isinstance(self.value, str) and not self.value.strip())
         ):
             raise ValueError(
                 f'link {ref!r} must carry "value" — the value copied exactly '
@@ -80,8 +79,8 @@ class LinkModel(_StageModel):
 
 
 class EvidenceItemModel(_StageModel):
-    """One evidence item: an atomic claim with a direction tag whose cited
-    values carry inline, code-verified links."""
+    """One evidence bullet: an atomic claim with a direction tag whose
+    cited values carry code-verified links."""
 
     id: str = Field(min_length=1)
     dimension: Dimension
@@ -90,83 +89,62 @@ class EvidenceItemModel(_StageModel):
     links: List[LinkModel] = Field(min_length=1)
 
 
-class DefenderOpeningModel(_StageModel):
-    """Stage 1a: the defender's full evidence list. No score — the
-    position scores are computed by code from the direction tags."""
-
-    items: List[EvidenceItemModel] = Field(min_length=1)
-    no_data_dimensions: List[str] = Field(default_factory=list)
-
-
-class AttackerOpeningModel(_StageModel):
-    """Stage 1b: the attacker's independent list — no score, no stance."""
+class ListModel(_StageModel):
+    """Step 1: one analyst's full evidence list. No score — the position
+    scores are computed by code from the direction tags."""
 
     items: List[EvidenceItemModel] = Field(min_length=1)
     no_data_dimensions: List[str] = Field(default_factory=list)
 
 
 class CitationFixModel(_StageModel):
-    """A citation-fix round's reply: the corrected bullets, same ids."""
+    """A bullet citation-fix round's reply: corrected bullets, same ids."""
 
     items: List[EvidenceItemModel] = Field(min_length=1)
 
 
-class CheckModel(_StageModel):
-    """One logic check; 'invalid' must say why, with citations."""
-
-    verdict: Literal["valid", "invalid"]
-    reason: Optional[str] = None
-    citations: List[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def _invalid_needs_reason(self) -> "CheckModel":
-        if self.verdict == "invalid" and not (self.reason or "").strip():
-            raise ValueError("an 'invalid' check must carry a non-empty reason")
-        return self
-
-
 class MatchEntryModel(_StageModel):
-    """Stage 2 match map row: one attacker item → covering defender item."""
+    """Merge match-map row: one second-list bullet → the first-list
+    bullet covering the same evidence (same direction), or null."""
 
     own_id: str
     covered_by: Optional[str] = None
 
 
-class AttackerReviewModel(_StageModel):
-    """Stage 2: the semantic diff of the two lists + one logic check per
-    defender item (citations are code-verified before this stage runs).
-    Additions are derived by code from the match map (covered_by null →
-    the attacker item becomes an addition)."""
+class MergeModel(_StageModel):
+    """Step 2: the semantic diff of the two lists. Covered pairs mean the
+    bullet was listed independently by both analysts (confirmed 2-0);
+    uncovered second-list bullets join the merged list."""
 
     match_map: List[MatchEntryModel] = Field(default_factory=list)
-    checks: Dict[str, CheckModel]
 
 
-class DefenderReplyModel(_StageModel):
-    """Stage 3: the defender's response to every challenge — one check ON
-    the attack/addition itself. Check valid → the challenge is accepted
-    (attack conceded / addition adopted); invalid → the check's reason IS
-    the rejection. No score output."""
+class VoteModel(_StageModel):
+    """One vote on a bullet: valid/invalid with a short reason. Numbers
+    inside the reason must be cited with the same code-checked links the
+    bullets use; 'invalid' requires a reason."""
 
-    responses: Dict[str, CheckModel] = Field(default_factory=dict)
+    verdict: Literal["valid", "invalid"]
+    reason: Optional[str] = None
+    links: List[LinkModel] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _invalid_needs_reason(self) -> "VoteModel":
+        if self.verdict == "invalid" and not (self.reason or "").strip():
+            raise ValueError("an 'invalid' vote must carry a non-empty reason")
+        return self
 
 
-class AttackRulingModel(_StageModel):
-    """Stage 4: the judge's binary ruling on one attack."""
+class VoteRoundModel(_StageModel):
+    """Steps 3 and 4: one vote per requested bullet id."""
 
-    verdict: Literal["attack_right", "attack_wrong"]
-    reason: str = Field(min_length=1)
-    citations: List[str] = Field(default_factory=list)
+    votes: Dict[str, VoteModel] = Field(default_factory=dict)
 
 
-class JudgeModel(_StageModel):
-    """Stage 4: the judge's complete ruling set — its own logic check for
-    every UNATTACKED item (defender-listed and attacker-added alike; an
-    addition is genuine simply when the check passes), plus a binary
-    ruling per attacked item. The engine checks the key sets exactly."""
+class VoteFixModel(_StageModel):
+    """A vote citation-fix round's reply: corrected votes, same keys."""
 
-    reason_checks: Dict[str, CheckModel] = Field(default_factory=dict)
-    attack_rulings: Dict[str, AttackRulingModel] = Field(default_factory=dict)
+    votes: Dict[str, VoteModel] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -238,17 +216,38 @@ def check_exact_keys(given: Sequence[str], required: Sequence[str], what: str) -
 def check_match_map(
     match_map: Sequence[MatchEntryModel],
     own_ids: Sequence[str],
-    defender_ids: Sequence[str],
+    first_items: Dict[str, EvidenceItemModel],
+    own_items: Dict[str, EvidenceItemModel],
 ) -> None:
-    """Every attacker item mapped exactly once, to a real defender id."""
+    """Every second-list bullet mapped exactly once, to a real first-list
+    bullet of the SAME direction — a bullet citing the same evidence with
+    the opposite direction is a genuine dispute and must stay unmatched
+    so the votes can settle it."""
     check_exact_keys([m.own_id for m in match_map], list(own_ids), "match_map entry")
-    bad_targets = [
-        m.own_id
-        for m in match_map
-        if m.covered_by is not None and m.covered_by not in defender_ids
-    ]
+    bad_targets: List[str] = []
+    direction_clashes: List[str] = []
+    for entry in match_map:
+        if entry.covered_by is None:
+            continue
+        if entry.covered_by not in first_items:
+            bad_targets.append(entry.own_id)
+            continue
+        if (
+            own_items[entry.own_id].direction
+            != first_items[entry.covered_by].direction
+        ):
+            direction_clashes.append(entry.own_id)
+    errors: List[str] = []
     if bad_targets:
-        raise ValueError(
-            "match_map covered_by must be an existing defender item id or null; "
-            f"bad entries for: {', '.join(bad_targets)}"
+        errors.append(
+            "match_map covered_by must be an existing first-list bullet id or "
+            f"null; bad entries for: {', '.join(bad_targets)}"
         )
+    if direction_clashes:
+        errors.append(
+            "covered_by requires the SAME direction; opposite-direction "
+            "bullets are disputes and must be left unmatched (null): "
+            f"{', '.join(direction_clashes)}"
+        )
+    if errors:
+        raise ValueError("; ".join(errors))

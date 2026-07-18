@@ -623,6 +623,138 @@ function makeTreeDebateV7(): TieredDebateDetail {
   };
 }
 
+// A v8 evidence-vote audit trail: no roles, majority votes. T1 listed by
+// both analysts (confirmed 2-0); T2 outvoted 1-2 (checker + deciding
+// vote against); T3 struck by the code citation check; S1 counted 2-0
+// with a trailing [2] source link. Pools: initial (10·1/2 + 0)/2 = 2.50;
+// final (10 + 0)/2 = 5.00 → hold.
+function makeTreeDebateV8(): TieredDebateDetail {
+  return {
+    format: 8,
+    turns: [],
+    items: [
+      {
+        id: 'T1',
+        dimension: 'technicals',
+        direction: 'bullish',
+        claim: 'The 14-day RSI (71.20) is above 70.',
+        links: [{ ref: 'technicals.rsi_14', value: '71.20' }],
+        struck: false,
+        problems: [],
+        authors: 2,
+        votes: [],
+        response: null,
+        judge: null,
+        final_status: 'counted',
+        exclusion_reason: null,
+      },
+      {
+        id: 'T2',
+        dimension: 'technicals',
+        direction: 'bearish',
+        claim: 'The closing price (100) is below the 105 resistance.',
+        links: [{ ref: 'technicals.close', value: '100' }],
+        struck: false,
+        problems: [],
+        authors: 1,
+        votes: [
+          {
+            role: 'checker',
+            verdict: 'invalid',
+            reason: 'A single close below one level is not a trend.',
+            links: [],
+          },
+          {
+            role: 'decider',
+            verdict: 'invalid',
+            reason: 'The objection holds.',
+            links: [],
+          },
+        ],
+        response: null,
+        judge: null,
+        final_status: 'excluded',
+        exclusion_reason: 'outvoted',
+      },
+      {
+        id: 'T3',
+        dimension: 'technicals',
+        direction: 'bullish',
+        claim: 'The technical score (999) is strong.',
+        links: [{ ref: 'technicals.score', value: '999' }],
+        struck: true,
+        problems: ["item T3 link 'technicals.score': claimed value '999' must be copied exactly as the report displays it: '68'"],
+        authors: 1,
+        votes: [],
+        response: null,
+        judge: null,
+        final_status: 'excluded',
+        exclusion_reason: 'citation_failed',
+      },
+      {
+        id: 'S1',
+        dimension: 'sentiment',
+        direction: 'bearish',
+        claim: 'The deal is not closed yet.',
+        links: [{ ref: 'citation:2', value: null }],
+        struck: false,
+        problems: [],
+        authors: 1,
+        votes: [
+          {
+            role: 'checker',
+            verdict: 'valid',
+            reason: 'Supported by the source.',
+            links: [{ ref: 'citation:2', value: null }],
+          },
+        ],
+        response: null,
+        judge: null,
+        final_status: 'counted',
+        exclusion_reason: null,
+      },
+    ],
+    verdict: {
+      direction: 'hold',
+      summary: 'Only balanced evidence survived.',
+      final_score: 5.0,
+      final_score_rounded: 5,
+      initial_score: 2.5,
+      adjusted_score: null,
+      pools: {
+        initial: {
+          dimensions: {
+            technicals: { bullish: 1, bearish: 1, total: 2, score: 5.0 },
+            sentiment: { bullish: 0, bearish: 1, total: 1, score: 0.0 },
+          },
+          bullish: 1,
+          bearish: 2,
+          total: 3,
+          score: 2.5,
+        },
+        final: {
+          dimensions: {
+            technicals: { bullish: 1, bearish: 0, total: 1, score: 10.0 },
+            sentiment: { bullish: 0, bearish: 1, total: 1, score: 0.0 },
+          },
+          bullish: 1,
+          bearish: 1,
+          total: 2,
+          score: 5.0,
+        },
+      },
+      confidence: null,
+      reasons_for: [],
+      reasons_against: [],
+      would_change_mind: null,
+      bull_summary: null,
+      bear_summary: null,
+      scoring: null,
+    },
+    warnings: [],
+  };
+}
+
 function renderResult(result: TieredResult) {
   render(
     <MemoryRouter>
@@ -1154,5 +1286,78 @@ describe('AltResult v7 debate tree', () => {
     expect(screen.queryByTestId('alt-tree-item-S1')).not.toBeInTheDocument();
     const t2 = screen.getByTestId('alt-tree-item-T2');
     expect(t2.querySelector('.line-through')).not.toBeNull();
+  });
+});
+
+describe('AltResult v8 evidence vote', () => {
+  function renderTreeV8() {
+    const deep = makeDeepResult();
+    deep.tier2!.debate_detail = makeTreeDebateV8();
+    deep.tier2!.narrative = 'Only balanced evidence survived.';
+    renderResult(deep);
+  }
+
+  it('underlines cited values inline and renders sources as trailing [N] links', () => {
+    renderTreeV8();
+    const t1 = screen.getByTestId('alt-tree-item-T1');
+    expect(within(t1).getByRole('button', { name: '71.20' })).toBeInTheDocument();
+    const s1 = screen.getByTestId('alt-tree-item-S1');
+    expect(within(s1).getAllByRole('button', { name: '[2]' }).length).toBeGreaterThan(0);
+    // No underlined words for sentiment — the claim text is plain.
+    expect(within(s1).queryByRole('button', { name: /deal/ })).not.toBeInTheDocument();
+  });
+
+  it('shows the both-listed line, the vote lines, and no counted/excluded pills', () => {
+    renderTreeV8();
+    const t1 = screen.getByTestId('alt-tree-item-T1');
+    expect(t1).toHaveTextContent(/listed independently by both analysts|两位分析师独立列出/);
+    const t2 = screen.getByTestId('alt-tree-item-T2');
+    expect(t2).toHaveTextContent(/checker|复核/);
+    expect(t2).toHaveTextContent(/deciding vote|决胜票/);
+    expect(screen.queryByText(/^counted$|^计入$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^excluded$|^不计入$/)).not.toBeInTheDocument();
+  });
+
+  it('crosses out outvoted and citation-struck bullets at the final step', () => {
+    renderTreeV8();
+    expect(
+      screen.getByTestId('alt-tree-item-T2').querySelector('.line-through'),
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId('alt-tree-item-T3').querySelector('.line-through'),
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId('alt-tree-item-T1').querySelector('.line-through'),
+    ).toBeNull();
+  });
+
+  it('uses a three-step selector; step 1 shows the plain list with only code strikes', () => {
+    renderTreeV8();
+    expect(screen.getByTestId('alt-tree-step-3')).toBeInTheDocument();
+    expect(screen.queryByTestId('alt-tree-step-4')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('alt-tree-step-1'));
+    expect(
+      screen.queryByText(/listed independently by both analysts|两位分析师独立列出/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/checker|复核/)).not.toBeInTheDocument();
+    // The outvoted bullet is not crossed out yet; the code-struck one is.
+    expect(
+      screen.getByTestId('alt-tree-item-T2').querySelector('.line-through'),
+    ).toBeNull();
+    expect(
+      screen.getByTestId('alt-tree-item-T3').querySelector('.line-through'),
+    ).not.toBeNull();
+  });
+
+  it('shows initial and final scores with no adjusted line', () => {
+    renderTreeV8();
+    const scores = screen.getByTestId('alt-tree-scores');
+    expect(scores).toHaveTextContent('2.50');
+    expect(scores).toHaveTextContent(/average of 2 dimensions|2 个维度的平均分/);
+    expect(scores).not.toHaveTextContent(/adjusted position score|调整后立场分/);
+    expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent(
+      '= (10.00 + 0.00) / 2',
+    );
+    expect(screen.getByTestId('alt-tree-verdict')).toHaveTextContent(/hold|持有/i);
   });
 });
