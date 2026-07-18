@@ -229,14 +229,52 @@ def validate_evidence(
     return valid
 
 
-def evidence_block(dimensions: Sequence[DimensionResult]) -> str:
-    """The evidence bundle LLM stages may cite, with the ref grammar shown."""
+def display_value(value: Any) -> str:
+    """One number, formatted exactly as the web report pages show it.
+
+    A Python port of the frontend's ``formatValue`` (termHelpers.ts): whole
+    numbers stay whole, decimals get 2 places, millions/billions/trillions
+    are worded. The v7 debate shows the AI this rendering, requires cited
+    values to match it, and checks the claim sentence for the same string —
+    so the report page, the sentence, and the check all carry one number.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return str(value).strip()
+    magnitude = abs(value)
+    if magnitude >= 1e12:
+        return f"{value / 1e12:.2f} trillion"
+    if magnitude >= 1e9:
+        return f"{value / 1e9:.2f} billion"
+    if magnitude >= 1e6:
+        return f"{value / 1e6:.2f} million"
+    if float(value) == int(value):
+        return str(int(value))
+    return f"{value:.2f}"
+
+
+def display_payload(node: Any) -> Any:
+    """A payload copy with every numeric leaf replaced by its display
+    string — what the v7 debate prompts show instead of raw floats."""
+    if isinstance(node, dict):
+        return {key: display_payload(value) for key, value in node.items()}
+    if isinstance(node, bool) or not isinstance(node, (int, float)):
+        return node
+    return display_value(node)
+
+
+def evidence_block(dimensions: Sequence[DimensionResult], display: bool = False) -> str:
+    """The evidence bundle LLM stages may cite, with the ref grammar shown.
+
+    ``display=True`` (the v7 debate) renders numeric leaves as their
+    report-page display strings so the model cites what the user sees.
+    """
     blocks: List[str] = []
     for dim in dimensions:
         if dim.payload:
+            payload = display_payload(dim.payload) if display else dim.payload
             blocks.append(
                 f"[{dim.dimension} payload — cite as \"{dim.dimension}.<key>\"]\n"
-                + json.dumps(dim.payload, ensure_ascii=False, default=str)
+                + json.dumps(payload, ensure_ascii=False, default=str)
             )
         if dim.dimension == "sentiment" and dim.narrative:
             lines = [f"[sentiment narrative]\n{dim.narrative}"]

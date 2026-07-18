@@ -71,13 +71,15 @@ export type TieredDebaterScore = {
   notes?: string | null;
 };
 
-// --- v5/v6 debate tree (defender/attacker/judge) ---
+// --- v5/v6/v7 debate tree (defender/attacker/judge) ---
 
-// v6 inline citation: the exact words in the claim, the leaf field they
-// cite, and (payload refs) the claimed value — all verified by code.
-// mismatch marks a value the report contradicts (auto-failed).
+// Inline citation. v6: text = the words underlined in the claim, value =
+// the claimed number (mismatch marks a code-detected contradiction).
+// v7: payload links carry value (the report's display string; the claim
+// contains it verbatim) with text null; sentiment links carry text (the
+// words resting on that news source) with value null.
 export type TieredDebateLink = {
-  text: string;
+  text?: string | null;
   ref: string;
   value: number | string | null;
   mismatch?: boolean;
@@ -91,11 +93,14 @@ export type TieredDebateCheck = {
 };
 
 // The defender's response to one challenge: its own checks ON the
-// attack/addition; both valid → accepted (conceded/adopted).
+// attack/addition. v6 stores the citation/logic pair (both valid →
+// accepted); v7 stores the single `check` (valid → accepted). All three
+// fields optional so both generations type-check.
 export type TieredDebateResponse = {
   accepted: boolean;
-  citation_check: TieredDebateCheck;
-  logic_check: TieredDebateCheck;
+  citation_check?: TieredDebateCheck;
+  logic_check?: TieredDebateCheck;
+  check?: TieredDebateCheck;
 };
 
 // The judge's word on one axis of a defender item: its own check when the
@@ -116,7 +121,10 @@ export type TieredDebateJudgeAddition = {
 
 // One evidence item of the tree with everything that happened to it.
 // v5 runs store citations + the count/outcome ledger; v6 runs store
-// links + value_check + final_status — all optional so both render.
+// links + value_check + the per-axis checks; v7 runs store single-axis
+// fields (attacker_check, one response, one judge line) plus struck +
+// problems for bullets whose citations code could not fix — all optional
+// so every generation renders.
 export type TieredDebateItem = {
   id: string;
   dimension: string;
@@ -125,9 +133,12 @@ export type TieredDebateItem = {
   citations?: string[];
   links?: TieredDebateLink[];
   value_check?: { verdict: 'valid' | 'invalid'; problems: string[] } | null;
+  struck?: boolean;
+  problems?: string[];
   added_by_attacker: boolean;
-  attacker_checks: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;
-  responses: {
+  attacker_checks?: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;
+  attacker_check?: TieredDebateCheck | null;
+  responses?: {
     citation: TieredDebateResponse | null;
     logic: TieredDebateResponse | null;
   };
@@ -135,6 +146,7 @@ export type TieredDebateItem = {
   judge:
     | { citation: TieredDebateJudgeAxis; logic: TieredDebateJudgeAxis }
     | TieredDebateJudgeAddition
+    | TieredDebateJudgeAxis
     | null;
   count?: { numerator: number; denominator: number } | null;
   outcome?: 'valid' | 'invalid' | 'neutral' | null;
@@ -162,7 +174,7 @@ export type TieredDebatePool = {
 // and the v5 tree (format: 5, items, weight ledger) — every
 // generation-specific field is optional.
 export type TieredDebateDetail = {
-  // 5 on v5 runs; absent on everything stored before.
+  // 5/6/7 on tree-format runs; absent on everything stored before.
   format?: number;
   items?: TieredDebateItem[];
   turns: {

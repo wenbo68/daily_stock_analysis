@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
-"""Pydantic forms the tier-2 debate (v6) forces its LLM calls to fill.
+"""Pydantic forms the tier-2 debate (v7) forces its LLM calls to fill.
 
-Every stage of the debate (defender opening, attacker opening, attacker
-review, defender reply, judge rulings) is a strict typed form, not free
-prose: the engine hands the model the exact JSON shape, validates the
-reply against these models, retries once with the validation errors shown,
-and degrades/voids per the failure rules if the retry is still invalid.
+Every stage of the debate (defender opening, attacker opening, citation
+fixes, attacker review, defender reply, judge rulings) is a strict typed
+form, not free prose: the engine hands the model the exact JSON shape,
+validates the reply against these models, retries once with the validation
+errors shown, and degrades/voids per the failure rules if the retry is
+still invalid.
 
+v7: citation checking is code's job alone — every link is ``{ref, value}``
+(sentiment: ``{ref, text}``) and the engine verifies it mechanically, so
+the AI check forms carry a single check per object (the logic check).
 Structural rules that depend on run-time data (which dimensions actually
 have evidence, which item ids exist) live in the validator helpers at the
 bottom — they raise ``ValueError`` with retry-friendly messages.
 """
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -28,13 +33,15 @@ DIMENSION_PREFIX: Dict[str, str] = {
 
 #: Every dimension that has collected data must contribute at least this
 #: many evidence items — a floor so no dimension is skipped. The ceiling is
-#: dynamic (v6): the number of leaf fields in that dimension's report
+#: dynamic: the number of leaf fields in that dimension's report
 #: (sentiment: verified sources × 2), never below the floor — room for the
 #: whole report, not a quota.
 MIN_ITEMS_PER_DIMENSION = 2
 
 Dimension = Literal["technicals", "fundamentals", "macro_econ", "sentiment"]
 ItemDirection = Literal["bullish", "bearish"]
+
+_CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 
 class _StageModel(BaseModel):
@@ -44,18 +51,37 @@ class _StageModel(BaseModel):
 
 
 class LinkModel(_StageModel):
-    """One inline citation: the exact words in the claim, the leaf field
-    they cite, and (for payload refs) the value the sentence claims —
-    all three are verified mechanically by code."""
+    """One inline citation. Payload refs carry "value" — the value copied
+    exactly as the report displays it (code verifies the copy AND that the
+    claim sentence contains it). Sentiment refs ("citation:N") carry
+    "text" — the words of the sentence resting on that news source."""
 
-    text: str = Field(min_length=1)
     ref: str = Field(min_length=1)
     value: Optional[Union[float, str]] = None
+    text: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _shape_by_ref(self) -> "LinkModel":
+        ref = self.ref.strip()
+        if _CITATION_REF_RE.match(ref):
+            if not (self.text or "").strip():
+                raise ValueError(
+                    f'sentiment link {ref!r} must carry "text" — the exact '
+                    "words of the claim that rest on that news source"
+                )
+        elif self.value is None or (
+            isinstance(self.value, str) and not self.value.strip()
+        ):
+            raise ValueError(
+                f'link {ref!r} must carry "value" — the value copied exactly '
+                "as the report displays it"
+            )
+        return self
 
 
 class EvidenceItemModel(_StageModel):
     """One evidence item: an atomic claim with a direction tag whose cited
-    words carry inline, value-checked links."""
+    values carry inline, code-verified links."""
 
     id: str = Field(min_length=1)
     dimension: Dimension
@@ -66,7 +92,7 @@ class EvidenceItemModel(_StageModel):
 
 class DefenderOpeningModel(_StageModel):
     """Stage 1a: the defender's full evidence list. No score — the
-    position scores are computed by code from the direction tags (v6)."""
+    position scores are computed by code from the direction tags."""
 
     items: List[EvidenceItemModel] = Field(min_length=1)
     no_data_dimensions: List[str] = Field(default_factory=list)
@@ -79,8 +105,14 @@ class AttackerOpeningModel(_StageModel):
     no_data_dimensions: List[str] = Field(default_factory=list)
 
 
+class CitationFixModel(_StageModel):
+    """A citation-fix round's reply: the corrected bullets, same ids."""
+
+    items: List[EvidenceItemModel] = Field(min_length=1)
+
+
 class CheckModel(_StageModel):
-    """One citation-or-logic check; 'invalid' must say why, with citations."""
+    """One logic check; 'invalid' must say why, with citations."""
 
     verdict: Literal["valid", "invalid"]
     reason: Optional[str] = None
@@ -93,13 +125,6 @@ class CheckModel(_StageModel):
         return self
 
 
-class ItemChecksModel(_StageModel):
-    """The check pair every reviewer applies to one object."""
-
-    citation_check: CheckModel
-    logic_check: CheckModel
-
-
 class MatchEntryModel(_StageModel):
     """Stage 2 match map row: one attacker item → covering defender item."""
 
@@ -108,19 +133,22 @@ class MatchEntryModel(_StageModel):
 
 
 class AttackerReviewModel(_StageModel):
-    """Stage 2: the semantic diff of the two lists + checks on every
-    defender item. Additions are derived by code from the match map
-    (covered_by null → the attacker item becomes an addition)."""
+    """Stage 2: the semantic diff of the two lists + one logic check per
+    defender item (citations are code-verified before this stage runs).
+    Additions are derived by code from the match map (covered_by null →
+    the attacker item becomes an addition)."""
 
     match_map: List[MatchEntryModel] = Field(default_factory=list)
-    checks: Dict[str, ItemChecksModel]
+    checks: Dict[str, CheckModel]
 
 
 class DefenderReplyModel(_StageModel):
-    """Stage 3: the defender's mechanical response to every challenge —
-    checks ON the attack/addition itself. No score output (v6)."""
+    """Stage 3: the defender's response to every challenge — one check ON
+    the attack/addition itself. Check valid → the challenge is accepted
+    (attack conceded / addition adopted); invalid → the check's reason IS
+    the rejection. No score output."""
 
-    responses: Dict[str, ItemChecksModel] = Field(default_factory=dict)
+    responses: Dict[str, CheckModel] = Field(default_factory=dict)
 
 
 class AttackRulingModel(_StageModel):
@@ -132,12 +160,12 @@ class AttackRulingModel(_StageModel):
 
 
 class JudgeModel(_StageModel):
-    """Stage 4: the judge's complete ruling set — its own citation+logic
-    check pair for EVERY item (defender-listed and attacker-added alike;
-    an addition is "real" simply when both checks pass), plus a binary
-    ruling per attack. The engine checks the key sets exactly."""
+    """Stage 4: the judge's complete ruling set — its own logic check for
+    every UNATTACKED item (defender-listed and attacker-added alike; an
+    addition is genuine simply when the check passes), plus a binary
+    ruling per attacked item. The engine checks the key sets exactly."""
 
-    reason_checks: Dict[str, ItemChecksModel] = Field(default_factory=dict)
+    reason_checks: Dict[str, CheckModel] = Field(default_factory=dict)
     attack_rulings: Dict[str, AttackRulingModel] = Field(default_factory=dict)
 
 

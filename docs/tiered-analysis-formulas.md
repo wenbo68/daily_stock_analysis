@@ -189,25 +189,25 @@ they can't be known in advance.
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 
-## 6. Tier-2 evidence debate (v6, `debate.py` + `debate_models.py`)
+## 6. Tier-2 evidence debate (v7, `debate.py` + `debate_models.py`)
 
-One evidence pool, three roles, no forced bull/bear personas, and no
-AI-authored numbers anywhere (owner spec 2026-07-18; full design in
-`.claude/reviews/tier2-v5-design.md`, v6 revision section):
+One evidence pool, three roles, no forced bull/bear personas, no
+AI-authored numbers anywhere, and citation checking owned entirely by
+code (owner spec 2026-07-18; full design in
+`.claude/reviews/tier2-v5-design.md`, v6/v7 revision sections):
 
 ```
 step 1  DEFENDER lists ALL evidence (bullish + bearish) per dimension
      ‖  ATTACKER independently builds its own list (blind, in parallel)
+        — each list runs through the code citation check + fix loop
 step 2  ATTACKER matches the two lists (uncovered own items become
-        additions), then checks every defender item on two axes:
-        citation and logic
-step 3  DEFENDER responds to every challenge by running the same two
-        checks ON the challenge itself: both valid → accept (concede /
-        adopt), either invalid → rejection. Skipped when nothing was
-        challenged. No score output.
-step 4  JUDGE, final say: its own citation+logic check pair on EVERY
-        item (defender-listed and attacker-added alike), plus
-        attack_right/attack_wrong per attack
+        additions), then files ONE logic check per defender item
+step 3  DEFENDER responds to every challenge with ONE check ON the
+        challenge itself: valid → accept (concede / adopt), invalid →
+        rejection. Skipped when nothing was challenged. No score output.
+step 4  JUDGE, final say: one reason check per unattacked item
+        (defender-listed and attacker-added alike), plus
+        attack_right/attack_wrong per attacked item
 step 5  summary prose around the computed numbers (never voids)
 ```
 
@@ -215,40 +215,46 @@ Per-dimension item counts: floor 2, ceiling = the number of leaf fields
 in that dimension's report (sentiment: verified sources × 2) — room for
 the whole report, not a quota. Macro-econ ids are E1, E2….
 
-Every claim carries inline links ``{text, ref, value}`` — the exact
-words in the sentence, the leaf field cited, and the claimed value.
-Code verifies mechanically: the text appears verbatim in the claim, the
-ref resolves to a single value (`technicals.macd` rejected,
-`technicals.macd.signal` passes), the value equals the report's (rounding
-tolerance = half a unit at the claimed precision) and appears literally
-in the sentence. Problems are shown back once for a retry; a mismatch
-surviving the retry auto-fails the item's citation check — code
-overrules everyone. The AI citation checks then judge whether the
-sentence says something TRUE about the verified values; the logic checks
-judge whether the direction tag follows.
+Citations are `{ref, value}` (sentiment: `{ref: citation:N, text}`).
+The prompts render every payload number through `display_value` — the
+same formatting the web report pages use (whole numbers whole, decimals
+to 2 places, millions/billions/trillions worded) — so the model never
+sees raw floats. Code verifies each link: the ref resolves to a single
+leaf (`technicals.macd` rejected, `technicals.macd.signal` passes), the
+value equals the report's display string exactly, and that string
+appears in the claim sentence (thousands separators tolerated; digit
+boundaries stop `205` matching inside `1205` or `205.4`). Failures go
+back to the same AI in up to `MAX_FIX_ROUNDS = 3` focused fix calls
+carrying only the broken bullets; successful fixes leave no trace.
+Bullets still broken after that: defender bullets are STRUCK — rendered
+crossed out, never debated, never counted in any pool; attacker bullets
+are dropped. There are no AI citation checks — the debate's single
+check axis is logic (does the sentence say something true about the
+code-verified values, and does the direction tag follow).
 
-The score (code, pure counting — the v5 weight formula is gone):
+The score (code, pure counting):
 
 ```
 per dimension  score_d = 10 × bullish_d / total_d
 overall        mean of the dimension scores present in the pool
                                                        (2 decimals)
 
-initial   = the defender's raw list
+initial   = the defender's surviving (non-struck) list
 adjusted  = the pool as the defender's responses leave it
-            (conceded items out, accepted additions in)
-final     = the pool as the judge + code ruled it: an item counts unless
-            its value check failed, an attack on it was upheld, or a
-            judge check on it is invalid. The defender's stance is
-            irrelevant here — wrongly conceded items are restored,
-            judge-approved additions count even if refused (flag notes).
+            (conceded items out, adopted additions in)
+final     = the pool as the judge ruled it: an item counts unless an
+            attack on it was upheld or the judge's check is invalid.
+            The defender's stance is irrelevant here — wrongly conceded
+            items are restored, judge-approved additions count even if
+            refused (flag notes).
 
 direction = sell if final < 4, hold if 4 ≤ final ≤ 6, else buy
 empty final pool → 5.00, hold, warning
 ```
 
-6 calls per run across 5 sequential steps (openings parallel; the reply
-call skipped when there are no challenges), all at temperature 0
-(`deterministic_summarizer`). Defender/judge failures void (tier-1
+6 base calls per run across 5 sequential steps (openings parallel, each
+with its own fix loop; the reply call skipped when there are no
+challenges), all at temperature 0 (`deterministic_summarizer`). Fix
+rounds add one call each. Defender/judge failures void (tier-1
 direction stands); attacker failures degrade loudly; the summary's
 failure never voids anything.

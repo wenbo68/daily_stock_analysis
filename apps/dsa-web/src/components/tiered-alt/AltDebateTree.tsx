@@ -14,14 +14,17 @@ import { flashElement, jumpToMetric } from '../tiered/termHelpers';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT, TAG_BASE } from './altStyles';
 import { AltSectionLabel, FVar } from './AltUi';
 
-// The v5/v6 debate tree: one tree, four steps. Step 1 shows the
+// The v5/v6/v7 debate tree: one tree, four steps. Step 1 shows the
 // defender's evidence list; step 2 adds the attacker's checks and
 // additions; step 3 adds the defender's responses; step 4 (the default)
-// adds the judge's rulings and the scores block. v6 runs carry inline
-// value-checked links and deterministic pool scores; stored v5 runs keep
-// their citation chips and the weight formula. Color rules: defender text
-// in the normal ink, attacker material tinted sky, judge rulings tinted
-// violet, with green valid / red invalid verdicts throughout.
+// adds the judge's rulings and the scores block. v7 runs underline the
+// cited display values themselves (code fixed or struck every citation
+// before the debate, so the tree carries a single logic axis); v6 runs
+// keep their word-underlines, value-check lines and two-axis threads;
+// stored v5 runs keep their citation chips and the weight formula.
+// Color rules: defender text in the normal ink, attacker material tinted
+// sky, judge rulings tinted violet, with green valid / red invalid
+// verdicts throughout.
 
 const STEPS = [
   { n: 1, labelKey: 'tiered.tree.step.argument' },
@@ -76,8 +79,9 @@ const jumpToRef = (ref: string) => {
 const LinkedClaim = ({ claim, links }: { claim: string; links: TieredDebateLink[] }) => {
   const markers = links
     .map((link) => {
-      const start = claim.indexOf(link.text);
-      return start >= 0 ? { start, end: start + link.text.length, link } : null;
+      const text = link.text ?? '';
+      const start = text ? claim.indexOf(text) : -1;
+      return start >= 0 ? { start, end: start + text.length, link } : null;
     })
     .filter((m): m is { start: number; end: number; link: TieredDebateLink } => m !== null)
     .sort((a, b) => a.start - b.start);
@@ -111,6 +115,97 @@ const LinkedClaim = ({ claim, links }: { claim: string; links: TieredDebateLink[
     segments.push(<span key="tail">{claim.slice(cursor)}</span>);
   }
   return <span className="text-gray-200">{segments}</span>;
+};
+
+// Where a display value may appear in a claim sentence — the exact
+// string, tolerating thousands separators and (for text values)
+// case/underscore looseness, with digit boundaries so "205" never
+// matches inside "1205" or "205.4". Mirrors the backend's value_pattern.
+const valuePattern = (valueText: string): RegExp => {
+  const parts: string[] = [];
+  const escape = (char: string) => char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (let index = 0; index < valueText.length; index += 1) {
+    const char = valueText[index];
+    parts.push(char === '_' ? '[_ ]' : escape(char));
+    if (/\d/.test(char) && index + 1 < valueText.length && /\d/.test(valueText[index + 1])) {
+      parts.push(',?');
+    }
+  }
+  let pattern = parts.join('');
+  if (/^\d/.test(valueText) || /^-\d/.test(valueText)) {
+    pattern = `(?<![\\d.])${pattern}`;
+  }
+  if (/\d$/.test(valueText)) {
+    pattern = `${pattern}(?!\\.?\\d)`;
+  }
+  return new RegExp(pattern, /\d/.test(valueText) ? '' : 'i');
+};
+
+// v7 claims: each payload link underlines exactly its cited display
+// value inside the sentence; sentiment links underline their words.
+// Links are located left to right, consuming the claim as they go.
+const LinkedClaimV7 = ({
+  claim,
+  links,
+  struck,
+}: {
+  claim: string;
+  links: TieredDebateLink[];
+  struck: boolean;
+}) => {
+  const markers: { start: number; end: number; link: TieredDebateLink }[] = [];
+  let cursor = 0;
+  links.forEach((link) => {
+    let start = -1;
+    let end = -1;
+    if (link.text) {
+      start = claim.indexOf(link.text, cursor);
+      end = start >= 0 ? start + link.text.length : -1;
+    } else if (link.value != null) {
+      const match = valuePattern(String(link.value)).exec(claim.slice(cursor));
+      if (match) {
+        start = cursor + match.index;
+        end = start + match[0].length;
+      }
+    }
+    if (start >= 0) {
+      markers.push({ start, end, link });
+      cursor = end;
+    }
+  });
+  const segments: ReactNode[] = [];
+  let from = 0;
+  markers.forEach((marker, index) => {
+    if (marker.start > from) {
+      segments.push(<span key={`t${index}`}>{claim.slice(from, marker.start)}</span>);
+    }
+    segments.push(
+      <button
+        key={`l${index}`}
+        type="button"
+        className="cursor-pointer text-blue-300 underline decoration-1 decoration-blue-400/60 underline-offset-2 hover:text-blue-200"
+        onClick={() => jumpToRef(marker.link.ref)}
+      >
+        {claim.slice(marker.start, marker.end)}
+      </button>,
+    );
+    from = marker.end;
+  });
+  if (from < claim.length) {
+    segments.push(<span key="tail">{claim.slice(from)}</span>);
+  }
+  return (
+    <span
+      className={cn(
+        'text-gray-200',
+        // The strikethrough IS the verdict: code could not verify this
+        // bullet's citations even after the fix rounds.
+        struck && 'line-through decoration-gray-500 opacity-60',
+      )}
+    >
+      {segments}
+    </span>
+  );
 };
 
 // v5 claims keep their trailing citation chips.
@@ -186,7 +281,10 @@ const ResponseChecks = ({ response }: { response: TieredDebateResponse }) => {
   return (
     <div className="flex flex-col gap-0.5">
       {AXES.map((axis) => {
-        const check: TieredDebateCheck = response[`${axis}_check`];
+        const check = response[`${axis}_check`];
+        if (!check) {
+          return null; // v7 responses carry a single check instead
+        }
         const ok = check.verdict === 'valid';
         return (
           <CheckLine
@@ -344,7 +442,99 @@ const AdditionThread = ({ item, step }: { item: TieredDebateItem; step: number }
   );
 };
 
-const TreeItem = ({ item, step }: { item: TieredDebateItem; step: number }) => {
+// One "role · logic check · verdict" line (v7 has a single axis).
+const SingleCheckLine = ({
+  role,
+  check,
+}: {
+  role: keyof typeof ROLE_TINT;
+  check: TieredDebateCheck;
+}) => {
+  const { t } = useUiLanguage();
+  const ok = check.verdict === 'valid';
+  return (
+    <CheckLine
+      role={role}
+      label={t('tiered.tree.logicCheck')}
+      ok={ok}
+      verdictLabel={t(ok ? 'tiered.tree.valid' : 'tiered.tree.invalid')}
+      reason={ok ? null : check.reason}
+      citations={ok ? [] : check.citations}
+    />
+  );
+};
+
+// Everything under one v7 item: the attacker's single check (or the
+// "newly added" opener), the defender's single response check, and the
+// judge's one line — citation checking already happened in code, so the
+// whole thread is the logic axis.
+const ThreadV7 = ({ item, step }: { item: TieredDebateItem; step: number }) => {
+  const { t } = useUiLanguage();
+  const judge = item.judge && 'kind' in item.judge ? (item.judge as TieredDebateJudgeAxis) : null;
+  const check = item.attacker_check ?? null;
+  const responseCheck = item.response?.check ?? null;
+  const showResponse = step >= 3 && responseCheck != null;
+  return (
+    <div className="flex flex-col gap-1 border-l border-gray-700/60 pl-3">
+      {item.added_by_attacker ? (
+        <p className="text-xs text-gray-400">
+          <span className={cn('font-semibold', ROLE_TINT.attacker)}>
+            {t('tiered.tree.attacker')}
+          </span>
+          {' · '}
+          {t('tiered.tree.newlyAdded')}
+        </p>
+      ) : null}
+      {!item.added_by_attacker && step >= 2 && check ? (
+        <SingleCheckLine role="attacker" check={check} />
+      ) : null}
+      {showResponse && responseCheck ? (
+        <div className="pl-3">
+          <SingleCheckLine role="defender" check={responseCheck} />
+        </div>
+      ) : null}
+      {step >= 4 && judge ? (
+        <div className={showResponse ? 'pl-6' : 'pl-3'}>
+          {judge.kind === 'attack_ruling' ? (
+            <CheckLine
+              role="judge"
+              label={t('tiered.tree.logicCheck')}
+              ok={judge.verdict === 'attack_wrong'}
+              verdictLabel={t(
+                judge.verdict === 'attack_wrong'
+                  ? 'tiered.tree.attackWrong'
+                  : 'tiered.tree.attackRight',
+              )}
+              reason={judge.reason}
+              citations={judge.citations}
+            />
+          ) : (
+            <CheckLine
+              role="judge"
+              label={t('tiered.tree.logicCheck')}
+              ok={judge.verdict === 'valid'}
+              verdictLabel={t(
+                judge.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid',
+              )}
+              reason={judge.reason}
+              citations={judge.citations}
+            />
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const TreeItem = ({
+  item,
+  step,
+  v7 = false,
+}: {
+  item: TieredDebateItem;
+  step: number;
+  v7?: boolean;
+}) => {
   const { t } = useUiLanguage();
   const counted =
     item.final_status != null ? item.final_status === 'counted' : null;
@@ -355,13 +545,15 @@ const TreeItem = ({ item, step }: { item: TieredDebateItem; step: number }) => {
         <span className={cn('font-semibold', DIRECTION_TEXT[item.direction])}>
           {t(item.direction === 'bullish' ? 'tiered.tree.bullish' : 'tiered.tree.bearish')}
         </span>
-        {item.links ? (
+        {v7 && item.links ? (
+          <LinkedClaimV7 claim={item.claim} links={item.links} struck={!!item.struck} />
+        ) : item.links ? (
           <LinkedClaim claim={item.claim} links={item.links} />
         ) : (
           <span className="text-gray-200">{item.claim}</span>
         )}
         {!item.links && item.citations ? <ChipRefs refs={item.citations} /> : null}
-        {step >= 4 && counted != null ? (
+        {step >= 4 && counted != null && !(v7 && item.struck) ? (
           <span
             className={cn(
               TAG_BASE,
@@ -392,7 +584,11 @@ const TreeItem = ({ item, step }: { item: TieredDebateItem; step: number }) => {
           </span>
         ) : null}
       </div>
-      {item.added_by_attacker ? (
+      {v7 ? (
+        step >= 2 && !item.struck ? (
+          <ThreadV7 item={item} step={step} />
+        ) : null
+      ) : item.added_by_attacker ? (
         step >= 2 ? (
           <AdditionThread item={item} step={step} />
         ) : null
@@ -430,11 +626,16 @@ interface AltDebateTreeProps {
 export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
   const { t } = useUiLanguage();
   const [step, setStep] = useState(4);
+  const v7 = detail.format === 7;
   const items = detail.items ?? [];
   const verdict = detail.verdict;
   const pools = verdict?.pools ?? null;
   const weight = verdict?.weight ?? null;
   const adjusted = verdict?.adjusted_score ?? null;
+  // The pool scores average the per-dimension scores — the label says so
+  // instead of printing overall counts the formula does not use.
+  const initialDims = Object.keys(pools?.initial?.dimensions ?? {}).length;
+  const adjustedDims = Object.keys(pools?.adjusted?.dimensions ?? {}).length;
 
   const visibleItems = step >= 2 ? items : items.filter((item) => !item.added_by_attacker);
   const groups = DIMENSION_ORDER.map((dimension) => ({
@@ -479,7 +680,7 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
             </AltSectionLabel>
             <ul className="flex flex-col gap-2">
               {group.items.map((item) => (
-                <TreeItem key={item.id} item={item} step={step} />
+                <TreeItem key={item.id} item={item} step={step} v7={v7} />
               ))}
             </ul>
           </div>
@@ -500,9 +701,8 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
               {verdict.initial_score?.toFixed(2)}
             </span>
             <span className="text-gray-600">
-              {' '}
-              ({pools.initial?.bullish} {t('tiered.tree.bullish')} /{' '}
-              {pools.initial?.bearish} {t('tiered.tree.bearish')})
+              {' · '}
+              {t('tiered.tree.dimensionAverage', { n: initialDims })}
             </span>
           </p>
           {step >= 3 ? (
@@ -511,9 +711,8 @@ export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
               {' · '}
               <span className="tabular-nums text-gray-300">{adjusted?.toFixed(2)}</span>
               <span className="text-gray-600">
-                {' '}
-                ({pools.adjusted?.bullish} {t('tiered.tree.bullish')} /{' '}
-                {pools.adjusted?.bearish} {t('tiered.tree.bearish')})
+                {' · '}
+                {t('tiered.tree.dimensionAverage', { n: adjustedDims })}
               </span>
             </p>
           ) : null}

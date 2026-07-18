@@ -941,7 +941,7 @@ const zh = {
   'tiered.levelModal.rejectedNote': '该调整未通过程序校验，已被拒绝——实际使用公式基准价。',
   'tiered.debate.title': '第 2 层 · 多空辩论',
   'tiered.help.debate':
-    '守方通读四份报告，列出全部看多与看空证据并给出初始立场分。\n攻方先独立列出自己的证据清单，再逐条检查守方证据（引用、逻辑），并补上守方遗漏的证据。\n守方对每条质疑做同样的检查：都成立就接受，否则驳回；然后给出调整后立场分。\n裁判对每个争议做二选一裁定；代码校验每个引用的数值、按看多/看空条数算出得分——AI 不经手任何数字。\n所有 AI 都只能引用四份报告里的证据，且引用必须指向单一数值。',
+    '守方通读四份报告，列出全部看多与看空证据。\n每条证据引用的数值都由代码逐一校验：数值必须与报告显示的完全一致、且出现在句子里；不合格的引用会退回给 AI 修正（最多 3 次），仍失败的整条划线剔除。\n攻方先独立列出自己的证据清单，再逐条检查守方证据的逻辑，并补上守方遗漏的证据。\n守方对每条质疑做一次检查：成立就接受，否则驳回。\n裁判对每个争议做二选一裁定；代码按看多/看空条数算出得分——AI 不经手任何数字。',
   'tiered.debate.confidence': '裁判信心',
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
@@ -1003,6 +1003,12 @@ const zh = {
   'tiered.tree.excludedWord': '不计入',
   'tiered.tree.finalScore': '最终立场分',
   'tiered.tree.total': '总条数',
+  'tiered.tree.dimensionAverage': '{n} 个维度的平均分',
+  'tiered.note.struckBullet':
+    '某条证据的引用经 3 次修正仍未通过代码校验——该条已划线剔除，不计入任何得分。',
+  'tiered.note.attackerBulletDropped':
+    '攻方的一条证据引用经 3 次修正仍未通过代码校验——该条已放弃。',
+  'tiered.note.fixRoundLost': '一次引用修正回复不可读——浪费了一轮修正机会。',
   'tiered.note.valueMismatch': '某条证据引用的数值与报告不符——代码自动判其引用检查无效，任何 AI 都不能推翻。',
   'tiered.note.linkDropped': '某条证据的引用无法通过代码校验——该引用已剔除。',
   'tiered.note.restoredEvidence': '守方让步的一个质疑被裁判判定不成立——该证据已恢复计入最终得分。',
@@ -2120,7 +2126,7 @@ const en: Record<UiTextKey, string> = {
     'This proposal failed the code-side safety checks and was rejected — the formula base is used instead.',
   'tiered.debate.title': 'Tier 2 · Bull/bear debate',
   'tiered.help.debate':
-    'A defender reads the four reports, lists ALL the evidence — bullish and bearish — and gives an initial position score.\nAn attacker first builds its own independent list, then checks every defender item (citation, logic) and adds what was missed.\nThe defender runs the same checks on each challenge: both pass → accept, either fails → reject; then it gives an adjusted score.\nA judge makes a binary ruling on every dispute; code verifies every cited value and counts the surviving bullish vs bearish items into the score — no AI touches the numbers.\nEvery AI may cite only the evidence in the four reports, and every citation must point at a single value.',
+    'A defender reads the four reports and lists ALL the evidence — bullish and bearish.\nCode verifies every cited value: it must match the report’s displayed number exactly and appear in the sentence; failed citations go back to the AI to fix (up to 3 times), and bullets still broken are crossed out and dropped.\nAn attacker first builds its own independent list, then checks the logic of every defender item and adds what was missed.\nThe defender runs one check on each challenge: it holds → accept, it fails → reject.\nA judge makes a binary ruling on every dispute; code counts the surviving bullish vs bearish items into the score — no AI touches the numbers.',
   'tiered.debate.confidence': 'Judge confidence',
   'tiered.help.debateConfidence':
     'How sure the judge AI is of its own verdict, from 0 to 1 — higher means more confident.',
@@ -2185,6 +2191,12 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.excludedWord': 'excluded',
   'tiered.tree.finalScore': 'final position score',
   'tiered.tree.total': 'total items',
+  'tiered.tree.dimensionAverage': 'average of {n} dimensions',
+  'tiered.note.struckBullet':
+    'A bullet’s citations still failed the code check after 3 fix attempts — it is crossed out and counts toward nothing.',
+  'tiered.note.attackerBulletDropped':
+    'One of the attacker’s bullets still failed the code citation check after 3 fix attempts — it was dropped.',
+  'tiered.note.fixRoundLost': 'A citation-fix reply was unreadable — that fix round was lost.',
   'tiered.note.valueMismatch':
     'A claim cited a value that does not match the report — code automatically failed its citation check; no AI can overrule that.',
   'tiered.note.linkDropped': 'A claim carried a reference that failed the code checks — that reference was dropped.',
