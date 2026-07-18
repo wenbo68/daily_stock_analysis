@@ -34,7 +34,7 @@ interface AltSelectProps {
    *  (onCommit fires with the same value; the parent toggles). */
   selected?: string[];
   placeholder?: string;
-  inputMode?: 'decimal';
+  inputMode?: 'decimal' | 'numeric';
   /**
    * false (default): only listed options commit; typing filters them.
    * true: Enter commits whatever was typed; options are suggestions.
@@ -157,7 +157,7 @@ export const AltSelect = ({
 
 interface AltCommitInputProps {
   placeholder: string;
-  inputMode?: 'decimal';
+  inputMode?: 'decimal' | 'numeric';
   validate?: (raw: string) => boolean;
   onCommit: (value: string) => void;
 }

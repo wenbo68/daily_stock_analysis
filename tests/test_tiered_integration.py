@@ -244,10 +244,10 @@ class _FakeRiskEngine:
         self._warnings = list(warnings)
         self.calls = []
 
-    def run(self, symbol, tier2, dimensions):
+    def run(self, symbol, tier2, dimensions, ownership=0):
         from src.tiered_analysis.risk import RiskResult
 
-        self.calls.append(symbol)
+        self.calls.append({"symbol": symbol, "ownership": ownership})
         return RiskResult(verdict=self._verdict, warnings=self._warnings)
 
 
@@ -274,8 +274,7 @@ def _buy_verdicts():
                            summary="bull case holds up", initial_score=7.5,
                            pools={})
     risk = RiskVerdict(stance=Direction.BUY, size_multiplier=0.5,
-                       stop_advice="keep", tightened_stop=None,
-                       summary="half size")
+                       summary="half size", confirmed_risks=2, total_risks=3)
     return debate, risk
 
 
@@ -338,7 +337,8 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
             depth=3, debate_verdict=debate, risk_verdict=risk)
         self.assertEqual(sorted(outcome.state.reports), [1, 2, 3])
         self.assertEqual(outcome.final_report.tier, 3)
-        self.assertEqual(risk_engine.calls, ["AAPL"])
+        self.assertEqual(risk_engine.calls,
+                         [{"symbol": "AAPL", "ownership": 0}])
         self.assertEqual(logged[0].tier, 3)
 
     def test_invalid_depth_rejected(self):
@@ -419,6 +419,58 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
         outcome, _, _, _ = self._run(
             sizing_overrides={"capital": 100000.0, "risk_fraction": 0.01})
         self.assertEqual(outcome.sizing["shares"], 166)
+
+    def test_ownership_reaches_the_risk_engine(self):
+        debate, risk = _buy_verdicts()
+        outcome, _, _, risk_engine = self._run(
+            depth=3, debate_verdict=debate, risk_verdict=risk,
+            sizing_overrides={"ownership": 300})
+        self.assertEqual(risk_engine.calls,
+                         [{"symbol": "AAPL", "ownership": 300}])
+        self.assertEqual(outcome.sizing["ownership"], 300)
+
+    def test_sell_verdict_with_ownership_prints_an_exit_size(self):
+        from dataclasses import replace as dc_replace
+
+        from src.tiered_analysis.debate import DebateVerdict
+
+        debate = DebateVerdict(direction=Direction.SELL, final_score=2.5,
+                               summary="the bear case wins",
+                               initial_score=3.0, pools={})
+        _, risk = _buy_verdicts()
+        risk = dc_replace(risk, stance=Direction.SELL)  # multiplier 0.5
+        outcome, _, _, _ = self._run(
+            depth=3, debate_verdict=debate, risk_verdict=risk,
+            sizing_overrides={"ownership": 300})
+        # Sell sizing needs no capital/risk settings — the count IS the
+        # holding; buy sizing still refuses with not_a_buy.
+        self.assertEqual(outcome.sizing["reason_code"], "not_a_buy")
+        self.assertEqual(outcome.sizing["sell_shares_before_multiplier"], 300)
+        self.assertEqual(outcome.sizing["sell_shares"], 150)
+        self.assertTrue(any("scaled the exit" in note
+                            for note in outcome.sizing["notes"]))
+
+    def test_sell_without_tier3_exits_the_full_holding(self):
+        from src.tiered_analysis.debate import DebateVerdict
+
+        debate = DebateVerdict(direction=Direction.SELL, final_score=2.5,
+                               summary="the bear case wins",
+                               initial_score=3.0, pools={})
+        outcome, _, _, _ = self._run(
+            depth=2, debate_verdict=debate,
+            sizing_overrides={"ownership": 300})
+        self.assertEqual(outcome.sizing["sell_shares"], 300)
+        self.assertIsNone(outcome.sizing["sell_shares_before_multiplier"])
+
+    def test_no_ownership_means_no_sell_size(self):
+        from src.tiered_analysis.debate import DebateVerdict
+
+        debate = DebateVerdict(direction=Direction.SELL, final_score=2.5,
+                               summary="the bear case wins",
+                               initial_score=3.0, pools={})
+        outcome, _, _, _ = self._run(depth=2, debate_verdict=debate)
+        self.assertEqual(outcome.sizing["ownership"], 0)
+        self.assertIsNone(outcome.sizing["sell_shares"])
 
     def test_llm_usage_always_present_with_scope_note(self):
         outcome, _, _, _ = self._run(depth=3, debate_verdict=None,

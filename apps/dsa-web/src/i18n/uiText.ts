@@ -823,6 +823,7 @@ const zh = {
   'tiered.dimension.fundamentals': '基本面',
   'tiered.dimension.macro_econ': '宏观经济',
   'tiered.dimension.sentiment': '新闻情绪',
+  'tiered.dimension.plan': '交易计划',
   'tiered.citations': '参考来源（编号对应正文中的 [n] 标注）',
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
@@ -1018,6 +1019,23 @@ const zh = {
   'tiered.tree.firstCheck': '第一次检查结果',
   'tiered.tree.secondCheck': '第二次检查结果',
   'tiered.tree.codeCheck': '代码检查结果',
+  'tiered.tree.riskOne': '1 项风险',
+  'tiered.tree.riskMany': '{n} 项风险',
+  'tiered.tree.size': '仓位',
+  'tiered.tree.sizeFormula': '仓位倍数：确认风险 0 项 = ×1，1–3 项 = ×0.5，4 项及以上 = ×0',
+  'tiered.tree.sizeConfirmed': '= 确认风险 {n} 项',
+  'tiered.tree.riskExplain1':
+    '两个 AI 各自独立压力测试这套交易计划，分别列出所有真实风险——每条都要引用报告或计划里的具体数值。除四个维度外还有「交易计划」组（价格档位与已持有股数）。允许列空清单，绝不为凑数编造风险。',
+  'tiered.tree.riskExplain2':
+    '代码逐条核对引用的数值；不合格的引用退回修正，仍失败的整条划线剔除，不计入任何统计。',
+  'tiered.tree.riskExplain3':
+    '两份清单合并。两个 AI 都列出的风险已经达成一致——无需再检查，因此没有任何检查标记。',
+  'tiered.tree.riskExplain4':
+    '只有一个 AI 列出的风险由另一个 AI 检查——即风险后的 ✓ 或 ✗；点击标记可查看理由。',
+  'tiered.tree.riskExplain5': '若该检查为无效，该风险 1 比 1 平票，再由一个 AI 投出决胜票——即第二个标记。',
+  'tiered.tree.riskExplain6': '带有两个 ✗ 的风险被否决并划线；未划线的风险全部计入确认数。',
+  'tiered.tree.riskExplain7':
+    '代码按确认风险数定仓位倍数：0 项 = 全仓（×1），1–3 项 = 半仓（×0.5），4 项及以上 = 不开仓（×0）。方向沿用第 2 层结论；倍数由程序应用到买入股数或卖出的持仓上。',
   'tiered.note.listerDegraded': '一位分析师的证据清单连续不合规——本次只使用另一份清单。',
   'tiered.note.mergeDegraded': '清单合并连续不合规——第二份清单被放弃。',
   'tiered.note.checkDegraded': '复核投票连续不合规——各条证据仅按作者一票计入。',
@@ -1025,6 +1043,9 @@ const zh = {
   'tiered.note.voteDiscarded': '一张投票的引用经多次修正仍未通过代码校验——该票作废。',
   'tiered.note.unresolved': '某条证据 1 比 1 平票且没有决胜票——按未决处理，不计入得分。',
   'tiered.note.allConfirmed': '每条证据都被两位分析师独立列出——无需复核投票。',
+  'tiered.note.riskVoided':
+    '风险投票的两份清单连续不合规——第 3 层结论作废，第 2 层结论按全仓沿用。',
+  'tiered.note.riskFellBack': '风险压测没有得出可用结论——沿用第 2 层结论，仓位不打折扣。',
   'tiered.note.struckBullet':
     '某条证据的引用经 3 次修正仍未通过代码校验——该条已划线剔除，不计入任何得分。',
   'tiered.note.attackerBulletDropped':
@@ -1046,10 +1067,10 @@ const zh = {
     '辩论得出的最终立场分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 卖出，4–6 持有，高于 6 买入。\n完全由代码计数得出：得分 = 10 × 看多条数 ÷ 总条数，只统计经受住检验的证据——见证据清单底部的「评分」。',
   'tiered.risk.title': '第 3 层 · 风险压力测试',
   'tiered.help.risk':
-    '三个风险审查者——保守、激进、中立——分别挑剔层级 2 的结论。\n风险裁判汇总成本结论、仓位倍数和止损。',
+    '两个 AI 各自独立列出这套交易计划的风险，逐条经代码引用校验和多数投票确认——与第 2 层同一套机制。\n仓位倍数完全由代码按确认风险数决定；方向沿用第 2 层结论。\n（旧的运行记录仍显示当时的三视角点评。）',
   'tiered.risk.multiplier': '仓位倍数',
   'tiered.help.multiplier':
-    '风险裁判对公式股数打的折扣。\n1 = 全仓，0.5 = 减半，0 = 现在不开仓。\n由程序在股数计算中应用。',
+    '对计划仓位的折扣，由代码按确认风险数决定：\n0 项 = 全仓（×1），1–3 项 = 半仓（×0.5），4 项及以上 = 不开仓（×0）。\n买入时作用于公式股数；卖出时作用于已持有的股数。',
   'tiered.risk.multiplier.zero': '方向成立，但现在不开仓',
   'tiered.risk.multiplier.half': '半仓',
   'tiered.risk.multiplier.full': '全量',
@@ -1109,10 +1130,15 @@ const zh = {
   'tiered.altForm.tierPh': '选择层级…',
   'tiered.altForm.capitalPh': '输入本金…',
   'tiered.altForm.riskPh': '输入风险…',
+  'tiered.altForm.ownership': '持仓',
+  'tiered.altForm.ownershipPh': '已持有股数…',
+  'tiered.help.ownership':
+    '这只股票你已持有的股数，默认 0（不填即为 0）。\n填了之后：卖出结论会给出具体卖出股数，第 3 层风险压测也会把持仓当作可引用的计划数据。',
   'tiered.pill.ticker': '代码: {value}',
   'tiered.pill.tier': '层级: {value}',
   'tiered.pill.capital': '本金: {value} {currency}',
   'tiered.pill.risk': '单笔风险: {value}%',
+  'tiered.pill.ownership': '持仓: {value} 股',
   'tiered.pill.verdict': '结论: {value}',
   'tiered.pill.capitalMin': '本金下限: {value}',
   'tiered.pill.capitalMax': '本金上限: {value}',
@@ -1149,6 +1175,8 @@ const zh = {
   'tiered.alt.f.capital': '本金',
   'tiered.alt.f.risk': '单笔风险',
   'tiered.alt.f.multiplier': '仓位倍数',
+  'tiered.alt.f.owned': '持有股数',
+  'tiered.sizing.sellShares': '卖出 {value} 股',
   'tiered.alt.f.entry': '入场价',
   'tiered.alt.f.stop': '止损价',
   'tiered.alt.f.fee': '费率',
@@ -1993,6 +2021,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.dimension.fundamentals': 'Fundamentals',
   'tiered.dimension.macro_econ': 'Macro economy',
   'tiered.dimension.sentiment': 'News sentiment',
+  'tiered.dimension.plan': 'Trade plan',
   'tiered.citations': 'Sources (numbers match the [n] marks in the text)',
   'tiered.warnings': 'Warnings',
   'tiered.dataNotes': 'Data notes',
@@ -2232,6 +2261,25 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.firstCheck': '1st check result',
   'tiered.tree.secondCheck': '2nd check result',
   'tiered.tree.codeCheck': 'code check result',
+  'tiered.tree.riskOne': '1 risk',
+  'tiered.tree.riskMany': '{n} risks',
+  'tiered.tree.size': 'Size',
+  'tiered.tree.sizeFormula': 'size multiplier: 0 confirmed risks = ×1 · 1–3 = ×0.5 · 4+ = ×0',
+  'tiered.tree.sizeConfirmed': '= {n} confirmed',
+  'tiered.tree.riskExplain1':
+    'Two AIs independently stress-test the trade plan, each listing every real risk — with the numbers cited from the reports or from the plan itself (its price levels and your held shares, the "Trade plan" group). An empty list is allowed; risks are never invented to fill space.',
+  'tiered.tree.riskExplain2':
+    'Code verifies every cited number against the reports; failed citations go back to be fixed, and risks that cannot be fixed are crossed out and count toward nothing.',
+  'tiered.tree.riskExplain3':
+    'The two lists are merged. A risk listed by BOTH AIs is already agreed on — it needs no further checking, so it carries no check marks.',
+  'tiered.tree.riskExplain4':
+    'A risk only one AI listed is checked by another AI — the ✓ or ✗ after it; click the mark to read the reasoning.',
+  'tiered.tree.riskExplain5':
+    'If that check says invalid, the risk is tied 1-1 and one more AI casts the deciding vote — the second mark.',
+  'tiered.tree.riskExplain6':
+    'A risk with two ✗ loses the vote and is crossed out; everything not crossed out counts as confirmed.',
+  'tiered.tree.riskExplain7':
+    'Code maps the confirmed count to the size multiplier: 0 = full size (×1), 1–3 = half (×0.5), 4 or more = no position (×0). The direction stays tier 2’s verdict; code applies the multiplier to the computed buy size or to the held shares a sell exits.',
   'tiered.note.listerDegraded':
     'One analyst’s evidence list kept coming back invalid — this run used the other list only.',
   'tiered.note.mergeDegraded':
@@ -2246,6 +2294,10 @@ const en: Record<UiTextKey, string> = {
     'A bullet was tied 1-1 with no deciding vote — it was treated as unresolved and left out of the score.',
   'tiered.note.allConfirmed':
     'Every bullet was listed independently by both analysts — no check votes were needed.',
+  'tiered.note.riskVoided':
+    'Both risk lists kept coming back invalid — the tier-3 verdict was voided and the tier-2 output stands at full size.',
+  'tiered.note.riskFellBack':
+    'The risk stress test produced no usable verdict — the tier-2 output stands with no size discount.',
   'tiered.note.struckBullet':
     'A bullet’s citations still failed the code check after 3 fix attempts — it is crossed out and counts toward nothing.',
   'tiered.note.attackerBulletDropped':
@@ -2276,10 +2328,10 @@ const en: Record<UiTextKey, string> = {
     'The debate’s final position score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 sell, 4–6 hold, above 6 buy.\nPure counting by code: 10 × bullish bullets ÷ total bullets, over only the evidence that survived checking. See Scores at the bottom of the evidence list.',
   'tiered.risk.title': 'Tier 3 · Risk stress test',
   'tiered.help.risk':
-    'Three risk reviewers — conservative, aggressive, neutral — critique the tier-2 verdict.\nA risk judge merges them into this verdict, the size and the stop loss.',
+    'Two AIs independently list the risks of the trade plan; every risk is citation-checked by code and confirmed by majority vote — the same machinery as tier 2.\nThe size multiplier is pure code, from the confirmed-risk count; the direction stays tier 2’s verdict.\n(Old stored runs still show their three-persona reviews.)',
   'tiered.risk.multiplier': 'Size multiplier',
   'tiered.help.multiplier':
-    'The risk judge’s discount on the computed share count.\n1 = full position, 0.5 = half, 0 = do not open now.\nCode applies it in the shares computation.',
+    'The discount on the planned position, set by code from the confirmed-risk count:\n0 risks = full (×1), 1–3 = half (×0.5), 4 or more = none (×0).\nOn a buy it scales the computed share count; on a sell it scales the shares you hold.',
   'tiered.risk.multiplier.zero': 'direction stands, but do not open now',
   'tiered.risk.multiplier.half': 'half position',
   'tiered.risk.multiplier.full': 'full position',
@@ -2358,10 +2410,15 @@ const en: Record<UiTextKey, string> = {
   'tiered.altForm.tierPh': 'Select tier...',
   'tiered.altForm.capitalPh': 'Enter capital...',
   'tiered.altForm.riskPh': 'Enter risk...',
+  'tiered.altForm.ownership': 'Ownership',
+  'tiered.altForm.ownershipPh': 'Shares held...',
+  'tiered.help.ownership':
+    'Shares of this stock you already hold; 0 when left unset (the default).\nWith a holding set, a sell verdict prints a concrete share count to sell, and the tier-3 risk stress test can cite the holding as plan evidence.',
   'tiered.pill.ticker': 'Ticker: {value}',
   'tiered.pill.tier': 'Tier: {value}',
   'tiered.pill.capital': 'Capital: {value} {currency}',
   'tiered.pill.risk': 'Risk: {value}%',
+  'tiered.pill.ownership': 'Ownership: {value} shares',
   'tiered.pill.verdict': 'Verdict: {value}',
   'tiered.pill.capitalMin': 'Capital Min: {value}',
   'tiered.pill.capitalMax': 'Capital Max: {value}',
@@ -2398,6 +2455,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.f.capital': 'capital',
   'tiered.alt.f.risk': 'risk per trade',
   'tiered.alt.f.multiplier': 'size multiplier',
+  'tiered.alt.f.owned': 'held shares',
+  'tiered.sizing.sellShares': 'sell {value} shares',
   'tiered.alt.f.entry': 'entry',
   'tiered.alt.f.stop': 'stop loss',
   'tiered.alt.f.fee': 'fee rate',

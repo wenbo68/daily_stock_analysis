@@ -45,10 +45,10 @@ from .providers.base import (
 from .providers.registry import detect_market, get_providers
 from .providers.technicals import Bar
 from .risk import apply_size_multiplier
-from .schema import SizingSlots, TierReport
+from .schema import Direction, SizingSlots, TierReport
 from .settings import SizingSettings, load_sizing_settings, merge_overrides
 from .signal_log import SignalLogResult, log_tier_report
-from .sizing import SizingInputs, size_position
+from .sizing import SizingInputs, lot_size_for, size_position
 from .tiers import Tier1Stage, Tier2Stage, Tier3Stage, TieredPipeline, TierState
 
 logger = logging.getLogger(__name__)
@@ -237,11 +237,39 @@ def _sizing_block(
                 f"{risk_multiplier:g}x of the computed size."
             )
 
+    # A sell verdict on a stock the user holds gets a concrete exit size:
+    # the held shares, scaled by the tier-3 multiplier when one exists
+    # (no tier 3 → the full holding; a sell verdict means exit). This
+    # needs no capital/risk settings — the count IS the holding.
+    ownership = settings.ownership
+    sell_shares = None
+    sell_shares_before_multiplier = None
+    if final.direction is Direction.SELL and ownership > 0:
+        sell_shares = ownership
+        if risk_multiplier is not None:
+            sell_shares_before_multiplier = ownership
+            sell_shares = apply_size_multiplier(
+                ownership, risk_multiplier, lot_size=lot_size_for(market)
+            )
+            if sell_shares == 0:
+                notes.append(
+                    "Risk multiplier 0: the sell verdict stands, but the "
+                    "risk stress says do not reduce the holding now."
+                )
+            elif sell_shares != ownership:
+                notes.append(
+                    f"Risk stress verdict scaled the exit to "
+                    f"{risk_multiplier:g}x of the held shares."
+                )
+
     detail: Dict[str, Any] = {
         "enabled": settings.is_enabled,
         "shares": shares,
         "shares_before_multiplier": shares_before_multiplier,
         "risk_multiplier": risk_multiplier,
+        "ownership": ownership,
+        "sell_shares": sell_shares,
+        "sell_shares_before_multiplier": sell_shares_before_multiplier,
         "position_value": position_value,
         "risk_amount": risk_amount,
         "loss_per_share": result.loss_per_share,
@@ -315,6 +343,7 @@ def run_tiered_analysis(
             sizing_settings,
             capital=sizing_overrides.get("capital"),
             risk_fraction=sizing_overrides.get("risk_fraction"),
+            ownership=sizing_overrides.get("ownership"),
         )
 
     tracker = LlmUsageTracker()
@@ -349,6 +378,7 @@ def run_tiered_analysis(
         )
         state.reports[1] = report
         state.dimensions = list(dimensions)
+        state.ownership = sizing_settings.ownership
 
         final = report
         if depth >= 2:

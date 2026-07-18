@@ -117,7 +117,9 @@ const NOTE_RULES: NoteRule[] = [
     pattern: /^no usable entry price — cannot place a stop$/,
     toText: (_m, t) => t('tiered.note.noEntryNoStop'),
   },
-  // --- v8 evidence-vote notes ---
+  // --- v8 evidence-vote notes (tier 2) + format-2 risk-vote notes
+  // (tier 3): the two engines share their phrasing, differing only in
+  // bullet/risk wording ---
   {
     pattern: /^(?:first|second) analyst list invalid after retry — proceeding with/,
     toText: (_m, t) => t('tiered.note.listerDegraded'),
@@ -127,15 +129,23 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.stageInvalid'),
   },
   {
+    pattern: /^both analyst lists invalid after retry — tier-3 risk verdict voided$/,
+    toText: (_m, t) => t('tiered.note.riskVoided'),
+  },
+  {
+    pattern: /^risk stress produced no verdict — direction falls back to tier 2$/,
+    toText: (_m, t) => t('tiered.note.riskFellBack'),
+  },
+  {
     pattern: /^merge invalid after retry — second list dropped$/,
     toText: (_m, t) => t('tiered.note.mergeDegraded'),
   },
   {
-    pattern: /^check round invalid after retry — bullets counted on/,
+    pattern: /^check round invalid after retry — (?:bullets|risks) counted on/,
     toText: (_m, t) => t('tiered.note.checkDegraded'),
   },
   {
-    pattern: /^deciding round invalid after retry — tied bullets excluded/,
+    pattern: /^deciding round invalid after retry — tied (?:bullets|risks) excluded/,
     toText: (_m, t) => t('tiered.note.tiebreakDegraded'),
   },
   {
@@ -151,7 +161,7 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.unresolved'),
   },
   {
-    pattern: /^every bullet was listed by both analysts — check round skipped$/,
+    pattern: /^every (?:bullet|risk) was listed by both analysts — check round skipped$/,
     toText: (_m, t) => t('tiered.note.allConfirmed'),
   },
   {

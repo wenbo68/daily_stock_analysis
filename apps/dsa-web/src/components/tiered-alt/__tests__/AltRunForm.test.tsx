@@ -12,12 +12,14 @@ function renderForm(overrides: Partial<AltRunFormProps> = {}) {
     tier: null,
     capital: null,
     riskPct: null,
+    ownership: null,
     submitting: false,
     error: null,
     onTicker: vi.fn(),
     onTier: vi.fn(),
     onCapital: vi.fn(),
     onRiskPct: vi.fn(),
+    onOwnership: vi.fn(),
     onStart: vi.fn(),
     ...overrides,
   };
@@ -97,6 +99,29 @@ describe('AltRunForm', () => {
     expect(
       screen.getByRole('button', { name: /(Capital|本金): 50000 HKD/ }),
     ).toBeInTheDocument();
+  });
+
+  it('treats ownership as optional and shows a removable pill when set', () => {
+    const props = renderForm({
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: '300',
+    });
+
+    // Start works with or without ownership — it is the optional field.
+    fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
+    expect(props.onStart).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /(Ownership|持仓): 300/ }));
+    expect(props.onOwnership).toHaveBeenCalledWith(null);
+  });
+
+  it('rejects a fractional ownership entry', () => {
+    const props = renderForm({ ticker: 'AAPL' });
+    const box = screen.getByPlaceholderText(/已持有股数|Shares held/);
+
+    fireEvent.change(box, { target: { value: '10.5' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    expect(props.onOwnership).not.toHaveBeenCalled();
   });
 
   it('clears a selection when its dropdown option is picked again', () => {

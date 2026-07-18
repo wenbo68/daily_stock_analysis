@@ -259,3 +259,38 @@ failing proceeds with the other; a failed merge drops the second list;
 a failed check round counts bullets on the author's vote alone; a
 failed deciding round excludes ties as unresolved; the summary's
 failure never voids anything.
+
+## 7. Tier-3 risk vote (format 2, `risk.py` + `risk_models.py`)
+
+The same vote machinery as §6, run over RISK bullets — concrete,
+evidence-cited ways the tier-2 trade plan could lose money (owner spec
+2026-07-19). Differences from the tier-2 vote:
+
+- Risk bullets carry NO direction tag, and there is NO per-group floor:
+  an empty list is a valid answer ("no material risks"). Ceilings are
+  the §6 leaf-count ceilings, plus the plan payload's field count for
+  the fifth group.
+- A fifth group `plan` (ids P1, P2…) covers risks about the plan
+  itself. The engine exposes a synthetic `plan.<key>` payload — the
+  tier-2 levels plus the user's held shares (`plan.ownership_shares`,
+  from the per-run ownership input) — citable under the same
+  display-value contract.
+- Tier 3 no longer re-judges anything: the stance is tier 2's
+  direction echoed, the levels stand unchanged (stop advice is gone),
+  and NO AI picks the size.
+
+The size multiplier (code, fixed mapping):
+
+```
+confirmed = risks holding a majority of valid votes
+multiplier = 1.0  if confirmed == 0     (full size)
+             0.5  if 1 ≤ confirmed ≤ 3  (half)
+             0.0  if confirmed ≥ 4      (no position)
+```
+
+Code applies the multiplier (`apply_size_multiplier`, lot-aware):
+on a buy it scales the §4 share count; on a sell with the ownership
+input set it scales the held shares (`sell_shares = ownership ×
+multiplier`; without tier 3 a sell exits the full holding). Failure
+rules mirror §6, with degradation falling back to the tier-2 output at
+full size (no multiplier).

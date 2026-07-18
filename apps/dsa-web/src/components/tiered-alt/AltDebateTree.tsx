@@ -445,8 +445,9 @@ const AdditionThread = ({ item, step }: { item: TieredDebateItem; step: number }
 
 // v8 text with links: payload links underline exactly their cited
 // display value inside the sentence; sentiment links render as trailing
-// [N] hyperlinks that jump to source N. Used for claims AND vote reasons.
-const LinkedTextV8 = ({
+// [N] hyperlinks that jump to source N. Used for claims AND vote reasons
+// — here and in the tier-3 risk tree (AltRiskTree).
+export const LinkedTextV8 = ({
   text,
   links,
   struck = false,
@@ -518,8 +519,8 @@ const LinkedTextV8 = ({
 };
 
 // A clickable vote/check mark — the mark IS the record, the modal
-// carries the reasoning.
-const MarkButton = ({ label, onClick }: { label: string; onClick: () => void }) => (
+// carries the reasoning. Shared with the tier-3 risk tree.
+export const MarkButton = ({ label, onClick }: { label: string; onClick: () => void }) => (
   <button
     type="button"
     className="cursor-pointer font-semibold text-gray-400 hover:text-gray-200"
@@ -529,7 +530,7 @@ const MarkButton = ({ label, onClick }: { label: string; onClick: () => void }) 
   </button>
 );
 
-type MarkModal = { title: string; body: ReactNode };
+export type MarkModal = { title: string; body: ReactNode };
 
 // One v8/v9 bullet, a single line telling its whole history: id, a
 // colored bullish/bearish word, then one ✓/✗ mark per check in order

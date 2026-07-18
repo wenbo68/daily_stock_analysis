@@ -59,6 +59,9 @@ const TieredAltPage = () => {
   const [riskPct, setRiskPct] = useState<string | null>(
     () => readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY) ?? DEFAULT_RISK_PCT,
   );
+  // Held shares are stock-specific, so they are per-run: no stored
+  // default, cleared after every start. Unset means 0.
+  const [ownership, setOwnership] = useState<string | null>(null);
   const [runs, setRuns] = useState<TieredRunSummary[]>([]);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, TieredResult>>({});
@@ -202,6 +205,10 @@ const TieredAltPage = () => {
       if (riskPct && Number.isFinite(pctValue) && pctValue > 0 && pctValue < 100) {
         sizing.risk_fraction = pctValue / 100;
       }
+      const ownershipValue = Number(ownership);
+      if (ownership && Number.isInteger(ownershipValue) && ownershipValue > 0) {
+        sizing.ownership = ownershipValue;
+      }
       const tierUsed = tier ?? DEFAULT_TIER;
       const started = await tieredApi.start(
         ticker,
@@ -213,6 +220,7 @@ const TieredAltPage = () => {
       setCapitalDefault(capital);
       setTicker(null);
       setCapital(null);
+      setOwnership(null);
       setPendingTiers((prev) => ({ ...prev, [started.task_id]: tierUsed }));
       // The new run is already in the backend list as Running; show it at
       // the top of the history, expanded, until polling flips it to done.
@@ -224,7 +232,7 @@ const TieredAltPage = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [ticker, submitting, tier, capital, riskPct, refreshRuns]);
+  }, [ticker, submitting, tier, capital, riskPct, ownership, refreshRuns]);
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 px-4 pb-8 pt-4 md:px-6 lg:px-8">
@@ -238,12 +246,14 @@ const TieredAltPage = () => {
             tier={tier}
             capital={capital}
             riskPct={riskPct}
+            ownership={ownership}
             submitting={submitting}
             error={submitError}
             onTicker={handleTicker}
             onTier={setTier}
             onCapital={setCapital}
             onRiskPct={setRiskPct}
+            onOwnership={setOwnership}
             onStart={() => void handleStart()}
           />
         </div>

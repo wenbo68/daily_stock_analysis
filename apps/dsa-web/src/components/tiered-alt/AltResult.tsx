@@ -24,6 +24,7 @@ import {
 } from './AltUi';
 import { AltDebateScoring } from './AltDebateScoring';
 import { AltDebateTree } from './AltDebateTree';
+import { AltRiskTree } from './AltRiskTree';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
 
@@ -107,6 +108,40 @@ const AltSharesComputation = ({
   const stopLoss = sizing.inputs.stop_loss;
   const multiplier = sizing.risk_multiplier;
   const feeFraction = sizing.inputs.fee_fraction ?? 0;
+
+  // A sell verdict on a held position prints the exit size instead of a
+  // buy refusal: held shares × the tier-3 multiplier (no multiplier —
+  // depth < 3 — means the full holding goes).
+  if (sizing.sell_shares != null && sizing.ownership) {
+    return (
+      <AltCard testId="alt-shares-computation">
+        <div className="flex flex-col gap-2 text-sm">
+          <p className="text-gray-400">
+            <FVar>{t('tiered.alt.f.owned')}</FVar>
+            {multiplier !== null ? (
+              <>
+                {' × '}
+                <FVar>{t('tiered.alt.f.multiplier')}</FVar>
+              </>
+            ) : null}
+          </p>
+          <p className="text-gray-400" data-testid="alt-sell-formula">
+            {'= '}
+            <span className="tabular-nums text-gray-300">{sizing.ownership}</span>
+            {multiplier !== null ? (
+              <>
+                {' × '}
+                <FormulaLink targetId="alt-risk-multiplier">{multiplier}</FormulaLink>
+              </>
+            ) : null}
+          </p>
+          <p className="font-semibold text-gray-300">
+            = {t('tiered.sizing.sellShares', { value: sizing.sell_shares })}
+          </p>
+        </div>
+      </AltCard>
+    );
+  }
 
   if (
     sizing.shares === null ||
@@ -477,6 +512,38 @@ const AltRisk = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
   const detail = section.risk_detail;
   const verdict = detail?.verdict ?? null;
+
+  // Format-2 runs carry the risk vote: same transcript treatment as the
+  // tier-2 evidence vote. The stance is tier 2's own (already in the
+  // header) and the levels stand, so the header facts are just the
+  // verdict and the code-derived size multiplier — no score, no stop.
+  if (detail?.format === 2 && Array.isArray(detail.items)) {
+    return (
+      <AltCard testId="alt-tier3">
+        <TierHeader
+          section={section}
+          notes={section.warnings}
+          side={
+            verdict ? (
+              <AltFact label={t('tiered.alt.size')} helpKey="tiered.help.multiplier">
+                {/* id: the shares-computation formula links its multiplier here */}
+                <span id="alt-risk-multiplier" className="tabular-nums">
+                  {verdict.size_multiplier}x
+                </span>
+              </AltFact>
+            ) : null
+          }
+        />
+        {!verdict ? (
+          <p className="mb-4 text-sm text-amber-300">{t('tiered.risk.noVerdict')}</p>
+        ) : null}
+        {section.narrative ? (
+          <p className="mb-2 text-sm leading-relaxed">{section.narrative}</p>
+        ) : null}
+        <AltRiskTree detail={detail} />
+      </AltCard>
+    );
+  }
 
   return (
     <AltCard testId="alt-tier3">

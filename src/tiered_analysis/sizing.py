@@ -32,6 +32,11 @@ _LOT_SIZES = {Market.CN: 100}
 _DEFAULT_LOT_SIZE = 1
 
 
+def lot_size_for(market: Market) -> int:
+    """The market's minimum tradeable increment (CN board lots of 100)."""
+    return _LOT_SIZES.get(market, _DEFAULT_LOT_SIZE)
+
+
 class RefusalReason(str, Enum):
     """Stable machine-readable codes so the UI can localize the message."""
 

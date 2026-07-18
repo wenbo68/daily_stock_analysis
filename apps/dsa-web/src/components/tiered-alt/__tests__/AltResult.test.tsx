@@ -5,6 +5,7 @@ import type {
   TieredDebateDetail,
   TieredLevelsDetail,
   TieredResult,
+  TieredRiskDetail,
   TieredTierSection,
 } from '../../../api/tiered';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
@@ -1386,5 +1387,252 @@ describe('AltResult v9 evidence vote', () => {
   it('wraps long claims with a hanging indent (two-column grid rows)', () => {
     renderTreeV9();
     expect(screen.getByTestId('alt-tree-item-T1').className).toContain('grid');
+  });
+});
+
+// The format-2 risk vote: T1 confirmed by both AIs, T2 outvoted 1-2,
+// P1 (plan group) confirmed by a ✓ check vote, S1 struck by code.
+// Confirmed: T1, P1 = 2 of 3 listed → multiplier 0.5.
+function makeRiskDetailV2(): TieredRiskDetail {
+  return {
+    format: 2,
+    takes: [],
+    items: [
+      {
+        id: 'T1',
+        dimension: 'technicals',
+        claim: 'The 14-day RSI (71.20) is overbought.',
+        links: [{ ref: 'technicals.rsi_14', value: '71.20' }],
+        struck: false,
+        problems: [],
+        authors: 2,
+        votes: [],
+        final_status: 'counted',
+        exclusion_reason: null,
+      },
+      {
+        id: 'T2',
+        dimension: 'technicals',
+        claim: 'The technical score (68) leaves little cushion.',
+        links: [{ ref: 'technicals.score', value: '68' }],
+        struck: false,
+        problems: [],
+        authors: 1,
+        votes: [
+          {
+            role: 'checker',
+            verdict: 'invalid',
+            reason: 'A decent score is not a concrete risk.',
+            links: [],
+          },
+          {
+            role: 'decider',
+            verdict: 'invalid',
+            reason: 'The objection holds.',
+            links: [],
+          },
+        ],
+        final_status: 'excluded',
+        exclusion_reason: 'outvoted',
+      },
+      {
+        id: 'P1',
+        dimension: 'plan',
+        claim: 'The stop-loss (90) sits close under the entry (96).',
+        links: [
+          { ref: 'plan.stop_loss', value: '90' },
+          { ref: 'plan.entry', value: '96' },
+        ],
+        struck: false,
+        problems: [],
+        authors: 1,
+        votes: [
+          {
+            role: 'checker',
+            verdict: 'valid',
+            reason: 'The gap really is tight.',
+            links: [],
+          },
+        ],
+        final_status: 'counted',
+        exclusion_reason: null,
+      },
+      {
+        id: 'S1',
+        dimension: 'sentiment',
+        claim: 'Doubts remain (999).',
+        links: [{ ref: 'citation:2', value: null }],
+        struck: true,
+        problems: ["item S1 link 'citation:2': citation number out of range"],
+        authors: 1,
+        votes: [],
+        final_status: 'excluded',
+        exclusion_reason: 'citation_failed',
+      },
+    ],
+    verdict: {
+      stance: 'hold',
+      size_multiplier: 0.5,
+      summary: 'Two risks survived; size is halved.',
+      confirmed_risks: 2,
+      total_risks: 3,
+      counts: {
+        initial: { groups: { technicals: 2, plan: 1 }, total: 3 },
+        final: { groups: { technicals: 1, plan: 1 }, total: 2 },
+      },
+      confidence: null,
+      stop_advice: 'keep',
+      tightened_stop: null,
+      key_risks: [],
+    },
+    warnings: [],
+  };
+}
+
+describe('AltResult format-2 risk vote', () => {
+  function renderRiskV2() {
+    const deep = makeDeepResult();
+    deep.tier3!.risk_detail = makeRiskDetailV2();
+    deep.tier3!.narrative = 'Two risks survived; size is halved.';
+    renderResult(deep);
+  }
+
+  it('shows only Verdict and Size in the header — no score, no stop advice', () => {
+    renderRiskV2();
+    const tier3 = screen.getByTestId('alt-tier3');
+    expect(tier3).toHaveTextContent(/(结论|Verdict): (持有|Hold)/);
+    expect(tier3).toHaveTextContent(/(仓位|Size): 0.5x/);
+    expect(tier3).not.toHaveTextContent(/(止损|Stop loss): (维持|keep)/);
+    expect(tier3).not.toHaveTextContent(/(评分|Score): /);
+  });
+
+  it('tucks the risk record into a Transcript foldable with its own how-it-works list', () => {
+    renderRiskV2();
+    const explain = screen.getByTestId('alt-risk-explain');
+    expect(explain).toHaveTextContent(/How this works|规则说明/);
+    expect(explain).toHaveTextContent(/stress-test|压力测试/);
+    // The list states the fixed count → multiplier mapping.
+    expect(explain).toHaveTextContent(/0 = full size \(×1\)|0 项 = 全仓（×1）/);
+  });
+
+  it('groups risks with confirmed counts in the headers, including the plan group', () => {
+    renderRiskV2();
+    const tree = screen.getByTestId('alt-risk-tree');
+    // technicals: 1 counted of 2; plan: 1 counted.
+    expect(tree).toHaveTextContent(/(Technicals|技术面): 1 (risk|项风险)/);
+    expect(tree).toHaveTextContent(/(Trade plan|交易计划): 1 (risk|项风险)/);
+  });
+
+  it('risk bullets carry no bullish/bearish words; marks follow the tier-2 rules', () => {
+    renderRiskV2();
+    const t1 = screen.getByTestId('alt-risk-item-T1');
+    expect(t1).not.toHaveTextContent(/bullish|bearish|看多|看空/);
+    expect(within(t1).queryAllByRole('button', { name: /✓|✗/ })).toHaveLength(0);
+    expect(
+      within(screen.getByTestId('alt-risk-item-T2')).getAllByRole('button', { name: '✗' }),
+    ).toHaveLength(2);
+    expect(
+      within(screen.getByTestId('alt-risk-item-P1')).getByRole('button', { name: '✓' }),
+    ).toBeInTheDocument();
+  });
+
+  it('clicking a mark opens the numbered check result with the reasoning', () => {
+    renderRiskV2();
+    fireEvent.click(
+      within(screen.getByTestId('alt-risk-item-P1')).getByRole('button', { name: '✓' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/1st check result: valid|第一次检查结果[:：]\s*有效/);
+    expect(dialog).toHaveTextContent('The gap really is tight.');
+  });
+
+  it('clicking the code ✗ on a struck risk shows the citation errors', () => {
+    renderRiskV2();
+    fireEvent.click(
+      within(screen.getByTestId('alt-risk-item-S1')).getByRole('button', { name: '✗' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/code check result|代码检查结果/);
+    expect(dialog).toHaveTextContent('citation number out of range');
+  });
+
+  it('crosses out outvoted and struck risks', () => {
+    renderRiskV2();
+    expect(
+      screen.getByTestId('alt-risk-item-T2').querySelector('.line-through'),
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId('alt-risk-item-S1').querySelector('.line-through'),
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId('alt-risk-item-T1').querySelector('.line-through'),
+    ).toBeNull();
+  });
+
+  it('shows the Size block with the fixed mapping and the plugged-in count', () => {
+    renderRiskV2();
+    const size = screen.getByTestId('alt-risk-size');
+    expect(size).toHaveTextContent(
+      /size multiplier: 0 confirmed risks = ×1|仓位倍数：确认风险 0 项 = ×1/,
+    );
+    expect(screen.getByTestId('alt-risk-size-formula')).toHaveTextContent(/= (2 confirmed|确认风险 2 项)/);
+    expect(size).toHaveTextContent('= ×0.5');
+  });
+});
+
+describe('AltResult sell sizing from ownership', () => {
+  function makeSellResult(withMultiplier: boolean): TieredResult {
+    const deep = makeDeepResult();
+    return {
+      ...deep,
+      direction: 'sell',
+      sizing: {
+        ...deep.sizing!,
+        shares: null,
+        shares_before_multiplier: null,
+        risk_multiplier: withMultiplier ? 0.5 : null,
+        reason_code: 'not_a_buy',
+        refusal_reason: 'not a buy',
+        ownership: 300,
+        sell_shares: withMultiplier ? 150 : 300,
+        sell_shares_before_multiplier: withMultiplier ? 300 : null,
+      },
+    };
+  }
+
+  it('a sell verdict on held shares shows the exit arithmetic instead of a refusal', () => {
+    renderResult(makeSellResult(true));
+    const card = screen.getByTestId('alt-shares-computation');
+    expect(card).toHaveTextContent(/held shares|持有股数/);
+    expect(screen.getByTestId('alt-sell-formula')).toHaveTextContent('= 300 × 0.5');
+    expect(card).toHaveTextContent(/= (sell 150 shares|卖出 150 股)/);
+    expect(card).not.toHaveTextContent(/not a buy/);
+  });
+
+  it('without a tier-3 multiplier the full holding is the exit size', () => {
+    renderResult(makeSellResult(false));
+    expect(screen.getByTestId('alt-sell-formula')).toHaveTextContent('= 300');
+    expect(screen.getByTestId('alt-shares-computation')).toHaveTextContent(
+      /= (sell 300 shares|卖出 300 股)/,
+    );
+  });
+
+  it('a sell with no ownership keeps the plain refusal message', () => {
+    const deep = makeDeepResult();
+    renderResult({
+      ...deep,
+      sizing: {
+        ...deep.sizing!,
+        shares: null,
+        reason_code: 'not_a_buy',
+        refusal_reason: 'not a buy',
+        ownership: 0,
+        sell_shares: null,
+        sell_shares_before_multiplier: null,
+      },
+    });
+    expect(screen.getByTestId('alt-shares-computation')).toHaveTextContent(
+      /不是「买入」|not a buy|not 'buy'|没有要开的仓位|no position to open/i,
+    );
   });
 });

@@ -35,6 +35,10 @@ class SizingSettings:
     risk_fraction: Optional[float] = None
     max_position_fraction: float = DEFAULT_MAX_POSITION_FRACTION
     fee_fraction: float = DEFAULT_FEE_FRACTION
+    #: Shares of this stock the user already holds. Per-run input only (a
+    #: holding is stock-specific, so an .env default makes no sense);
+    #: 0 = none, which keeps every pre-ownership behavior unchanged.
+    ownership: int = 0
     warnings: Tuple[str, ...] = ()
 
     @property
@@ -86,6 +90,7 @@ def merge_overrides(
     settings: SizingSettings,
     capital: Optional[float] = None,
     risk_fraction: Optional[float] = None,
+    ownership: Optional[float] = None,
 ) -> SizingSettings:
     """Per-run overrides (from the API request) on top of saved settings.
 
@@ -96,4 +101,6 @@ def merge_overrides(
         merged = replace(merged, capital=float(capital))
     if risk_fraction is not None:
         merged = replace(merged, risk_fraction=float(risk_fraction))
+    if ownership is not None and int(ownership) >= 0:
+        merged = replace(merged, ownership=int(ownership))
     return merged

@@ -4,7 +4,6 @@ import type { TieredDepth } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { HelpTerm } from '../tiered/terms';
 import { tickerCurrency } from './altCurrency';
-import { ALT_COLOR } from './altStyles';
 import { AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltModal } from './AltUi';
 
@@ -14,13 +13,18 @@ const TIERS: TieredDepth[] = [1, 2, 3];
 const TICKER_IDEAS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', '600519', 'hk00700'];
 const CAPITAL_IDEAS = ['10000', '50000', '100000', '200000', '500000', '1000000'];
 const RISK_IDEAS = ['0.5', '1', '2'];
+const OWNERSHIP_IDEAS = ['100', '200', '500', '1000', '2000'];
 
-// Field colors follow the shared palette in field order (ALT_COLOR).
+// Field colors follow the ai-hedge-fund convention — by meaning, not by
+// position: cyan = the ticker's identity, plain gray = money values,
+// red = the loss you accept, green = a long holding, yellow = neutral
+// settings.
 const TONE = {
-  ticker: ALT_COLOR[1],
-  capital: ALT_COLOR[2],
-  risk: ALT_COLOR[3],
-  tier: ALT_COLOR[4],
+  ticker: 'bg-cyan-500/20 text-cyan-300 ring-cyan-500/30',
+  capital: 'bg-gray-500/20 text-gray-300 ring-gray-500/30',
+  risk: 'bg-red-500/20 text-red-300 ring-red-500/30',
+  ownership: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30',
+  tier: 'bg-amber-500/20 text-amber-300 ring-amber-500/30',
 };
 
 // The Start control is a pill like its neighbors, in the next palette slot.
@@ -37,37 +41,49 @@ const isRiskPct = (raw: string): boolean => {
   return Number.isFinite(value) && value > 0 && value < 100;
 };
 
+// Whole positive share counts only — 0 shares is expressed by leaving the
+// field unset (its default).
+const isShareCount = (raw: string): boolean => {
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0;
+};
+
 export interface AltRunFormProps {
   ticker: string | null;
   tier: TieredDepth | null;
   capital: string | null;
   riskPct: string | null;
+  ownership: string | null;
   submitting: boolean;
   error: string | null;
   onTicker: (value: string | null) => void;
   onTier: (value: TieredDepth | null) => void;
   onCapital: (value: string | null) => void;
   onRiskPct: (value: string | null) => void;
+  onOwnership: (value: string | null) => void;
   onStart: () => void;
 }
 
 // Section 1: the new-run form. Fields are write-only — every choice lands
-// as a removable pill below; the Start pill launches the run only when all
-// four fields are picked (a popup explains otherwise). Capital is in the
-// ticker's own trading currency, so it can't be picked before the ticker.
-// Picking an already-picked dropdown option clears it, same as clicking
-// its pill.
+// as a removable pill below; the Start pill launches the run only when the
+// four required fields are picked (a popup explains otherwise). Ownership
+// is the one optional field: no pill means 0 shares held. Capital is in
+// the ticker's own trading currency, so it can't be picked before the
+// ticker. Picking an already-picked dropdown option clears it, same as
+// clicking its pill.
 export const AltRunForm = ({
   ticker,
   tier,
   capital,
   riskPct,
+  ownership,
   submitting,
   error,
   onTicker,
   onTier,
   onCapital,
   onRiskPct,
+  onOwnership,
   onStart,
 }: AltRunFormProps) => {
   const { t } = useUiLanguage();
@@ -93,7 +109,7 @@ export const AltRunForm = ({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-4 sm:gap-3 md:gap-4">
+      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-5 sm:gap-3 md:gap-4">
         <AltSelect
           label={t('tiered.altForm.ticker')}
           options={TICKER_IDEAS.map((value) => ({ value, label: value }))}
@@ -140,6 +156,22 @@ export const AltRunForm = ({
         />
         <AltSelect
           label={
+            <HelpTerm
+              label={t('tiered.altForm.ownership')}
+              helpKey="tiered.help.ownership"
+              underline={false}
+            />
+          }
+          options={OWNERSHIP_IDEAS.map((value) => ({ value, label: value }))}
+          selected={ownership ? [ownership] : undefined}
+          placeholder={t('tiered.altForm.ownershipPh')}
+          inputMode="numeric"
+          freeText
+          validate={isShareCount}
+          onCommit={(value) => onOwnership(value === ownership ? null : value)}
+        />
+        <AltSelect
+          label={
             <HelpTerm label={t('tiered.altForm.tier')} helpKey="tiered.help.depth" underline={false} />
           }
           options={TIERS.map((value) => ({ value: String(value), label: String(value) }))}
@@ -165,6 +197,11 @@ export const AltRunForm = ({
         {riskPct ? (
           <AltPill tone={TONE.risk} onRemove={() => onRiskPct(null)}>
             {t('tiered.pill.risk', { value: riskPct })}
+          </AltPill>
+        ) : null}
+        {ownership ? (
+          <AltPill tone={TONE.ownership} onRemove={() => onOwnership(null)}>
+            {t('tiered.pill.ownership', { value: ownership })}
           </AltPill>
         ) : null}
         {tier !== null ? (

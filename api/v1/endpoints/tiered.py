@@ -39,6 +39,9 @@ class SizingOverride(BaseModel):
 
     capital: Optional[float] = Field(default=None, gt=0)
     risk_fraction: Optional[float] = Field(default=None, gt=0, lt=1)
+    #: Shares of this stock the user already holds (0 = none). Lets a
+    #: sell verdict print a share count and tier 3 scale the exit.
+    ownership: Optional[int] = Field(default=None, ge=0)
 
 
 class TieredAnalyzeRequest(BaseModel):

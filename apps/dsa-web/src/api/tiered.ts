@@ -232,9 +232,37 @@ export type TieredDebateDetail = {
   warnings: string[];
 };
 
-// v2 slice 5: risk stress audit trail (tier-3 section).
+// One tier-3 risk bullet (risk_detail format 2): the tier-2 vote-item
+// shape minus the direction tag — every bullet is a risk, and code maps
+// the confirmed count to the size multiplier.
+export type TieredRiskItem = {
+  id: string;
+  dimension: string;
+  claim: string;
+  links?: TieredDebateLink[];
+  struck?: boolean;
+  problems?: string[];
+  authors?: number;
+  votes?: TieredDebateVote[];
+  final_status?: 'counted' | 'excluded' | null;
+  exclusion_reason?: string | null;
+};
+
+// Per-group and total risk counts for one pool snapshot.
+export type TieredRiskCounts = {
+  groups: Record<string, number>;
+  total: number;
+};
+
+// Risk stress audit trail (tier-3 section). Two generations coexist in
+// stored runs: the persona/judge shape (takes + stance/stop advice) and
+// the format-2 risk vote (items + count-derived multiplier) — every
+// generation-specific field is optional.
 export type TieredRiskDetail = {
+  // 2 on risk-vote runs; absent on the stored persona/judge runs.
+  format?: number;
   takes: { persona: string; assessment: string }[];
+  items?: TieredRiskItem[];
   verdict: {
     stance: string;
     size_multiplier: number;
@@ -245,6 +273,10 @@ export type TieredRiskDetail = {
     tightened_stop: number | null;
     summary: string;
     key_risks: TieredAnchoredReason[];
+    // format 2: the code-owned count → multiplier arithmetic.
+    confirmed_risks?: number;
+    total_risks?: number;
+    counts?: { initial: TieredRiskCounts; final: TieredRiskCounts } | null;
   } | null;
   warnings: string[];
 };
@@ -279,6 +311,11 @@ export type TieredSizing = {
   shares: number | null;
   shares_before_multiplier: number | null;
   risk_multiplier: number | null;
+  // Ownership block (absent on runs stored before the ownership input):
+  // held shares, and the exit size a sell verdict prints from them.
+  ownership?: number | null;
+  sell_shares?: number | null;
+  sell_shares_before_multiplier?: number | null;
   position_value: number | null;
   risk_amount: number | null;
   loss_per_share: number | null;
@@ -363,6 +400,7 @@ export type TieredDepth = 1 | 2 | 3;
 export type TieredSizingRequest = {
   capital?: number;
   risk_fraction?: number;
+  ownership?: number;
 };
 
 export const tieredApi = {

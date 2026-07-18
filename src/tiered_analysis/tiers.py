@@ -42,6 +42,9 @@ class TierState:
     #: higher tiers can debate over the evidence (falls back to the
     #: dimensions attached to the tier-1 report when unset).
     dimensions: List[DimensionResult] = field(default_factory=list)
+    #: Shares of this stock the user already holds (per-run input, 0 =
+    #: none) — tier 3 cites it as plan evidence and sizing scales sells.
+    ownership: int = 0
 
 
 class TierStage(ABC):
@@ -264,7 +267,9 @@ class Tier3Stage(TierStage):
             from .risk import RiskEngine
 
             engine = RiskEngine()
-        result = engine.run(state.symbol, tier2, dimensions)
+        result = engine.run(
+            state.symbol, tier2, dimensions, ownership=state.ownership
+        )
 
         if result.verdict is None:
             return TierReport(
@@ -280,27 +285,18 @@ class Tier3Stage(TierStage):
                 risk_detail=result.to_detail(),
             )
 
+        # The risk vote never re-judges the direction and never touches
+        # the levels: the stance is tier 2's own, and the multiplier is
+        # applied by code in the sizing block.
         verdict = result.verdict
-        levels = tier2.levels
-        if verdict.tightened_stop is not None:
-            # Already code-validated (strictly between current stop and entry).
-            levels = SniperLevels(
-                entry=levels.entry,
-                secondary_entry=levels.secondary_entry,
-                stop_loss=verdict.tightened_stop,
-                take_profit=levels.take_profit,
-            )
         return TierReport(
             tier=self.tier,
             symbol=state.symbol,
             market=state.market,
             coverage=Coverage.FULL,
             direction=verdict.stance,
-            confidence=(
-                f"{verdict.confidence:.2f}" if verdict.confidence is not None else None
-            ),
             score=tier2.score,
-            levels=levels,
+            levels=tier2.levels,
             narrative=verdict.summary or None,
             warnings=list(result.warnings),
             risk_detail=result.to_detail(),

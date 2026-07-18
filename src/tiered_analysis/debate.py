@@ -502,6 +502,15 @@ _StageParse = Callable[[dict], Any]
 class DebateEngine:
     """Runs the v8 evidence vote. Never raises out of run()."""
 
+    # The fix loops are shared with the tier-3 risk engine (a subclass);
+    # these hooks let it swap in its own item form and prompt wording
+    # while the loop mechanics stay identical.
+    FIX_ITEMS_MODEL: Any = CitationFixModel
+    CITATION_FIX_TEMPLATE = _CITATION_FIX_TEMPLATE
+    LINK_RULES = _LINK_RULES
+    VOTE_FIX_TEMPLATE = _VOTE_FIX_TEMPLATE
+    VOTE_RULES = _VOTE_RULES
+
     def __init__(self, summarizer: Optional[Callable[[str], str]] = None) -> None:
         # Temperature 0 by default: the same evidence rules the same way.
         self._summarize = summarizer or deterministic_summarizer
@@ -912,9 +921,9 @@ class DebateEngine:
         rounds = 0
         while broken and rounds < MAX_FIX_ROUNDS:
             rounds += 1
-            prompt = _CITATION_FIX_TEMPLATE.format(
+            prompt = self.CITATION_FIX_TEMPLATE.format(
                 evidence=evidence_block(dimensions, display=True),
-                link_rules=_LINK_RULES,
+                link_rules=self.LINK_RULES,
                 bullets=_items_json([fixed[index_by_id[i]] for i in broken]),
                 errors="\n".join(
                     f"- {item_id}: {'; '.join(errors)}"
@@ -927,7 +936,7 @@ class DebateEngine:
                 warnings.append(f"{stage} citation-fix reply invalid — fix round lost")
                 continue
             try:
-                reply = CitationFixModel.model_validate(parsed)
+                reply = self.FIX_ITEMS_MODEL.model_validate(parsed)
             except ValidationError:
                 warnings.append(f"{stage} citation-fix reply invalid — fix round lost")
                 continue
@@ -963,9 +972,9 @@ class DebateEngine:
         rounds = 0
         while broken and rounds < MAX_FIX_ROUNDS:
             rounds += 1
-            prompt = _VOTE_FIX_TEMPLATE.format(
+            prompt = self.VOTE_FIX_TEMPLATE.format(
                 evidence=evidence_block(dimensions, display=True),
-                vote_rules=_VOTE_RULES,
+                vote_rules=self.VOTE_RULES,
                 votes=json.dumps(
                     {key: fixed[key].model_dump(exclude_none=True) for key in broken},
                     ensure_ascii=False,
