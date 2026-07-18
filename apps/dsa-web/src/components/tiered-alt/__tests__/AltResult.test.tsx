@@ -1297,55 +1297,55 @@ describe('AltResult v9 evidence vote', () => {
     renderResult(deep);
   }
 
-  it('shows arrows instead of direction words and counts them in the section headers', () => {
+  it('tucks the whole vote record into a Transcript foldable with the how-it-works list on top', () => {
     renderTreeV9();
-    const tree = screen.getByTestId('alt-debate-tree');
-    // The direction words are gone from the bullets (the score formula
-    // still names its bullish/total variables).
-    expect(screen.getByTestId('alt-tree-item-T1')).not.toHaveTextContent(
-      /bullish|bearish|看多|看空/,
-    );
-    expect(within(screen.getByTestId('alt-tree-item-T1')).getByText('↑')).toBeInTheDocument();
-    expect(within(screen.getByTestId('alt-tree-item-T2')).getByText('↓')).toBeInTheDocument();
-    // Headers count only the surviving bullets: technicals ↑1, ↓0.
-    expect(tree).toHaveTextContent('↑1, ↓0');
+    expect(screen.getByText(/Transcript|过程记录/)).toBeInTheDocument();
+    const explain = screen.getByTestId('alt-tree-explain');
+    expect(explain).toHaveTextContent(/How this works|规则说明/);
+    // The list explains that mark-less bullets came from both AIs.
+    expect(explain).toHaveTextContent(/carries no check marks|没有任何检查标记/);
+    expect(explain).toHaveTextContent(/deciding vote|决胜票/);
   });
 
-  it('tells each bullet’s history as marks: ✓✓ both-listed, ✓/✗ votes, code ✗', () => {
+  it('shows colored direction words and counts them in the section headers', () => {
+    renderTreeV9();
+    const t1 = screen.getByTestId('alt-tree-item-T1');
+    expect(within(t1).getByText(/bullish|看多/)).toHaveClass('text-emerald-300');
+    const t2 = screen.getByTestId('alt-tree-item-T2');
+    expect(within(t2).getByText(/bearish|看空/)).toHaveClass('text-red-300');
+    // Headers count only the surviving bullets: technicals 1 bullish, 0 bearish.
+    expect(screen.getByTestId('alt-debate-tree')).toHaveTextContent(/1 bullish, 0 bearish|1 看多, 0 看空/);
+  });
+
+  it('a bullet from both AIs carries no marks; single-author bullets carry ✓/✗ marks', () => {
     renderTreeV9();
     expect(
-      within(screen.getByTestId('alt-tree-item-T1')).getByRole('button', { name: '✓✓' }),
-    ).toBeInTheDocument();
+      within(screen.getByTestId('alt-tree-item-T1')).queryAllByRole('button', { name: /✓|✗/ }),
+    ).toHaveLength(0);
     expect(
       within(screen.getByTestId('alt-tree-item-T2')).getAllByRole('button', { name: '✗' }),
     ).toHaveLength(2);
     expect(
-      within(screen.getByTestId('alt-tree-item-T3')).getByRole('button', { name: '✗' }),
-    ).toBeInTheDocument();
-    expect(
       within(screen.getByTestId('alt-tree-item-S1')).getByRole('button', { name: '✓' }),
     ).toBeInTheDocument();
-    // The prose vote lines are gone from the page itself.
-    expect(screen.queryByText(/listed independently by both analysts|两位分析师独立列出/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/A single close below one level/)).not.toBeInTheDocument();
   });
 
-  it('clicking a vote mark opens the reasoning in a modal', () => {
+  it('clicking a mark opens the numbered check result with the reasoning', () => {
     renderTreeV9();
     fireEvent.click(
       within(screen.getByTestId('alt-tree-item-T2')).getAllByRole('button', { name: '✗' })[0],
     );
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent(/checker|复核/);
+    expect(dialog).toHaveTextContent(/1st check result: invalid|第一次检查结果：|第一次检查结果:/);
     expect(dialog).toHaveTextContent('A single close below one level is not a trend.');
   });
 
-  it('clicking the double check mark explains the two author votes', () => {
+  it('the second mark opens as the 2nd check result', () => {
     renderTreeV9();
     fireEvent.click(
-      within(screen.getByTestId('alt-tree-item-T1')).getByRole('button', { name: '✓✓' }),
+      within(screen.getByTestId('alt-tree-item-T2')).getAllByRole('button', { name: '✗' })[1],
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent(/two valid votes|两张有效票|各算一张有效票/);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/2nd check result|第二次检查结果/);
   });
 
   it('clicking the code ✗ on a struck bullet shows the citation errors', () => {
@@ -1353,7 +1353,9 @@ describe('AltResult v9 evidence vote', () => {
     fireEvent.click(
       within(screen.getByTestId('alt-tree-item-T3')).getByRole('button', { name: '✗' }),
     );
-    expect(screen.getByRole('dialog')).toHaveTextContent('must be copied exactly');
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/code check result|代码检查结果/);
+    expect(dialog).toHaveTextContent('must be copied exactly');
   });
 
   it('crosses out every bullet that is not in the final score, with no pills or steps', () => {
@@ -1371,14 +1373,14 @@ describe('AltResult v9 evidence vote', () => {
     expect(screen.queryByText(/^counted$|^excluded$/)).not.toBeInTheDocument();
   });
 
-  it('shows only the flat final-score formula', () => {
+  it('shows the flat formula with a colon and no verdict-bands block', () => {
     renderTreeV9();
     const scores = screen.getByTestId('alt-tree-scores');
-    expect(scores).not.toHaveTextContent(/initial position score|adjusted position score|初始立场分|调整后立场分/);
-    expect(scores).not.toHaveTextContent(/average of|个维度的平均分/);
+    expect(scores).toHaveTextContent(/final position score: |最终立场分: /);
     expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent('= 10 × 1 / 2');
     expect(scores).toHaveTextContent('= 5.00');
-    expect(screen.getByTestId('alt-tree-verdict')).toHaveTextContent(/hold|持有/i);
+    expect(scores).not.toHaveTextContent(/below 4 sell|低于 4 卖出/);
+    expect(screen.queryByTestId('alt-tree-verdict')).not.toBeInTheDocument();
   });
 
   it('wraps long claims with a hanging indent (two-column grid rows)', () => {

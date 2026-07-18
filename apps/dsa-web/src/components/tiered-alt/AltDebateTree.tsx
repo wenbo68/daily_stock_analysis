@@ -13,7 +13,7 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, jumpToMetric } from '../tiered/termHelpers';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT, TAG_BASE } from './altStyles';
-import { AltModal, AltSectionLabel, FVar } from './AltUi';
+import { AltFold, AltModal, AltSectionLabel, FVar } from './AltUi';
 
 // The v5/v6/v7 debate tree: one tree, four steps. Step 1 shows the
 // defender's evidence list; step 2 adds the attacker's checks and
@@ -531,11 +531,13 @@ const MarkButton = ({ label, onClick }: { label: string; onClick: () => void }) 
 
 type MarkModal = { title: string; body: ReactNode };
 
-// One v8/v9 bullet, a single line telling its whole history: id, ↑/↓,
-// then its marks in chronological order — ✓✓ (listed by both analysts),
-// one ✓/✗ per vote, or the code's ✗ for a struck bullet. Click a mark
-// for the reasoning. A bullet out of the final pool is crossed out; the
-// claim wraps with a hanging indent (its own grid column).
+// One v8/v9 bullet, a single line telling its whole history: id, a
+// colored bullish/bearish word, then one ✓/✗ mark per check in order
+// (or the code's ✗ for a struck bullet). NO mark at all means both
+// analysts listed the bullet independently — already agreed, nothing to
+// check. Click a mark for the reasoning. A bullet out of the final pool
+// is crossed out; the claim wraps with a hanging indent (its own grid
+// column).
 const VoteItem = ({
   item,
   onShow,
@@ -546,10 +548,9 @@ const VoteItem = ({
   const { t } = useUiLanguage();
   const dead = item.final_status === 'excluded';
   const votes = item.votes ?? [];
-  const confirmed = (item.authors ?? 1) >= 2;
-  const showVote = (vote: TieredDebateVote) =>
+  const showVote = (vote: TieredDebateVote, index: number) =>
     onShow({
-      title: `${t(vote.role === 'decider' ? 'tiered.tree.decider' : 'tiered.tree.checker')} · ${t(
+      title: `${t(index === 0 ? 'tiered.tree.firstCheck' : 'tiered.tree.secondCheck')}: ${t(
         vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid',
       )}`,
       body: (
@@ -569,13 +570,15 @@ const VoteItem = ({
     >
       <span className="flex items-baseline gap-1.5 whitespace-nowrap">
         <span className="font-mono text-gray-500">{item.id}</span>
-        <span className="text-gray-400">{item.direction === 'bullish' ? '↑' : '↓'}</span>
+        <span className={cn('font-semibold', DIRECTION_TEXT[item.direction])}>
+          {t(item.direction === 'bullish' ? 'tiered.tree.bullish' : 'tiered.tree.bearish')}
+        </span>
         {item.struck ? (
           <MarkButton
             label="✗"
             onClick={() =>
               onShow({
-                title: `${t('tiered.tree.code')} · ${t('tiered.tree.citationCheck')}`,
+                title: `${t('tiered.tree.codeCheck')}: ${t('tiered.tree.invalid')}`,
                 body: (
                   <ul className="flex list-disc flex-col gap-1 pl-4 text-sm text-gray-300">
                     {(item.problems ?? []).map((problem, index) => (
@@ -587,24 +590,11 @@ const VoteItem = ({
             }
           />
         ) : null}
-        {confirmed ? (
-          <MarkButton
-            label="✓✓"
-            onClick={() =>
-              onShow({
-                title: t('tiered.tree.bothListed'),
-                body: (
-                  <p className="text-sm text-gray-300">{t('tiered.tree.bothListedDetail')}</p>
-                ),
-              })
-            }
-          />
-        ) : null}
         {votes.map((vote, index) => (
           <MarkButton
             key={index}
             label={vote.verdict === 'valid' ? '✓' : '✗'}
-            onClick={() => showVote(vote)}
+            onClick={() => showVote(vote, index)}
           />
         ))}
       </span>
@@ -614,6 +604,17 @@ const VoteItem = ({
     </li>
   );
 };
+
+//: The numbered how-it-works list shown at the top of the transcript.
+const EXPLAIN_KEYS = [
+  'tiered.tree.explain1',
+  'tiered.tree.explain2',
+  'tiered.tree.explain3',
+  'tiered.tree.explain4',
+  'tiered.tree.explain5',
+  'tiered.tree.explain6',
+  'tiered.tree.explain7',
+] as const;
 
 // The v8/v9 evidence vote, one page: per-dimension groups headed by the
 // surviving ↑/↓ counts, every bullet's history as marks, and the flat
@@ -640,54 +641,69 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
     Math.abs(flat - verdict.final_score) < 0.005;
 
   return (
-    <div data-testid="alt-debate-tree" className="mt-4 flex flex-col gap-3">
-      {groups.map((group) => {
-        const counted = group.items.filter((item) => item.final_status === 'counted');
-        const up = counted.filter((item) => item.direction === 'bullish').length;
-        const down = counted.length - up;
-        return (
-          <div key={group.dimension}>
-            <AltSectionLabel>
-              {DIMENSION_LABEL_KEYS[group.dimension]
-                ? t(DIMENSION_LABEL_KEYS[group.dimension])
-                : group.dimension}
-              : ↑{up}, ↓{down}
-            </AltSectionLabel>
-            <ul className="flex flex-col gap-1.5">
-              {group.items.map((item) => (
-                <VoteItem key={item.id} item={item} onShow={setModal} />
+    <>
+      <AltFold title={t('tiered.tree.transcript')}>
+        <div data-testid="alt-debate-tree" className="flex flex-col gap-3">
+          <div data-testid="alt-tree-explain">
+            <AltSectionLabel>{t('tiered.tree.howItWorks')}</AltSectionLabel>
+            <ol className="flex list-decimal flex-col gap-1 pl-4 text-xs text-gray-400">
+              {EXPLAIN_KEYS.map((key) => (
+                <li key={key}>{t(key)}</li>
               ))}
-            </ul>
+            </ol>
           </div>
-        );
-      })}
 
-      {verdict && finalPool ? (
-        <div
-          data-testid="alt-tree-scores"
-          className="flex flex-col gap-1 border-t border-gray-700/60 pt-3"
-        >
-          <AltSectionLabel>{t('tiered.tree.scores')}</AltSectionLabel>
-          <div className="flex flex-col gap-1 overflow-x-auto text-sm">
-            <p className={FORMULA_LINE}>
-              {t('tiered.tree.finalScore')} · 10 × <FVar>{t('tiered.tree.bullish')}</FVar>{' '}
-              / <FVar>{t('tiered.tree.total')}</FVar>
-            </p>
-            {showFormula ? (
-              <p className={FORMULA_LINE} data-testid="alt-tree-final-formula">
-                = 10 × {finalPool.bullish} / {finalPool.total}
-              </p>
-            ) : null}
-            <p className={FORMULA_RESULT}>= {verdict.final_score?.toFixed(2)}</p>
-          </div>
-          <div className="mt-2 flex flex-col gap-1 overflow-x-auto text-sm">
-            <p className={FORMULA_LINE}>{t('tiered.tree.ranges')}</p>
-            <p className={FORMULA_RESULT} data-testid="alt-tree-verdict">
-              = {t(`tiered.direction.${verdict.direction}` as UiTextKey)}
-            </p>
-          </div>
+          {groups.map((group) => {
+            const counted = group.items.filter((item) => item.final_status === 'counted');
+            const up = counted.filter((item) => item.direction === 'bullish').length;
+            const down = counted.length - up;
+            return (
+              <div key={group.dimension}>
+                <AltSectionLabel>
+                  {DIMENSION_LABEL_KEYS[group.dimension]
+                    ? t(DIMENSION_LABEL_KEYS[group.dimension])
+                    : group.dimension}
+                  {': '}
+                  <span className="text-emerald-300">
+                    {up} {t('tiered.tree.bullish')}
+                  </span>
+                  {', '}
+                  <span className="text-red-300">
+                    {down} {t('tiered.tree.bearish')}
+                  </span>
+                </AltSectionLabel>
+                <ul className="flex flex-col gap-1.5">
+                  {group.items.map((item) => (
+                    <VoteItem key={item.id} item={item} onShow={setModal} />
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+
+          {verdict && finalPool ? (
+            <div
+              data-testid="alt-tree-scores"
+              className="flex flex-col gap-1 border-t border-gray-700/60 pt-3"
+            >
+              <AltSectionLabel>{t('tiered.tree.scores')}</AltSectionLabel>
+              <div className="flex flex-col gap-1 overflow-x-auto text-sm">
+                <p className={FORMULA_LINE}>
+                  {t('tiered.tree.finalScore')}: 10 ×{' '}
+                  <FVar>{t('tiered.tree.bullish')}</FVar> /{' '}
+                  <FVar>{t('tiered.tree.total')}</FVar>
+                </p>
+                {showFormula ? (
+                  <p className={FORMULA_LINE} data-testid="alt-tree-final-formula">
+                    = 10 × {finalPool.bullish} / {finalPool.total}
+                  </p>
+                ) : null}
+                <p className={FORMULA_RESULT}>= {verdict.final_score?.toFixed(2)}</p>
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </AltFold>
 
       <AltModal
         isOpen={modal !== null}
@@ -696,7 +712,7 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
       >
         {modal?.body}
       </AltModal>
-    </div>
+    </>
   );
 };
 

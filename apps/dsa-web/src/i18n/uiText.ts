@@ -1004,11 +1004,20 @@ const zh = {
   'tiered.tree.finalScore': '最终立场分',
   'tiered.tree.total': '总条数',
   'tiered.tree.dimensionAverage': '{n} 个维度的平均分',
-  'tiered.tree.checker': '复核',
-  'tiered.tree.decider': '决胜票',
-  'tiered.tree.bothListed': '两位分析师独立列出',
-  'tiered.tree.bothListedDetail':
-    '两位分析师在互相看不到对方清单的情况下都列出了这条证据——各算一张有效票，共两票，直接确认，无需复核。',
+  'tiered.tree.transcript': '过程记录',
+  'tiered.tree.howItWorks': '规则说明',
+  'tiered.tree.explain1': '两个 AI 各自独立通读四份报告，分别列出全部看多与看空证据。',
+  'tiered.tree.explain2':
+    '代码逐条核对引用的数值；不合格的引用退回修正，仍失败的整条划线剔除，不计入任何得分。',
+  'tiered.tree.explain3':
+    '两份清单合并。两个 AI 都列出的证据已经达成一致——无需再检查，因此没有任何检查标记。',
+  'tiered.tree.explain4': '只有一个 AI 列出的证据由另一个 AI 检查——即证据后的 ✓ 或 ✗；点击标记可查看理由。',
+  'tiered.tree.explain5': '若该检查为无效，该证据 1 比 1 平票，再由一个 AI 投出决胜票——即第二个标记。',
+  'tiered.tree.explain6': '带有两个 ✗ 的证据被否决并划线；未划线的证据全部计入。',
+  'tiered.tree.explain7': '最终得分 = 10 × 看多条数 ÷ 存活总条数：低于 4 卖出，4–6 持有，高于 6 买入。',
+  'tiered.tree.firstCheck': '第一次检查结果',
+  'tiered.tree.secondCheck': '第二次检查结果',
+  'tiered.tree.codeCheck': '代码检查结果',
   'tiered.note.listerDegraded': '一位分析师的证据清单连续不合规——本次只使用另一份清单。',
   'tiered.note.mergeDegraded': '清单合并连续不合规——第二份清单被放弃。',
   'tiered.note.checkDegraded': '复核投票连续不合规——各条证据仅按作者一票计入。',
@@ -2204,11 +2213,25 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.finalScore': 'final position score',
   'tiered.tree.total': 'total items',
   'tiered.tree.dimensionAverage': 'average of {n} dimensions',
-  'tiered.tree.checker': 'checker',
-  'tiered.tree.decider': 'deciding vote',
-  'tiered.tree.bothListed': 'listed independently by both analysts',
-  'tiered.tree.bothListedDetail':
-    'Both analysts listed this evidence without seeing each other’s list — that counts as two valid votes, so it is confirmed with no further checking.',
+  'tiered.tree.transcript': 'Transcript',
+  'tiered.tree.howItWorks': 'How this works',
+  'tiered.tree.explain1':
+    'Two AIs read the four reports independently and each lists every piece of bullish and bearish evidence.',
+  'tiered.tree.explain2':
+    'Code verifies every cited number against the reports; failed citations go back to be fixed, and bullets that cannot be fixed are crossed out and count toward nothing.',
+  'tiered.tree.explain3':
+    'The two lists are merged. A bullet listed by BOTH AIs is already agreed on — it needs no further checking, so it carries no check marks.',
+  'tiered.tree.explain4':
+    'A bullet only one AI listed is checked by another AI — the ✓ or ✗ after it; click the mark to read the reasoning.',
+  'tiered.tree.explain5':
+    'If that check says invalid, the bullet is tied 1-1 and one more AI casts the deciding vote — the second mark.',
+  'tiered.tree.explain6':
+    'A bullet with two ✗ loses the vote and is crossed out; everything not crossed out counts.',
+  'tiered.tree.explain7':
+    'The final score is 10 × bullish ÷ total surviving bullets: below 4 sell, 4–6 hold, above 6 buy.',
+  'tiered.tree.firstCheck': '1st check result',
+  'tiered.tree.secondCheck': '2nd check result',
+  'tiered.tree.codeCheck': 'code check result',
   'tiered.note.listerDegraded':
     'One analyst’s evidence list kept coming back invalid — this run used the other list only.',
   'tiered.note.mergeDegraded':
