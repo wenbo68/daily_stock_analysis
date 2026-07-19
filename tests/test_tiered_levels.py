@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for deterministic base levels + adjustment validation (v2 slice 3).
+"""Offline tests for deterministic base levels + adjustment validation.
 
 Formulas under test are documented in docs/tiered-analysis-formulas.md:
-ideal entry = min(close, max(sma_20, swing_low)); backup = highest support
-strictly below ideal; stop = ideal - 2*ATR; target = ideal + 2*(ideal - stop).
+ideal entry = min(close, max(support candidates)); backup = highest
+candidate strictly below ideal; stop = ideal - 2*ATR; target = min(ideal +
+2*(ideal - stop), nearest overhead resistance). Trend gate (close must sit
+above sma_60) and room gate (capped reward-to-risk >= 1.5) void the plan.
 AI adjustments must stay within +/-1 ATR, keep ordering and reward-to-risk.
 """
 from __future__ import annotations
@@ -50,31 +52,39 @@ class TestComputeBaseLevels(unittest.TestCase):
 
     def test_bases_record_formula_and_inputs(self):
         bases = _bases()
-        self.assertIn("sma_20", bases.entry.formula)
+        self.assertIn("support candidates", bases.entry.formula)
         self.assertAlmostEqual(bases.entry.inputs["close"], 100.0)
+        self.assertAlmostEqual(bases.entry.inputs["sma_20"], 96.0)
         self.assertAlmostEqual(bases.stop_loss.inputs["atr_14"], 3.0)
 
     def test_missing_sma20_uses_swing_low(self):
         bases = _bases(sma_20=None)
         self.assertAlmostEqual(bases.entry.value, 94.0)
 
-    def test_no_supports_means_no_levels_with_warning(self):
-        bases = _bases(sma_20=None, swing_low=None)
+    def test_no_structural_supports_means_no_levels_with_warning(self):
+        bases = _bases(sma_20=None, sma_60=None, swing_low=None)
         self.assertIsNone(bases.entry)
         self.assertIsNone(bases.take_profit)
-        self.assertTrue(bases.warnings)
+        self.assertTrue(any("support" in w.lower() for w in bases.warnings))
 
     def test_no_close_means_no_levels_with_warning(self):
         bases = _bases(close=None)
         self.assertIsNone(bases.entry)
         self.assertTrue(bases.warnings)
 
-    def test_no_deeper_support_means_no_backup_with_warning(self):
+    def test_backup_uses_any_candidate_below_entry(self):
         bases = _bases(sma_60=None, swing_low=97.0)
-        # ideal = min(100, max(96, 97)) = 97; no candidate strictly below? 96 is
-        # sma_20 but backup candidates are only sma_60/swing_low -> none < 97.
-        self.assertIsNone(bases.secondary_entry)
-        self.assertTrue(any("backup" in w.lower() for w in bases.warnings))
+        # ideal = min(100, max(96, 97)) = 97; sma_20 (96) is now a backup
+        # candidate too (richer candidate set), so backup = 96.
+        self.assertAlmostEqual(bases.entry.value, 97.0)
+        self.assertAlmostEqual(bases.secondary_entry.value, 96.0)
+
+    def test_round_number_can_serve_as_backup(self):
+        bases = _bases(sma_60=None, sma_20=96.0, swing_low=96.0)
+        # Only structural support is at 96 (entry); the round level 90 is
+        # the sole candidate strictly below it.
+        self.assertAlmostEqual(bases.entry.value, 96.0)
+        self.assertAlmostEqual(bases.secondary_entry.value, 90.0)
 
     def test_missing_atr_means_no_stop_and_no_target(self):
         bases = _bases(atr=None)
@@ -82,6 +92,53 @@ class TestComputeBaseLevels(unittest.TestCase):
         self.assertIsNone(bases.stop_loss)
         self.assertIsNone(bases.take_profit)
         self.assertTrue(bases.warnings)
+
+
+class TestTrendAndRoomGates(unittest.TestCase):
+    def test_trend_gate_voids_plan_in_downtrend(self):
+        bases = _bases(close=89.0)  # close <= sma_60 (90)
+        self.assertIsNone(bases.entry)
+        self.assertIsNone(bases.take_profit)
+        self.assertTrue(any("trend gate" in w for w in bases.warnings))
+
+    def test_trend_gate_boundary_close_equal_sma60_is_downtrend(self):
+        bases = _bases(close=90.0, sma_20=89.0, swing_low=88.0)
+        self.assertIsNone(bases.entry)
+        self.assertTrue(any("trend gate" in w for w in bases.warnings))
+
+    def test_missing_sma60_skips_gate_with_warning(self):
+        bases = _bases(sma_60=None)
+        self.assertIsNotNone(bases.entry)
+        self.assertTrue(any("trend gate skipped" in w for w in bases.warnings))
+
+    def test_overhead_resistance_caps_target(self):
+        # entry 96, stop 90, geometric target 108; nearest resistance 106
+        # (above close 100) caps it: R:R = 10/6 = 1.67 >= 1.5 -> plan stands.
+        bases = _bases(swing_high_20=106.0)
+        self.assertAlmostEqual(bases.take_profit.value, 106.0)
+        self.assertIn("resistance", bases.take_profit.formula)
+        self.assertAlmostEqual(bases.take_profit.inputs["geometric_target"], 108.0)
+
+    def test_room_gate_voids_plan_when_resistance_too_close(self):
+        # Resistance at 104: capped R:R = (104-96)/6 = 1.33 < 1.5 -> no plan.
+        bases = _bases(swing_high_20=104.0)
+        self.assertIsNone(bases.entry)
+        self.assertIsNone(bases.take_profit)
+        self.assertTrue(any("room gate" in w for w in bases.warnings))
+
+    def test_resistance_below_close_is_ignored(self):
+        # A "resistance" the price already broke through is not overhead.
+        bases = _bases(swing_high_20=99.0)
+        self.assertAlmostEqual(bases.take_profit.value, 108.0)
+
+    def test_nearest_of_several_resistances_wins(self):
+        bases = _bases(swing_high_20=107.0, swing_high_60=112.0, high_52w=120.0)
+        self.assertAlmostEqual(bases.take_profit.value, 107.0)
+
+    def test_no_overhead_resistance_keeps_geometric_target(self):
+        bases = _bases(high_52w=100.0)  # at the 52w high: open air above
+        self.assertAlmostEqual(bases.take_profit.value, 108.0)
+        self.assertNotIn("resistance", bases.take_profit.formula)
 
 
 class TestApplyAdjustments(unittest.TestCase):
@@ -149,7 +206,9 @@ class TestApplyAdjustments(unittest.TestCase):
         self.assertTrue(any("reward" in w.lower() for w in warnings))
 
     def test_adjustment_without_base_rejected(self):
-        bases = _bases(sma_60=None, swing_low=97.0)  # no backup base
+        # entry lands exactly on the only support (90) and the round level
+        # equals it, so nothing sits strictly below -> no backup base.
+        bases = _bases(close=90.5, sma_20=90.0, sma_60=None, swing_low=None)
         proposals = [
             AdjustmentProposal(
                 level="secondary_entry", value=95.0, reason="x", evidence=("e",)
@@ -215,6 +274,14 @@ class TestBasesFromDimensions(unittest.TestCase):
         )
         bases = bases_from_dimensions([dim])
         self.assertAlmostEqual(bases.entry.value, 96.0)
+
+    def test_extracts_resistance_inputs_from_payload(self):
+        dim = self._technicals(
+            {"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
+             "swing_low_20": 94.0, "atr_14": 3.0, "swing_high_20": 106.0}
+        )
+        bases = bases_from_dimensions([dim])
+        self.assertAlmostEqual(bases.take_profit.value, 106.0)
 
     def test_missing_technicals_dimension_yields_warning_only(self):
         bases = bases_from_dimensions([])

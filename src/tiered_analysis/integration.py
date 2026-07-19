@@ -53,9 +53,9 @@ from .tiers import Tier1Stage, Tier2Stage, Tier3Stage, TieredPipeline, TierState
 
 logger = logging.getLogger(__name__)
 
-#: Calendar days of daily bars to request — comfortably covers the 60
-#: trading bars the technicals score needs (weekends/holidays included).
-BARS_CALENDAR_DAYS = 120
+#: Calendar days of daily bars to request — comfortably covers the ~250
+#: trading bars the 52-week high/low needs (weekends/holidays included).
+BARS_CALENDAR_DAYS = 400
 
 
 def dsa_bars_loader(symbol: str, manager: Any = None) -> List[Bar]:

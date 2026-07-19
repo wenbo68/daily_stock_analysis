@@ -32,8 +32,17 @@ MACD_SLOW = 26
 MACD_SIGNAL = 9
 # Bars needed so every indicator in the payload can be computed.
 FULL_HISTORY_BARS = 60
+# One trading year of bars — the 52-week high/low window every desk
+# references. With less history the "52w" keys honestly cover what exists
+# (bars_count in the payload discloses the real window).
+YEAR_BARS = 250
 # Bars needed for the minimum viable set (RSI/ATR need period + 1).
 MIN_HISTORY_BARS = max(RSI_PERIOD, ATR_PERIOD) + 1
+# Daily returns needed before a 5th-percentile "worst day" means anything.
+MIN_RETURNS_FOR_TAIL = 20
+#: Payload keys allowed to be None without downgrading coverage — volume
+#: is source-dependent (some feeds omit it), unlike price history.
+OPTIONAL_PAYLOAD_KEYS = frozenset({"avg_volume_20"})
 
 _SCORE_NEUTRAL = 50.0
 
@@ -164,6 +173,44 @@ def compute_swing_low(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Option
     return min(bar.low for bar in bars[-lookback:])
 
 
+def compute_swing_high(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optional[float]:
+    """Highest traded high of the last ``lookback`` bars — a ceiling the
+    market has already rejected once; a resistance anchor for the target."""
+    if not bars or lookback <= 0:
+        return None
+    return max(bar.high for bar in bars[-lookback:])
+
+
+def compute_avg_volume(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optional[float]:
+    """Mean daily volume over the last ``lookback`` bars; None when the
+    data source ships no volume."""
+    if not bars or lookback <= 0:
+        return None
+    volumes = [bar.volume for bar in bars[-lookback:] if bar.volume is not None and bar.volume > 0]
+    if not volumes:
+        return None
+    return sum(volumes) / len(volumes)
+
+
+def compute_worst_day_5pct(closes: List[float]) -> Optional[float]:
+    """5th-percentile daily return (close-to-close) — the "bad day" size.
+
+    Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer observations a
+    tail percentile is noise, so None (loud) beats a fake number.
+    """
+    if len(closes) < MIN_RETURNS_FOR_TAIL + 1:
+        return None
+    returns = sorted(
+        closes[i] / closes[i - 1] - 1.0
+        for i in range(1, len(closes))
+        if closes[i - 1] > 0
+    )
+    if len(returns) < MIN_RETURNS_FOR_TAIL:
+        return None
+    index = int(0.05 * (len(returns) - 1))
+    return returns[index]
+
+
 def compute_bias(closes: List[float], period: int = BIAS_PERIOD) -> Optional[float]:
     """BIAS: percentage deviation of the latest close from its SMA."""
     sma = compute_sma(closes, period)
@@ -279,11 +326,22 @@ class TechnicalsProvider(DimensionProvider):
             "macd": compute_macd(closes),
             "atr_14": compute_atr(bars),
             "swing_low_20": compute_swing_low(bars),
+            "swing_high_20": compute_swing_high(bars),
+            "swing_low_60": compute_swing_low(bars, FULL_HISTORY_BARS),
+            "swing_high_60": compute_swing_high(bars, FULL_HISTORY_BARS),
+            "high_52w": compute_swing_high(bars, YEAR_BARS),
+            "low_52w": compute_swing_low(bars, YEAR_BARS),
+            "avg_volume_20": compute_avg_volume(bars),
+            "worst_day_5pct": compute_worst_day_5pct(closes),
             "bias_20": compute_bias(closes),
             "score": compute_score(bars),
         }
 
-        missing = [key for key, value in payload.items() if value is None]
+        missing = [
+            key
+            for key, value in payload.items()
+            if value is None and key not in OPTIONAL_PAYLOAD_KEYS
+        ]
         coverage = Coverage.FULL if not missing else Coverage.PARTIAL
         warnings = (
             [f"indicators lacking history: {', '.join(sorted(missing))}"]

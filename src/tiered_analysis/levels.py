@@ -9,6 +9,7 @@ and the rejection is surfaced as a warning.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -60,14 +61,42 @@ class BaseLevels:
         return all(self.get(key) is None for key in LEVEL_KEYS)
 
 
+#: Psychological round-number steps by price magnitude: (min close, step).
+_ROUND_STEPS = ((100.0, 10.0), (20.0, 5.0), (5.0, 1.0), (1.0, 0.5), (0.0, 0.1))
+
+
+def round_number_below(close: float) -> Optional[float]:
+    """Largest round price strictly below the close — a weak support line
+    (crowd orders cluster at round numbers); joins the candidate set but
+    never anchors an entry alone."""
+    if close <= 0:
+        return None
+    step = next(step for threshold, step in _ROUND_STEPS if close >= threshold)
+    level = math.floor(close / step) * step
+    if level >= close:
+        level -= step
+    return level if level > 0 else None
+
+
 def compute_base_levels(
     close: Optional[float],
     sma_20: Optional[float] = None,
     sma_60: Optional[float] = None,
     swing_low: Optional[float] = None,
     atr: Optional[float] = None,
+    swing_low_60: Optional[float] = None,
+    swing_high_20: Optional[float] = None,
+    swing_high_60: Optional[float] = None,
+    high_52w: Optional[float] = None,
 ) -> BaseLevels:
-    """The four base levels; missing inputs degrade loudly, never silently."""
+    """The four base levels; missing inputs degrade loudly, never silently.
+
+    Gates (each voids the whole buy plan with an explicit warning):
+    - trend gate: no pullback-buy plan in a downtrend (close ≤ sma_60);
+    - room gate: overhead resistance may cap the target, and a capped
+      target that drops reward-to-risk below MIN_REWARD_RISK means the
+      trade no longer pays for its risk.
+    """
     warnings: List[str] = []
 
     if not _valid(close):
@@ -75,32 +104,59 @@ def compute_base_levels(
             warnings=["no close price — deterministic levels cannot be computed"]
         )
 
-    supports = [v for v in (sma_20, swing_low) if _valid(v)]
-    if not supports:
+    if _valid(sma_60):
+        if close <= sma_60:
+            return BaseLevels(
+                warnings=[
+                    f"trend gate: close {close:g} is at or below the 60-day "
+                    f"average {sma_60:g} (downtrend) — buying a pullback in a "
+                    "falling stock is catching a falling knife, so no buy plan"
+                ]
+            )
+    else:
+        warnings.append("sma_60 unavailable — trend gate skipped")
+
+    structural = [
+        v for v in (sma_20, sma_60, swing_low, swing_low_60) if _valid(v)
+    ]
+    if not structural:
         return BaseLevels(
             warnings=[
-                "no support anchors (sma_20 / swing_low_20) — no entry base, "
-                "so no deterministic levels"
+                "no structural support anchors (sma_20 / sma_60 / "
+                "swing_low_20 / swing_low_60) — no entry base, so no "
+                "deterministic levels"
             ]
         )
+    round_level = round_number_below(close)
+    candidates = structural + ([round_level] if _valid(round_level) else [])
 
-    entry_value = min(close, max(supports))
+    entry_value = min(close, max(candidates))
     entry = LevelBasis(
         value=entry_value,
-        formula="min(close, max(sma_20, swing_low_20))",
-        inputs=_present(close=close, sma_20=sma_20, swing_low_20=swing_low),
+        formula="min(close, max(support candidates))",
+        inputs=_present(
+            close=close,
+            sma_20=sma_20,
+            sma_60=sma_60,
+            swing_low_20=swing_low,
+            swing_low_60=swing_low_60,
+            round_level=round_level,
+        ),
     )
 
-    backup_candidates = [
-        v for v in (sma_60, swing_low) if _valid(v) and v < entry_value
-    ]
+    backup_candidates = [v for v in candidates if v < entry_value]
     secondary: Optional[LevelBasis] = None
     if backup_candidates:
         secondary = LevelBasis(
             value=max(backup_candidates),
-            formula="max(support strictly below ideal entry: sma_60, swing_low_20)",
+            formula="max(support candidate strictly below ideal entry)",
             inputs=_present(
-                ideal_entry=entry_value, sma_60=sma_60, swing_low_20=swing_low
+                ideal_entry=entry_value,
+                sma_20=sma_20,
+                sma_60=sma_60,
+                swing_low_20=swing_low,
+                swing_low_60=swing_low_60,
+                round_level=round_level,
             ),
         )
     else:
@@ -125,15 +181,50 @@ def compute_base_levels(
                 "multiplier": DEFAULT_ATR_MULTIPLIER,
             },
         )
-        target = LevelBasis(
-            value=entry_value + REWARD_RISK_MULTIPLE * (entry_value - stop_value),
-            formula="ideal_entry + 2 × (ideal_entry − stop_loss)",
-            inputs={
-                "ideal_entry": entry_value,
-                "stop_loss": stop_value,
-                "reward_risk_multiple": REWARD_RISK_MULTIPLE,
-            },
-        )
+
+        geometric = entry_value + REWARD_RISK_MULTIPLE * (entry_value - stop_value)
+        resistances = [
+            v
+            for v in (swing_high_20, swing_high_60, high_52w)
+            if _valid(v) and v > close
+        ]
+        nearest_res = min(resistances) if resistances else None
+        if nearest_res is not None and nearest_res < geometric:
+            target_value = nearest_res
+            risk = entry_value - stop_value
+            reward_risk = (target_value - entry_value) / risk if risk > 0 else 0.0
+            if reward_risk < MIN_REWARD_RISK:
+                return BaseLevels(
+                    warnings=warnings
+                    + [
+                        f"room gate: overhead resistance at {nearest_res:g} caps "
+                        f"reward-to-risk at {reward_risk:.2f} (< {MIN_REWARD_RISK:g}) "
+                        "— not enough room above to pay for the risk, so no buy plan"
+                    ]
+                )
+            target = LevelBasis(
+                value=target_value,
+                formula="min(ideal_entry + 2 × (ideal_entry − stop_loss), "
+                "nearest overhead resistance)",
+                inputs=_present(
+                    ideal_entry=entry_value,
+                    stop_loss=stop_value,
+                    geometric_target=geometric,
+                    swing_high_20=swing_high_20,
+                    swing_high_60=swing_high_60,
+                    high_52w=high_52w,
+                ),
+            )
+        else:
+            target = LevelBasis(
+                value=geometric,
+                formula="ideal_entry + 2 × (ideal_entry − stop_loss)",
+                inputs={
+                    "ideal_entry": entry_value,
+                    "stop_loss": stop_value,
+                    "reward_risk_multiple": REWARD_RISK_MULTIPLE,
+                },
+            )
 
     return BaseLevels(
         entry=entry,
@@ -172,6 +263,10 @@ def bases_from_dimensions(dimensions: Sequence[DimensionResult]) -> BaseLevels:
         sma_60=_num("sma_60"),
         swing_low=_num("swing_low_20"),
         atr=_num("atr_14"),
+        swing_low_60=_num("swing_low_60"),
+        swing_high_20=_num("swing_high_20"),
+        swing_high_60=_num("swing_high_60"),
+        high_52w=_num("high_52w"),
     )
 
 

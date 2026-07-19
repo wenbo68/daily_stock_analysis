@@ -13,12 +13,15 @@ from src.tiered_analysis.providers.technicals import (
     Bar,
     TechnicalsProvider,
     compute_atr,
+    compute_avg_volume,
     compute_bias,
     compute_ema,
     compute_macd,
     compute_score,
     compute_sma,
+    compute_swing_high,
     compute_wilder_rsi,
+    compute_worst_day_5pct,
 )
 
 # Classic 14-period RSI walkthrough dataset (Wilder's method, as popularized
@@ -210,6 +213,68 @@ class TestTechnicalsProvider(unittest.TestCase):
         self.assertEqual(result.coverage, Coverage.PARTIAL)
         self.assertTrue(result.is_actionable)
         self.assertIsNone(result.payload["sma_60"])
+
+
+class TestSwingAndTailAdditions(unittest.TestCase):
+    """Outlook-redesign additions: swing highs, 52w range, volume, tail day."""
+
+    def test_swing_high_is_max_high_of_lookback(self):
+        bars = _trend_bars([100.0, 105.0, 102.0])
+        self.assertAlmostEqual(
+            compute_swing_high(bars, lookback=3), 105.0 * 1.005
+        )
+
+    def test_swing_high_respects_lookback_window(self):
+        bars = _trend_bars([200.0, 100.0, 101.0])
+        self.assertAlmostEqual(
+            compute_swing_high(bars, lookback=2), 101.0 * 1.005
+        )
+
+    def test_avg_volume_ignores_missing_volumes(self):
+        bars = [
+            Bar(high=101, low=99, close=100, volume=1000.0),
+            Bar(high=101, low=99, close=100, volume=None),
+            Bar(high=101, low=99, close=100, volume=3000.0),
+        ]
+        self.assertAlmostEqual(compute_avg_volume(bars, lookback=3), 2000.0)
+
+    def test_avg_volume_none_when_source_has_no_volume(self):
+        self.assertIsNone(compute_avg_volume(_flat_bars(20)))
+
+    def test_worst_day_5pct_picks_left_tail(self):
+        # 40 returns of +1% and one crash of -10%: the 5th percentile
+        # (index int(0.05*40) = 2) sits just above the crash.
+        closes = [100.0]
+        for _ in range(20):
+            closes.append(closes[-1] * 1.01)
+        closes.append(closes[-1] * 0.90)
+        for _ in range(20):
+            closes.append(closes[-1] * 1.01)
+        worst = compute_worst_day_5pct(closes)
+        self.assertIsNotNone(worst)
+        self.assertLessEqual(worst, 0.011)
+
+    def test_worst_day_needs_enough_history(self):
+        self.assertIsNone(compute_worst_day_5pct([100.0] * 10))
+
+    def test_payload_contains_resistance_and_tail_keys(self):
+        closes = [100.0 * (1.002 ** i) for i in range(60)]
+        provider = TechnicalsProvider(bars_loader=lambda s: _trend_bars(closes))
+        payload = provider.collect("AAPL").payload
+        for key in (
+            "swing_high_20", "swing_low_60", "swing_high_60",
+            "high_52w", "low_52w", "worst_day_5pct",
+        ):
+            self.assertIsNotNone(payload[key], key)
+        # 60 bars: the "52w" window honestly covers what exists.
+        self.assertAlmostEqual(payload["high_52w"], payload["swing_high_60"])
+
+    def test_missing_volume_does_not_degrade_coverage(self):
+        closes = [100.0 * (1.002 ** i) for i in range(60)]
+        provider = TechnicalsProvider(bars_loader=lambda s: _trend_bars(closes))
+        result = provider.collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.FULL)
+        self.assertIsNone(result.payload["avg_volume_20"])
 
 
 if __name__ == "__main__":
