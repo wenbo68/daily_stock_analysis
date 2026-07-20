@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .adjustments import LevelAdjuster
+from .earnings import EarningsInfo, earnings_warning, next_earnings_info
 from .levels import (
     apply_adjustments,
     bases_from_dimensions,
@@ -44,12 +44,19 @@ from .providers.base import (
 )
 from .providers.registry import detect_market, get_providers
 from .providers.technicals import Bar
-from .risk import apply_size_multiplier
-from .schema import Direction, SizingSlots, TierReport
+from .risk_card import build_risk_card
+from .schema import (
+    Action,
+    Direction,
+    Outlook,
+    SizingSlots,
+    TierReport,
+    derive_action,
+)
 from .settings import SizingSettings, load_sizing_settings, merge_overrides
 from .signal_log import SignalLogResult, log_tier_report
-from .sizing import SizingInputs, lot_size_for, size_position
-from .tiers import Tier1Stage, Tier2Stage, Tier3Stage, TieredPipeline, TierState
+from .sizing import SizingInputs, size_position
+from .tiers import Tier1Stage, Tier2Stage, TierState
 
 logger = logging.getLogger(__name__)
 
@@ -106,18 +113,19 @@ def dsa_analysis_runner(symbol: str) -> Any:
     return result
 
 
-#: Supported analysis depths: 1 = tier 1 only (v1 behavior), 2 = + debate,
-#: 3 = + risk stress test.
-SUPPORTED_DEPTHS = (1, 2, 3)
+#: Supported analysis depths: 1 = the one-blob judge, 2 = the evidence
+#: vote (which no longer runs the tier-1 blob at all — the debate is the
+#: judge). Tier 3 is retired (outlook redesign, 2026-07-20).
+SUPPORTED_DEPTHS = (1, 2)
 
 
 @dataclass(frozen=True)
 class TieredRunOutcome:
     """Everything one tiered run produced.
 
-    ``report`` stays the tier-1 report (it carries the dimension results
-    the web cards render from); ``final_report`` is the deepest tier that
-    ran — the same object at depth 1.
+    ``report`` stays the tier-1/foundation report (it carries the
+    dimension results the web cards render from); ``final_report`` is the
+    deepest tier that ran — the same object at depth 1.
     """
 
     report: TierReport
@@ -127,9 +135,17 @@ class TieredRunOutcome:
     final_report: Optional[TierReport] = None
     #: Sizing block (v2 slice 6): share count or explicit refusal reason.
     sizing: Optional[Dict[str, Any]] = None
-    #: This run's own LLM call/token counts per stage (tier 1 excluded —
-    #: its synthesis runs inside the DSA pipeline).
+    #: This run's own LLM call/token counts per stage (the depth-1 blob
+    #: excluded — its synthesis runs inside the DSA pipeline).
     llm_usage: Optional[Dict[str, Any]] = None
+    #: Outlook redesign: the impersonal judgment + the personal action
+    #: (outlook × ownership code table).
+    outlook: Outlook = Outlook.UNKNOWN
+    action: Action = Action.UNKNOWN
+    #: Warning-only next-earnings-date lookup.
+    earnings: Optional[EarningsInfo] = None
+    #: Display-only 13-entry risk card — affects nothing by design.
+    risk_card: Optional[list] = None
 
     def __post_init__(self) -> None:
         if self.final_report is None:
@@ -173,31 +189,18 @@ def _technicals_atr(dimensions: Sequence[DimensionResult]) -> Optional[float]:
     return None
 
 
-def _risk_multiplier(state: TierState) -> Optional[float]:
-    """The tier-3 judge's size multiplier, if a usable verdict exists."""
-    report = state.reports.get(3)
-    if report is None or not report.risk_detail:
-        return None
-    verdict = report.risk_detail.get("verdict") or {}
-    value = verdict.get("size_multiplier")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    return float(value)
-
-
 def _sizing_block(
     final: TierReport,
     market: Market,
     settings: SizingSettings,
-    risk_multiplier: Optional[float],
 ) -> Tuple[Dict[str, Any], SizingSlots]:
     """Deterministic sizing of the deepest tier's call (v2 slices 1+6).
 
     The engine runs even when settings are absent so the UI gets an
-    explicit ``sizing_off`` refusal instead of a missing section. The
-    tier-3 multiplier is applied by code here — never by the LLM — and a
-    multiplier of 0 keeps the slots filled with 0 shares ("the direction
-    stands but do not open"), which is a statement, not an omission.
+    explicit ``sizing_off`` refusal instead of a missing section.
+    Outlook redesign: the tier-3 multiplier is gone — a bearish outlook
+    on a held stock exits the FULL holding (reducing risk needs no
+    permission), and the buy size comes from the formula + caps alone.
     """
     inputs = SizingInputs(
         capital=settings.capital,
@@ -213,63 +216,22 @@ def _sizing_block(
 
     notes = list(result.notes) + list(settings.warnings)
     shares = result.shares
-    shares_before_multiplier = None
     position_value = result.position_value
     risk_amount = result.risk_amount
-    if result.is_sized and risk_multiplier is not None:
-        shares_before_multiplier = result.shares
-        # The multiplier is enum-validated by the risk parser; an
-        # off-enum value here means a broken internal contract, and
-        # apply_size_multiplier raising loudly is the right outcome.
-        shares = apply_size_multiplier(
-            result.shares, risk_multiplier, lot_size=result.lot_size
-        )
-        position_value = shares * inputs.entry
-        risk_amount = shares * result.loss_per_share
-        if shares == 0:
-            notes.append(
-                "Risk multiplier 0: the direction stands, but the risk "
-                "judge says do not open a position now."
-            )
-        elif shares != shares_before_multiplier:
-            notes.append(
-                f"Risk stress verdict scaled the position to "
-                f"{risk_multiplier:g}x of the computed size."
-            )
 
-    # A sell verdict on a stock the user holds gets a concrete exit size:
-    # the held shares, scaled by the tier-3 multiplier when one exists
-    # (no tier 3 → the full holding; a sell verdict means exit). This
-    # needs no capital/risk settings — the count IS the holding.
+    # A bearish outlook on a stock the user holds gets a concrete exit
+    # size: the full holding. This needs no capital/risk settings — the
+    # count IS the holding.
     ownership = settings.ownership
     sell_shares = None
-    sell_shares_before_multiplier = None
     if final.direction is Direction.SELL and ownership > 0:
         sell_shares = ownership
-        if risk_multiplier is not None:
-            sell_shares_before_multiplier = ownership
-            sell_shares = apply_size_multiplier(
-                ownership, risk_multiplier, lot_size=lot_size_for(market)
-            )
-            if sell_shares == 0:
-                notes.append(
-                    "Risk multiplier 0: the sell verdict stands, but the "
-                    "risk stress says do not reduce the holding now."
-                )
-            elif sell_shares != ownership:
-                notes.append(
-                    f"Risk stress verdict scaled the exit to "
-                    f"{risk_multiplier:g}x of the held shares."
-                )
 
     detail: Dict[str, Any] = {
         "enabled": settings.is_enabled,
         "shares": shares,
-        "shares_before_multiplier": shares_before_multiplier,
-        "risk_multiplier": risk_multiplier,
         "ownership": ownership,
         "sell_shares": sell_shares,
-        "sell_shares_before_multiplier": sell_shares_before_multiplier,
         "position_value": position_value,
         "risk_amount": risk_amount,
         "loss_per_share": result.loss_per_share,
@@ -305,26 +267,26 @@ def run_tiered_analysis(
     signal_logger: Callable[..., Any] = log_tier_report,
     log_signal: bool = True,
     trace_id: Optional[str] = None,
-    level_adjuster: Optional[Any] = None,
     depth: int = 1,
     sizing_settings: Optional[SizingSettings] = None,
     sizing_overrides: Optional[Mapping[str, Any]] = None,
     tier2_stage: Optional[Tier2Stage] = None,
-    tier3_stage: Optional[Tier3Stage] = None,
+    earnings_lookup: Optional[Callable[[str, Market], EarningsInfo]] = None,
 ) -> TieredRunOutcome:
-    """Run tiers 1..``depth`` for one symbol with full production wiring.
+    """Run one symbol at ``depth`` with full production wiring.
 
-    Collects the four dimensions, runs tier 1, replaces the LLM-prose
-    price levels with deterministic bases + validated AI adjustments
-    (v2 slice 3, anchor-and-adjust), attaches the dimension results
-    (with merged coverage) to the tier-1 report, then — per ``depth`` —
-    runs the tier-2 debate and tier-3 risk stress test, sizes the deepest
-    tier's call (settings absent → explicit ``sizing_off`` refusal), and,
-    unless ``log_signal`` is False, records the deepest tier's
-    recommendation in the existing decision-signal system.
+    Outlook redesign (2026-07-20) pipeline: data layer (four dimensions)
+    → formula-only levels (no AI nudge at any tier — plan decision) →
+    the chosen judge (depth 1 = the DSA one-blob synthesis; depth 2 =
+    the evidence vote, WITHOUT running the blob) → outlook + action
+    (code table over ownership) → sizing (bearish + held shares = exit
+    the full holding) → display-only risk card + warning-only earnings
+    date. Unless ``log_signal`` is False, the deepest tier's
+    recommendation lands in the existing decision-signal system.
 
     ``sizing_overrides`` may carry per-run ``capital`` / ``risk_fraction``
-    values (the API's per-run override) on top of the saved settings.
+    / ``ownership`` values (the API's per-run override) on top of the
+    saved settings.
     """
     if depth not in SUPPORTED_DEPTHS:
         raise ValueError(f"depth must be one of {SUPPORTED_DEPTHS}, got {depth}")
@@ -334,8 +296,6 @@ def run_tiered_analysis(
         providers = get_providers(market, bars_loader=dsa_bars_loader)
     if analysis_runner is None:
         analysis_runner = dsa_analysis_runner
-    if level_adjuster is None:
-        level_adjuster = LevelAdjuster()
     if sizing_settings is None:
         sizing_settings = load_sizing_settings()
     if sizing_overrides:
@@ -345,37 +305,55 @@ def run_tiered_analysis(
             risk_fraction=sizing_overrides.get("risk_fraction"),
             ownership=sizing_overrides.get("ownership"),
         )
+    if earnings_lookup is None:
+        earnings_lookup = next_earnings_info
 
     tracker = LlmUsageTracker()
     with tracker.activate():
         dimensions = _collect_dimensions(providers, symbol)
 
-        pipeline = TieredPipeline(tier1=Tier1Stage(analysis_runner=analysis_runner))
-        state = pipeline.run(symbol, market, up_to_tier=1)
-
-        # Anchor-and-adjust levels: formula bases from the technicals payload,
-        # bounded evidence-cited LLM adjustments, code re-validation. This
-        # intentionally replaces the DSA sniper levels (LLM prose) as the
-        # report's tradeable numbers; the audit trail lands in levels_detail.
+        # Formula-only levels: deterministic bases from the technicals
+        # payload; the adjustment machinery runs with zero proposals so
+        # the audit-trail shape (base/formula/inputs per level) stays.
         bases = bases_from_dimensions(dimensions)
-        with tracker.stage("level_adjuster"):
-            proposals, adjuster_warnings = level_adjuster.propose(
-                symbol, bases, dimensions
-            )
         decisions, adjust_warnings = apply_adjustments(
-            bases, proposals, atr=_technicals_atr(dimensions)
+            bases, [], atr=_technicals_atr(dimensions)
         )
-        level_warnings = list(bases.warnings) + adjuster_warnings + adjust_warnings
+        level_warnings = list(bases.warnings) + adjust_warnings
+        levels = decisions_to_sniper(decisions)
+        levels_detail = decisions_to_detail(decisions, level_warnings)
 
-        tier1 = state.reports[1]
-        report = replace(
-            tier1,
-            dimensions=dimensions,
-            coverage=_merge_coverage(tier1.coverage, dimensions),
-            levels=decisions_to_sniper(decisions),
-            levels_detail=decisions_to_detail(decisions, level_warnings),
-            warnings=list(tier1.warnings) + level_warnings,
-        )
+        earnings = earnings_lookup(symbol, market)
+        e_warning = earnings_warning(earnings)
+        extra_warnings = level_warnings + ([e_warning] if e_warning else [])
+
+        state = TierState(symbol=symbol, market=market)
+        if depth == 1:
+            tier1 = Tier1Stage(analysis_runner=analysis_runner).run(state)
+            report = replace(
+                tier1,
+                dimensions=dimensions,
+                coverage=_merge_coverage(tier1.coverage, dimensions),
+                levels=levels,
+                levels_detail=levels_detail,
+                warnings=list(tier1.warnings) + extra_warnings,
+            )
+        else:
+            # Depth 2 skips the one-blob call entirely: the debate is the
+            # judge, so the foundation report is the data layer + levels
+            # with no verdict of its own.
+            report = TierReport(
+                tier=1,
+                symbol=symbol,
+                market=market,
+                coverage=_merge_coverage(Coverage.FULL, dimensions),
+                direction=Direction.UNKNOWN,
+                levels=levels,
+                levels_detail=levels_detail,
+                dimensions=dimensions,
+                warnings=extra_warnings
+                + ["tier-1 one-blob verdict skipped — the tier-2 vote is the judge"],
+            )
         state.reports[1] = report
         state.dimensions = list(dimensions)
         state.ownership = sizing_settings.ownership
@@ -385,22 +363,25 @@ def run_tiered_analysis(
             with tracker.stage("tier2_debate"):
                 final = (tier2_stage or Tier2Stage()).run(state)
             state.reports[2] = final
-        if depth >= 3:
-            with tracker.stage("tier3_risk"):
-                final = (tier3_stage or Tier3Stage()).run(state)
-            state.reports[3] = final
 
-    sizing_detail, sizing_slots = _sizing_block(
-        final, market, sizing_settings, _risk_multiplier(state)
-    )
+    sizing_detail, sizing_slots = _sizing_block(final, market, sizing_settings)
     final = replace(final, sizing=sizing_slots)
     if not final.dimensions:
-        # Tier 2/3 reports are built lean; the deepest report carries the
+        # Tier-2 reports are built lean; the deepest report carries the
         # evidence so the signal ledger and consumers see it.
         final = replace(final, dimensions=list(dimensions))
     state.reports[final.tier] = final
     if final.tier == 1:
         report = final
+
+    outlook = Outlook.from_direction(final.direction)
+    action = derive_action(outlook, sizing_settings.ownership)
+    risk_card = build_risk_card(
+        dimensions=dimensions,
+        levels=final.levels,
+        sizing=sizing_detail,
+        settings=sizing_settings,
+    )
 
     signal: Optional[SignalLogResult] = None
     if log_signal:
@@ -414,4 +395,8 @@ def run_tiered_analysis(
         final_report=final,
         sizing=sizing_detail,
         llm_usage=tracker.to_detail(),
+        outlook=outlook,
+        action=action,
+        earnings=earnings,
+        risk_card=risk_card,
     )

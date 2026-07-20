@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Offline tests: anchor-and-adjust levels wired into the tiered run (v2 slice 3).
+"""Offline tests: formula-only levels wired into the tiered run.
 
-run_tiered_analysis must replace the DSA sniper levels (LLM prose) with the
-deterministic bases + validated AI adjustments, attach the levels_detail
-audit trail, and surface level warnings on the report. Also covers the new
-swing_low_20 technicals payload key the level formulas depend on.
+Outlook redesign (2026-07-20): the AI level adjuster is retired — levels
+are formula bases everywhere. run_tiered_analysis must replace the DSA
+sniper levels (LLM prose) with the deterministic bases, attach the
+levels_detail audit trail (adjusted always None), and surface level
+warnings on the report. Also covers the swing_low_20 payload key the
+level formulas depend on.
 """
 from __future__ import annotations
 
 import unittest
 
+from src.tiered_analysis.earnings import EarningsInfo
 from src.tiered_analysis.integration import run_tiered_analysis
-from src.tiered_analysis.levels import AdjustmentProposal
 from src.tiered_analysis.providers.base import (
     Coverage,
     DimensionProvider,
@@ -69,85 +71,55 @@ def _fake_analysis_result():
     }
 
 
-class _FakeAdjuster:
-    def __init__(self, proposals=(), warnings=()):
-        self._proposals = list(proposals)
-        self._warnings = list(warnings)
-        self.calls = []
-
-    def propose(self, symbol, bases, dimensions):
-        self.calls.append((symbol, bases))
-        return self._proposals, self._warnings
-
-
-def _run(adjuster):
+def _run(providers=None):
     return run_tiered_analysis(
         "AAPL",
         market=Market.US,
-        providers=[_StubProvider(_technicals_dim())],
+        providers=providers or [_StubProvider(_technicals_dim())],
         analysis_runner=lambda symbol: _fake_analysis_result(),
         log_signal=False,
-        level_adjuster=adjuster,
+        earnings_lookup=lambda symbol, market: EarningsInfo(),
     )
 
 
 class TestLevelsWiring(unittest.TestCase):
     def test_deterministic_bases_replace_dsa_sniper_levels(self):
-        outcome = _run(_FakeAdjuster())
+        outcome = _run()
         levels = outcome.report.levels
         self.assertAlmostEqual(levels.entry, 96.0)  # not 210.0
         self.assertAlmostEqual(levels.secondary_entry, 94.0)
         self.assertAlmostEqual(levels.stop_loss, 90.0)
         self.assertAlmostEqual(levels.take_profit, 108.0)
 
-    def test_accepted_adjustment_lands_in_levels_and_detail(self):
-        adjuster = _FakeAdjuster(proposals=[
-            AdjustmentProposal(level="entry", value=94.5, reason="support",
-                               evidence=("technicals.sma_20",)),
-        ])
-        outcome = _run(adjuster)
-        self.assertAlmostEqual(outcome.report.levels.entry, 94.5)
+    def test_detail_present_with_no_adjustments_ever(self):
+        outcome = _run()
         detail = outcome.report.levels_detail["levels"]["entry"]
         self.assertAlmostEqual(detail["base"], 96.0)
-        self.assertAlmostEqual(detail["adjusted"], 94.5)
-        self.assertEqual(detail["reason"], "support")
-
-    def test_rejected_adjustment_keeps_base_and_warns(self):
-        adjuster = _FakeAdjuster(proposals=[
-            AdjustmentProposal(level="entry", value=80.0, reason="x",
-                               evidence=("technicals.sma_20",)),  # out of band
-        ])
-        outcome = _run(adjuster)
-        self.assertAlmostEqual(outcome.report.levels.entry, 96.0)
-        self.assertTrue(
-            any("rejected" in w for w in outcome.report.warnings)
-        )
-        self.assertTrue(
-            outcome.report.levels_detail["levels"]["entry"]["rejection"]
-        )
-
-    def test_adjuster_warnings_reach_the_report(self):
-        outcome = _run(_FakeAdjuster(warnings=["level adjuster unavailable: down"]))
-        self.assertTrue(
-            any("adjuster unavailable" in w for w in outcome.report.warnings)
-        )
+        self.assertIsNone(detail["adjusted"])
+        self.assertIn("support candidates", detail["formula"])
 
     def test_missing_technicals_leaves_levels_empty_with_warning(self):
         other = DimensionResult(
             dimension="macro_econ", kind=SourceKind.NUMERIC,
             coverage=Coverage.FULL, payload={"x": 1},
         )
-        outcome = run_tiered_analysis(
-            "AAPL",
-            market=Market.US,
-            providers=[_StubProvider(other)],
-            analysis_runner=lambda symbol: _fake_analysis_result(),
-            log_signal=False,
-            level_adjuster=_FakeAdjuster(),
-        )
+        outcome = _run(providers=[_StubProvider(other)])
         self.assertIsNone(outcome.report.levels.entry)
         self.assertTrue(
             any("technicals unavailable" in w for w in outcome.report.warnings)
+        )
+
+    def test_trend_gate_warning_reaches_the_report(self):
+        downtrend = DimensionResult(
+            dimension="technicals", kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL,
+            payload={"close": 89.0, "sma_20": 96.0, "sma_60": 90.0,
+                     "swing_low_20": 94.0, "atr_14": 3.0},
+        )
+        outcome = _run(providers=[_StubProvider(downtrend)])
+        self.assertIsNone(outcome.report.levels.entry)
+        self.assertTrue(
+            any("trend gate" in w for w in outcome.report.warnings)
         )
 
 

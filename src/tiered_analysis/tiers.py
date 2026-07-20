@@ -10,9 +10,11 @@ injected ``analysis_runner`` callable so this package never imports the DSA
 decision path (boundary rule, design doc §10); production wiring passes a
 thin closure over the existing pipeline, tests pass fakes.
 
-Tier 2 (bull/bear debate, v2 slice 4) and Tier 3 (risk stress test,
-v2 slice 5) run the tiered package's own LLM engines and degrade to the
-previous tier's direction on any failure.
+Tier 2 (the evidence vote) runs the tiered package's own LLM engine.
+Outlook redesign (2026-07-20): tier 3 is retired — the deterministic
+risk card replaced it — and a failed tier-2 debate no longer falls back
+to the tier-1 one-blob verdict; the run fails honestly instead of
+silently substituting the weakest judge.
 """
 from __future__ import annotations
 
@@ -43,7 +45,7 @@ class TierState:
     #: dimensions attached to the tier-1 report when unset).
     dimensions: List[DimensionResult] = field(default_factory=list)
     #: Shares of this stock the user already holds (per-run input, 0 =
-    #: none) — tier 3 cites it as plan evidence and sizing scales sells.
+    #: none) — drives the action table and the sell share count.
     ownership: int = 0
 
 
@@ -139,12 +141,14 @@ class Tier1Stage(TierStage):
 
 
 class Tier2Stage(TierStage):
-    """Bull/bear debate over the tier-1 evidence (v2 slice 4).
+    """The evidence vote over the collected dimensions (v2 slice 4).
 
     The engine is injected for tests; the default is a lazy DebateEngine
-    (the tiered package's own LLM call). Any failure — no tier-1 report,
-    no evidence, LLM down, unparseable judge — degrades to an UNAVAILABLE
-    report whose direction falls back to tier 1, never an exception.
+    (the tiered package's own LLM calls). Any failure — no foundation
+    report, no evidence, LLM down — is an UNAVAILABLE report with an
+    UNKNOWN direction and explicit warnings. There is deliberately no
+    fallback to the tier-1 one-blob verdict: substituting the weakest
+    judge when the best one fails would present a downgrade as a result.
     """
 
     tier = 2
@@ -152,31 +156,33 @@ class Tier2Stage(TierStage):
     def __init__(self, engine: Optional[Any] = None) -> None:
         self._engine = engine
 
+    def _failed(self, state: TierState, levels: SniperLevels,
+                warnings: List[str], detail: Optional[Dict[str, Any]] = None
+                ) -> TierReport:
+        return TierReport(
+            tier=self.tier,
+            symbol=state.symbol,
+            market=state.market,
+            coverage=Coverage.UNAVAILABLE,
+            direction=Direction.UNKNOWN,
+            levels=levels,
+            warnings=warnings,
+            debate_detail=detail,
+        )
+
     def run(self, state: TierState) -> TierReport:
-        tier1 = state.reports.get(1)
-        if tier1 is None:
-            return TierReport(
-                tier=self.tier,
-                symbol=state.symbol,
-                market=state.market,
-                coverage=Coverage.UNAVAILABLE,
-                direction=Direction.UNKNOWN,
-                warnings=["tier 2 requires a tier-1 report"],
+        foundation = state.reports.get(1)
+        if foundation is None:
+            return self._failed(
+                state, SniperLevels(),
+                ["tier 2 requires the data-layer foundation report"],
             )
 
-        dimensions = state.dimensions or tier1.dimensions
+        dimensions = state.dimensions or foundation.dimensions
         if not dimensions:
-            return TierReport(
-                tier=self.tier,
-                symbol=state.symbol,
-                market=state.market,
-                coverage=Coverage.UNAVAILABLE,
-                direction=tier1.direction,
-                levels=tier1.levels,
-                warnings=[
-                    "no collected evidence to debate — tier 2 skipped, "
-                    "direction falls back to tier 1"
-                ],
+            return self._failed(
+                state, foundation.levels,
+                ["no collected evidence to vote on — no outlook (re-run)"],
             )
 
         engine = self._engine
@@ -184,20 +190,14 @@ class Tier2Stage(TierStage):
             from .debate import DebateEngine
 
             engine = DebateEngine()
-        result = engine.run(state.symbol, tier1, dimensions)
+        result = engine.run(state.symbol, foundation, dimensions)
 
         if result.verdict is None:
-            return TierReport(
-                tier=self.tier,
-                symbol=state.symbol,
-                market=state.market,
-                coverage=Coverage.UNAVAILABLE,
-                direction=tier1.direction,
-                score=tier1.score,
-                levels=tier1.levels,
-                warnings=list(result.warnings)
-                + ["debate produced no verdict — direction falls back to tier 1"],
-                debate_detail=result.to_detail(),
+            return self._failed(
+                state, foundation.levels,
+                list(result.warnings)
+                + ["debate produced no verdict — no outlook (re-run)"],
+                detail=result.to_detail(),
             )
 
         verdict = result.verdict
@@ -207,99 +207,15 @@ class Tier2Stage(TierStage):
             market=state.market,
             coverage=Coverage.FULL,
             direction=verdict.direction,
-            # v3 scored debate: the verdict is computed by formula, so
-            # there is no judge confidence to report — the bullishness
-            # number lives in debate_detail.verdict.final_score.
+            # The verdict is computed by formula from the vote outcomes,
+            # so there is no judge confidence — the score lives in
+            # debate_detail.verdict.final_score.
             confidence=None,
-            score=tier1.score,
-            levels=tier1.levels,
+            score=foundation.score,
+            levels=foundation.levels,
             narrative=verdict.summary or None,
             warnings=list(result.warnings),
             debate_detail=result.to_detail(),
-        )
-
-
-class Tier3Stage(TierStage):
-    """Risk stress test of the tier-2 verdict (v2 slice 5).
-
-    Same degradation contract as Tier2Stage: no tier-2 report, no
-    evidence, or no usable risk verdict → UNAVAILABLE, direction falls
-    back to tier 2. A code-validated tightened stop is the only level a
-    risk verdict may change; the size multiplier is applied by code in
-    the sizing flow (slice 6), never here.
-    """
-
-    tier = 3
-
-    def __init__(self, engine: Optional[Any] = None) -> None:
-        self._engine = engine
-
-    def run(self, state: TierState) -> TierReport:
-        tier2 = state.reports.get(2)
-        if tier2 is None:
-            return TierReport(
-                tier=self.tier,
-                symbol=state.symbol,
-                market=state.market,
-                coverage=Coverage.UNAVAILABLE,
-                direction=Direction.UNKNOWN,
-                warnings=["tier 3 requires a tier-2 report"],
-            )
-
-        tier1 = state.reports.get(1)
-        dimensions = state.dimensions or (tier1.dimensions if tier1 else [])
-        if not dimensions:
-            return TierReport(
-                tier=self.tier,
-                symbol=state.symbol,
-                market=state.market,
-                coverage=Coverage.UNAVAILABLE,
-                direction=tier2.direction,
-                levels=tier2.levels,
-                warnings=[
-                    "no collected evidence for the risk stress test — tier 3 "
-                    "skipped, direction falls back to tier 2"
-                ],
-            )
-
-        engine = self._engine
-        if engine is None:
-            from .risk import RiskEngine
-
-            engine = RiskEngine()
-        result = engine.run(
-            state.symbol, tier2, dimensions, ownership=state.ownership
-        )
-
-        if result.verdict is None:
-            return TierReport(
-                tier=self.tier,
-                symbol=state.symbol,
-                market=state.market,
-                coverage=Coverage.UNAVAILABLE,
-                direction=tier2.direction,
-                score=tier2.score,
-                levels=tier2.levels,
-                warnings=list(result.warnings)
-                + ["risk stress produced no verdict — direction falls back to tier 2"],
-                risk_detail=result.to_detail(),
-            )
-
-        # The risk vote never re-judges the direction and never touches
-        # the levels: the stance is tier 2's own, and the multiplier is
-        # applied by code in the sizing block.
-        verdict = result.verdict
-        return TierReport(
-            tier=self.tier,
-            symbol=state.symbol,
-            market=state.market,
-            coverage=Coverage.FULL,
-            direction=verdict.stance,
-            score=tier2.score,
-            levels=tier2.levels,
-            narrative=verdict.summary or None,
-            warnings=list(result.warnings),
-            risk_detail=result.to_detail(),
         )
 
 
@@ -310,12 +226,10 @@ class TieredPipeline:
         self,
         tier1: Optional[Tier1Stage] = None,
         tier2: Optional[Tier2Stage] = None,
-        tier3: Optional[Tier3Stage] = None,
     ) -> None:
         self._stages: List[TierStage] = [
             tier1 or Tier1Stage(),
             tier2 or Tier2Stage(),
-            tier3 or Tier3Stage(),
         ]
 
     def run(self, symbol: str, market: Market, up_to_tier: int = 1) -> TierState:

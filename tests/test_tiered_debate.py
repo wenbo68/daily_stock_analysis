@@ -1036,13 +1036,15 @@ class TestTier2Stage(unittest.TestCase):
         self.assertIsNotNone(report.debate_detail)
         self.assertEqual(report.debate_detail["format"], 9)
 
-    def test_no_verdict_falls_back_to_tier1_direction(self):
+    def test_no_verdict_is_unknown_never_tier1_fallback(self):
+        # Outlook redesign: a failed vote fails honestly — no silently
+        # substituting the one-blob judge's direction.
         engine = _FakeEngine(DebateResult(warnings=["judge exploded"]))
         state = self._state(_tier1(Direction.BUY), dimensions=[_technicals()])
         report = Tier2Stage(engine=engine).run(state)
         self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
-        self.assertEqual(report.direction, Direction.BUY)
-        self.assertTrue(any("falls back to tier 1" in w for w in report.warnings))
+        self.assertEqual(report.direction, Direction.UNKNOWN)
+        self.assertTrue(any("re-run" in w for w in report.warnings))
 
     def test_missing_tier1_report_is_unavailable(self):
         report = Tier2Stage(engine=_FakeEngine(None)).run(self._state())
@@ -1054,7 +1056,7 @@ class TestTier2Stage(unittest.TestCase):
         state = self._state(_tier1(Direction.BUY))  # no dimensions anywhere
         report = Tier2Stage(engine=engine).run(state)
         self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
-        self.assertEqual(report.direction, Direction.BUY)
+        self.assertEqual(report.direction, Direction.UNKNOWN)
         self.assertEqual(engine.calls, [])
 
     def test_dimensions_fall_back_to_tier1_report(self):

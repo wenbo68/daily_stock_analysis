@@ -46,8 +46,9 @@ class SizingOverride(BaseModel):
 
 class TieredAnalyzeRequest(BaseModel):
     stock_code: str
-    #: 1 = tier 1 only (v1 behavior), 2 = + debate, 3 = + risk stress.
-    depth: int = Field(default=1, ge=1, le=3)
+    #: 1 = the one-blob judge, 2 = the evidence vote. Tier 3 is retired
+    #: (outlook redesign) — depth 3 is a validation error, not a clamp.
+    depth: int = Field(default=1, ge=1, le=2)
     sizing: Optional[SizingOverride] = None
 
     @field_validator("stock_code")
@@ -142,14 +143,22 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
         "final": {
             "tier": final.tier,
             "direction": final.direction.value,
+            "outlook": outcome.outlook.value,
+            "action": outcome.action.value,
             "coverage": final.coverage.value,
             "confidence": final.confidence,
             "levels": _serialize_levels(final.levels),
         },
         "tier2": _serialize_tier_section(state_reports.get(2)),
-        "tier3": _serialize_tier_section(state_reports.get(3)),
         "sizing": outcome.sizing,
         "llm_usage": outcome.llm_usage,
+        # Outlook redesign (additive): the impersonal judgment, the
+        # personal action, the warning-only earnings date, and the
+        # display-only 13-entry risk card.
+        "outlook": outcome.outlook.value,
+        "action": outcome.action.value,
+        "earnings": outcome.earnings.to_detail() if outcome.earnings else None,
+        "risk_card": outcome.risk_card,
     }
 
 

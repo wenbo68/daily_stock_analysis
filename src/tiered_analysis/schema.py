@@ -32,6 +32,62 @@ class Direction(str, Enum):
             return cls.UNKNOWN
 
 
+class Outlook(str, Enum):
+    """The impersonal judgment about the stock (outlook redesign,
+    2026-07-20): what the evidence says, with no knowledge of the user's
+    position. Renamed from the old buy/hold/sell verdict — an assessment
+    can't literally mean "you should sell" when it doesn't know whether
+    you own anything."""
+
+    BULLISH = "bullish"
+    NEUTRAL = "neutral"
+    BEARISH = "bearish"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def from_direction(cls, direction: Direction) -> "Outlook":
+        return {
+            Direction.BUY: cls.BULLISH,
+            Direction.HOLD: cls.NEUTRAL,
+            Direction.SELL: cls.BEARISH,
+        }.get(direction, cls.UNKNOWN)
+
+
+class Action(str, Enum):
+    """The personal instruction, derived by code from outlook × ownership.
+    The outlook decides WHETHER the stock deserves money; the action is
+    what that means for THIS user's shares."""
+
+    ENTER = "enter"  # arm the plan: entries, stop, target, shares
+    KEEP_HOLDING = "keep_holding"  # no new money; existing exits stand
+    NO_TRADE = "no_trade"  # nothing to do
+    SELL_ALL = "sell_all"  # exit the full holding now
+    UNKNOWN = "unknown"
+
+
+def derive_action(outlook: Outlook, ownership: int) -> Action:
+    """The outlook × ownership table (docs/tiered-analysis-formulas.md):
+
+    | outlook  | ownership = 0 | ownership > 0 |
+    |----------|---------------|----------------|
+    | bullish  | enter         | keep_holding   |
+    | neutral  | no_trade      | keep_holding   |
+    | bearish  | no_trade      | sell_all       |
+
+    Bullish-while-holding is deliberately NOT "buy more": sizing is not
+    yet combined-position aware, so adds are deferred (plan decision,
+    2026-07-20).
+    """
+    holding = ownership > 0
+    if outlook is Outlook.BULLISH:
+        return Action.KEEP_HOLDING if holding else Action.ENTER
+    if outlook is Outlook.NEUTRAL:
+        return Action.KEEP_HOLDING if holding else Action.NO_TRADE
+    if outlook is Outlook.BEARISH:
+        return Action.SELL_ALL if holding else Action.NO_TRADE
+    return Action.UNKNOWN
+
+
 def coerce_price(value: object) -> Optional[float]:
     """Best-effort float from DSA's str|int|float price fields.
 

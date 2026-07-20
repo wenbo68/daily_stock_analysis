@@ -86,6 +86,7 @@ def _result_digest(row: Any) -> Dict[str, Any]:
     degrades to None rather than breaking the list."""
     digest: Dict[str, Any] = {
         "direction": None,
+        "outlook": None,
         "shares": None,
         "tier": None,
         "capital": None,
@@ -102,6 +103,11 @@ def _result_digest(row: Any) -> Dict[str, Any]:
     final = result.get("final")
     direction = final.get("direction") if isinstance(final, dict) else None
     digest["direction"] = direction or result.get("direction")
+    # Outlook redesign: new runs store it; old runs map buy/hold/sell.
+    legacy_outlook = {"buy": "bullish", "hold": "neutral", "sell": "bearish"}
+    digest["outlook"] = result.get("outlook") or legacy_outlook.get(
+        digest["direction"]
+    )
     sizing = result.get("sizing")
     if isinstance(sizing, dict):
         shares = sizing.get("shares")

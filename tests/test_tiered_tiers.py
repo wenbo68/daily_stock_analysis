@@ -22,7 +22,6 @@ from src.tiered_analysis.schema import (
 from src.tiered_analysis.tiers import (
     Tier1Stage,
     Tier2Stage,
-    Tier3Stage,
     TieredPipeline,
     TierState,
 )
@@ -199,22 +198,25 @@ class TestTier1Stage(unittest.TestCase):
         self.assertTrue(any("LLM quota exhausted" in w for w in report.warnings))
 
 
-class TestTier23Stubs(unittest.TestCase):
-    def test_tier2_without_tier1_report_is_unavailable(self):
-        # Tiers 2/3 are real since v2 slices 4/5; without their input
-        # report they degrade explicitly instead of pretending.
+class TestTier2Failures(unittest.TestCase):
+    def test_tier2_without_foundation_report_is_unavailable(self):
         report = Tier2Stage().run(TierState(symbol="AAPL", market=Market.US))
         self.assertEqual(report.tier, 2)
         self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
         self.assertEqual(report.direction, Direction.UNKNOWN)
-        self.assertTrue(any("tier-1" in w for w in report.warnings))
+        self.assertTrue(any("foundation" in w for w in report.warnings))
 
-    def test_tier3_without_tier2_report_is_unavailable(self):
-        report = Tier3Stage().run(TierState(symbol="AAPL", market=Market.US))
-        self.assertEqual(report.tier, 3)
+    def test_tier2_failure_never_falls_back_to_tier1_direction(self):
+        # Outlook redesign: a failed vote is UNKNOWN, never the blob's call.
+        state = TierState(symbol="AAPL", market=Market.US)
+        state.reports[1] = TierReport(
+            tier=1, symbol="AAPL", market=Market.US,
+            coverage=Coverage.FULL, direction=Direction.BUY,
+        )
+        report = Tier2Stage().run(state)  # no dimensions -> failure
         self.assertEqual(report.coverage, Coverage.UNAVAILABLE)
         self.assertEqual(report.direction, Direction.UNKNOWN)
-        self.assertTrue(any("tier-2" in w for w in report.warnings))
+        self.assertTrue(any("re-run" in w for w in report.warnings))
 
 
 class TestTieredPipeline(unittest.TestCase):
@@ -224,11 +226,10 @@ class TestTieredPipeline(unittest.TestCase):
         )
 
     def test_runs_stages_up_to_requested_tier(self):
-        state = self._pipeline().run("AAPL", market=Market.US, up_to_tier=3)
-        self.assertEqual(sorted(state.reports), [1, 2, 3])
+        state = self._pipeline().run("AAPL", market=Market.US, up_to_tier=2)
+        self.assertEqual(sorted(state.reports), [1, 2])
         self.assertEqual(state.reports[1].coverage, Coverage.FULL)
         self.assertEqual(state.reports[2].coverage, Coverage.UNAVAILABLE)
-        self.assertEqual(state.reports[3].coverage, Coverage.UNAVAILABLE)
 
     def test_default_runs_tier1_only(self):
         state = self._pipeline().run("AAPL", market=Market.US)
@@ -236,7 +237,7 @@ class TestTieredPipeline(unittest.TestCase):
 
     def test_rejects_unsupported_tier(self):
         with self.assertRaises(ValueError):
-            self._pipeline().run("AAPL", market=Market.US, up_to_tier=4)
+            self._pipeline().run("AAPL", market=Market.US, up_to_tier=3)
         with self.assertRaises(ValueError):
             self._pipeline().run("AAPL", market=Market.US, up_to_tier=0)
 

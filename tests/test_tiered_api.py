@@ -25,7 +25,14 @@ from src.tiered_analysis.providers.base import (
     Market,
     SourceKind,
 )
-from src.tiered_analysis.schema import Direction, SniperLevels, TierReport
+from src.tiered_analysis.earnings import EarningsInfo
+from src.tiered_analysis.schema import (
+    Action,
+    Direction,
+    Outlook,
+    SniperLevels,
+    TierReport,
+)
 from src.tiered_analysis.signal_log import SignalLogResult
 from src.tiered_analysis.tiers import TierState
 
@@ -94,7 +101,7 @@ def _outcome(symbol="AAPL"):
 
 
 def _deep_outcome(symbol="AAPL"):
-    """Depth-3 outcome with debate/risk sections and a sizing block."""
+    """Depth-2 outcome with a debate section and a sizing block."""
     base = _outcome(symbol)
     tier2 = TierReport(
         tier=2, symbol=symbol, market=Market.US,
@@ -103,17 +110,11 @@ def _deep_outcome(symbol="AAPL"):
         narrative="bull case holds",
         debate_detail={"verdict": {"direction": "buy", "confidence": 0.7}},
     )
-    tier3 = TierReport(
-        tier=3, symbol=symbol, market=Market.US,
-        coverage=Coverage.FULL, direction=Direction.BUY,
-        levels=base.report.levels, narrative="half size",
-        risk_detail={"verdict": {"stance": "buy", "size_multiplier": 0.5}},
-    )
     state = TierState(
         symbol=symbol, market=Market.US,
-        reports={1: base.report, 2: tier2, 3: tier3},
+        reports={1: base.report, 2: tier2},
     )
-    sizing = {"enabled": True, "shares": 83, "risk_multiplier": 0.5,
+    sizing = {"enabled": True, "shares": 83,
               "reason_code": None, "refusal_reason": None, "notes": []}
     llm_usage = {"stages": {"tier2_debate": {"calls": 3, "prompt_tokens": 900,
                                              "completion_tokens": 300}},
@@ -122,7 +123,10 @@ def _deep_outcome(symbol="AAPL"):
                  "scope": "tiered-package LLM calls only"}
     return TieredRunOutcome(
         report=base.report, state=state, signal=base.signal,
-        depth=3, final_report=tier3, sizing=sizing, llm_usage=llm_usage,
+        depth=2, final_report=tier2, sizing=sizing, llm_usage=llm_usage,
+        outlook=Outlook.BULLISH, action=Action.ENTER,
+        earnings=EarningsInfo(next_date="2026-07-24", days_until=4),
+        risk_card=[{"id": "volatility", "status": "ok", "values": {}}],
     )
 
 
@@ -216,7 +220,9 @@ class TestTieredDepthAndSizingApi:
     """v2 slice 6: depth parameter, sizing override, new response sections."""
 
     def test_depth_out_of_range_rejected(self, client):
-        for depth in (0, 4):
+        # Tier 3 is retired: depth 3 is an error, not a clamp (user
+        # decision, 2026-07-20).
+        for depth in (0, 3, 4):
             response = client.post(
                 "/tiered/analyze", json={"stock_code": "AAPL", "depth": depth})
             assert response.status_code == 422
@@ -248,7 +254,7 @@ class TestTieredDepthAndSizingApi:
         with patch.object(tiered, "_run_analysis", fake_run):
             accepted = client.post("/tiered/analyze", json={
                 "stock_code": "AAPL",
-                "depth": 3,
+                "depth": 2,
                 "sizing": {"ownership": 300},
             })
             assert accepted.status_code == 202
@@ -268,14 +274,14 @@ class TestTieredDepthAndSizingApi:
         with patch.object(tiered, "_run_analysis", fake_run):
             accepted = client.post("/tiered/analyze", json={
                 "stock_code": "AAPL",
-                "depth": 3,
+                "depth": 2,
                 "sizing": {"capital": 50000, "risk_fraction": 0.02},
             })
             assert accepted.status_code == 202
-            assert accepted.json()["depth"] == 3
+            assert accepted.json()["depth"] == 2
             _poll_until_done(client, accepted.json()["task_id"])
 
-        assert captured["depth"] == 3
+        assert captured["depth"] == 2
         assert captured["sizing_overrides"] == {"capital": 50000.0,
                                                 "risk_fraction": 0.02}
 
@@ -283,21 +289,28 @@ class TestTieredDepthAndSizingApi:
         with patch.object(tiered, "_run_analysis",
                           lambda code, **kwargs: _deep_outcome(code)):
             accepted = client.post("/tiered/analyze",
-                                   json={"stock_code": "AAPL", "depth": 3})
+                                   json={"stock_code": "AAPL", "depth": 2})
             body = _poll_until_done(client, accepted.json()["task_id"])
 
         result = body["result"]
-        assert result["depth"] == 3
+        assert result["depth"] == 2
         # tier-1 fields keep their v1 shape for the existing UI
         assert result["direction"] == "hold"
         assert result["tier"] == 1
         # the deepest tier is what the user should act on
-        assert result["final"]["tier"] == 3
+        assert result["final"]["tier"] == 2
         assert result["final"]["direction"] == "buy"
+        assert result["final"]["outlook"] == "bullish"
+        assert result["final"]["action"] == "enter"
         assert result["tier2"]["debate_detail"]["verdict"]["direction"] == "buy"
-        assert result["tier3"]["risk_detail"]["verdict"]["size_multiplier"] == 0.5
         assert result["sizing"]["shares"] == 83
         assert result["llm_usage"]["total"]["calls"] == 3
+        # outlook redesign additions
+        assert result["outlook"] == "bullish"
+        assert result["action"] == "enter"
+        assert result["earnings"]["next_date"] == "2026-07-24"
+        assert result["earnings"]["is_near"] is True
+        assert result["risk_card"][0]["id"] == "volatility"
 
     def test_v1_shaped_outcome_serializes_with_defaults(self, client):
         # An outcome without the new fields (depth-1 run) must still
@@ -312,6 +325,9 @@ class TestTieredDepthAndSizingApi:
         assert result["depth"] == 1
         assert result["final"]["tier"] == 1
         assert result["tier2"] is None
-        assert result["tier3"] is None
         assert result["sizing"] is None
         assert result["llm_usage"] is None
+        assert result["outlook"] == "unknown"
+        assert result["action"] == "unknown"
+        assert result["earnings"] is None
+        assert result["risk_card"] is None

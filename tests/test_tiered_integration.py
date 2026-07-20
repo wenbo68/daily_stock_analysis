@@ -15,11 +15,14 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from src.tiered_analysis.earnings import EarningsInfo
 from src.tiered_analysis.integration import (
     dsa_bars_loader,
     dsa_analysis_runner,
     run_tiered_analysis,
 )
+from src.tiered_analysis.risk_card import RISK_CARD_IDS
+from src.tiered_analysis.schema import Action, Outlook
 from src.tiered_analysis.providers.base import (
     Coverage,
     DimensionProvider,
@@ -153,6 +156,11 @@ def _fake_analysis_result():
     }
 
 
+def _no_earnings(symbol, market):
+    """Offline stand-in for the yfinance earnings lookup."""
+    return EarningsInfo()
+
+
 class TestRunTieredAnalysis(unittest.TestCase):
     def _run(self, providers=None, log_signal=True, logger=None, runner=None):
         logged = []
@@ -170,6 +178,7 @@ class TestRunTieredAnalysis(unittest.TestCase):
             signal_logger=logger or default_logger,
             log_signal=log_signal,
             trace_id="t-1",
+            earnings_lookup=_no_earnings,
         )
         return outcome, logged
 
@@ -218,13 +227,6 @@ class TestRunTieredAnalysis(unittest.TestCase):
         self.assertTrue(outcome.report.dimensions)
 
 
-class _FakeAdjuster:
-    """No-LLM stand-in for LevelAdjuster."""
-
-    def propose(self, symbol, bases, dimensions):
-        return [], []
-
-
 class _FakeDebateEngine:
     def __init__(self, verdict=None, warnings=()):
         self._verdict = verdict
@@ -238,24 +240,13 @@ class _FakeDebateEngine:
         return DebateResult(verdict=self._verdict, warnings=self._warnings)
 
 
-class _FakeRiskEngine:
-    def __init__(self, verdict=None, warnings=()):
-        self._verdict = verdict
-        self._warnings = list(warnings)
-        self.calls = []
-
-    def run(self, symbol, tier2, dimensions, ownership=0):
-        from src.tiered_analysis.risk import RiskResult
-
-        self.calls.append({"symbol": symbol, "ownership": ownership})
-        return RiskResult(verdict=self._verdict, warnings=self._warnings)
-
-
 def _technicals_dim_with_levels():
     """Payload the base-level formulas can compute from.
 
-    Bases: entry=96 (max(sma_20, swing_low) capped at close), backup=94,
-    stop=90 (entry − 2×ATR), target=108 (entry + 2×(entry−stop)).
+    Bases: entry=96 (nearest support capped at close), backup=94,
+    stop=90 (entry − 2×ATR), target=108 (entry + 2×(entry−stop); no
+    swing-high keys → no overhead resistance to cap it). Trend gate
+    passes: close 100 > sma_60 90.
     """
     return DimensionResult(
         dimension="technicals",
@@ -266,86 +257,86 @@ def _technicals_dim_with_levels():
     )
 
 
-def _buy_verdicts():
+def _debate_verdict(direction=Direction.BUY, score=7.4):
     from src.tiered_analysis.debate import DebateVerdict
-    from src.tiered_analysis.risk import RiskVerdict
 
-    debate = DebateVerdict(direction=Direction.BUY, final_score=7.4,
-                           summary="bull case holds up", initial_score=7.5,
-                           pools={})
-    risk = RiskVerdict(stance=Direction.BUY, size_multiplier=0.5,
-                       summary="half size", confirmed_risks=2, total_risks=3)
-    return debate, risk
+    return DebateVerdict(direction=direction, final_score=score,
+                         summary="the vote settled it", initial_score=score,
+                         pools={})
 
 
 class TestDepthRoutingAndSizing(unittest.TestCase):
-    """v2 slice 6: depth 1|2|3 routing, sizing, and cost visibility."""
+    """Outlook redesign: depth 1|2 routing, outlook/action, sizing."""
 
     def _run(self, depth=1, sizing_settings=None, sizing_overrides=None,
-             debate_verdict=None, risk_verdict=None):
+             debate_verdict=None, analysis_result=None):
         from src.tiered_analysis.settings import SizingSettings
-        from src.tiered_analysis.tiers import Tier2Stage, Tier3Stage
+        from src.tiered_analysis.tiers import Tier2Stage
 
         logged = []
+        runner_calls = []
 
         def logger(report, trace_id=None):
             logged.append(report)
             return "log-result"
 
+        def runner(symbol):
+            runner_calls.append(symbol)
+            return analysis_result or _fake_analysis_result()
+
         debate_engine = _FakeDebateEngine(verdict=debate_verdict)
-        risk_engine = _FakeRiskEngine(verdict=risk_verdict)
         outcome = run_tiered_analysis(
             "AAPL",
             market=Market.US,
             providers=[_StubProvider("technicals", _technicals_dim_with_levels())],
-            analysis_runner=lambda symbol: _fake_analysis_result(),
+            analysis_runner=runner,
             signal_logger=logger,
-            level_adjuster=_FakeAdjuster(),
             depth=depth,
             sizing_settings=sizing_settings or SizingSettings(),
             sizing_overrides=sizing_overrides,
             tier2_stage=Tier2Stage(engine=debate_engine),
-            tier3_stage=Tier3Stage(engine=risk_engine),
+            earnings_lookup=_no_earnings,
         )
-        return outcome, logged, debate_engine, risk_engine
+        return outcome, logged, debate_engine, runner_calls
 
     def test_default_depth_is_tier1_only(self):
-        outcome, logged, debate_engine, risk_engine = self._run()
+        outcome, logged, debate_engine, runner_calls = self._run()
         self.assertEqual(outcome.depth, 1)
         self.assertEqual(sorted(outcome.state.reports), [1])
         self.assertIs(outcome.final_report, outcome.report)
+        self.assertEqual(runner_calls, ["AAPL"])  # the blob IS the judge
         self.assertEqual(debate_engine.calls, [])
-        self.assertEqual(risk_engine.calls, [])
         self.assertEqual(logged[0].tier, 1)
+        self.assertEqual(outcome.outlook, Outlook.BULLISH)
+        self.assertEqual(outcome.action, Action.ENTER)
 
-    def test_depth_2_runs_debate_and_logs_tier2_direction(self):
-        debate, _ = _buy_verdicts()
-        outcome, logged, debate_engine, risk_engine = self._run(
-            depth=2, debate_verdict=debate)
+    def test_depth_2_skips_the_blob_and_runs_the_vote(self):
+        outcome, logged, debate_engine, runner_calls = self._run(
+            depth=2, debate_verdict=_debate_verdict())
+        # The one-blob tier-1 call must NOT run at depth 2.
+        self.assertEqual(runner_calls, [])
         self.assertEqual(sorted(outcome.state.reports), [1, 2])
         self.assertEqual(outcome.final_report.tier, 2)
         self.assertEqual(outcome.final_report.direction, Direction.BUY)
         self.assertEqual(debate_engine.calls, ["AAPL"])
-        self.assertEqual(risk_engine.calls, [])
+        # the foundation report says why it has no verdict of its own
+        self.assertTrue(any("skipped" in w for w in outcome.report.warnings))
         # the ledger gets the deepest tier, with the evidence attached
         self.assertEqual(logged[0].tier, 2)
         self.assertTrue(logged[0].dimensions)
 
-    def test_depth_3_runs_both_stages(self):
-        debate, risk = _buy_verdicts()
-        outcome, logged, _, risk_engine = self._run(
-            depth=3, debate_verdict=debate, risk_verdict=risk)
-        self.assertEqual(sorted(outcome.state.reports), [1, 2, 3])
-        self.assertEqual(outcome.final_report.tier, 3)
-        self.assertEqual(risk_engine.calls,
-                         [{"symbol": "AAPL", "ownership": 0}])
-        self.assertEqual(logged[0].tier, 3)
+    def test_depth_2_failure_has_no_tier1_fallback(self):
+        outcome, _, _, _ = self._run(depth=2, debate_verdict=None)
+        self.assertEqual(outcome.final_report.direction, Direction.UNKNOWN)
+        self.assertEqual(outcome.outlook, Outlook.UNKNOWN)
+        self.assertEqual(outcome.action, Action.UNKNOWN)
+        self.assertTrue(any("re-run" in w
+                            for w in outcome.final_report.warnings))
 
     def test_invalid_depth_rejected(self):
-        with self.assertRaises(ValueError):
-            self._run(depth=4)
-        with self.assertRaises(ValueError):
-            self._run(depth=0)
+        for depth in (0, 3, 4):
+            with self.assertRaises(ValueError):
+                self._run(depth=depth)
 
     def test_sizing_off_by_default_with_explicit_refusal(self):
         outcome, _, _, _ = self._run()
@@ -366,115 +357,58 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
         # the sized position reaches the signal ledger
         self.assertEqual(logged[0].sizing.shares, 166.0)
 
-    def test_tier3_multiplier_is_applied_by_code(self):
-        from src.tiered_analysis.settings import SizingSettings
-
-        debate, risk = _buy_verdicts()  # multiplier 0.5
-        outcome, _, _, _ = self._run(
-            depth=3, debate_verdict=debate, risk_verdict=risk,
-            sizing_settings=SizingSettings(capital=100000.0,
-                                           risk_fraction=0.01))
-        self.assertEqual(outcome.sizing["shares_before_multiplier"], 166)
-        self.assertEqual(outcome.sizing["shares"], 83)
-        self.assertEqual(outcome.sizing["risk_multiplier"], 0.5)
-        self.assertEqual(outcome.final_report.sizing.shares, 83.0)
-
-    def test_multiplier_zero_keeps_explicit_zero_position(self):
-        from dataclasses import replace as dc_replace
-
-        from src.tiered_analysis.settings import SizingSettings
-
-        debate, risk = _buy_verdicts()
-        risk = dc_replace(risk, size_multiplier=0.0)
-        outcome, _, _, _ = self._run(
-            depth=3, debate_verdict=debate, risk_verdict=risk,
-            sizing_settings=SizingSettings(capital=100000.0,
-                                           risk_fraction=0.01))
-        self.assertEqual(outcome.sizing["shares"], 0)
-        self.assertTrue(any("do not open" in note
-                            for note in outcome.sizing["notes"]))
-        # 0 shares is a statement, not an omission — slots stay filled
-        self.assertEqual(outcome.final_report.sizing.shares, 0.0)
-
-    def test_hold_direction_refuses_sizing(self):
-        from src.tiered_analysis.settings import SizingSettings
-
+    def test_hold_direction_refuses_sizing_and_maps_to_no_trade(self):
         result = _fake_analysis_result()
         result["decision_type"] = "hold"
-        outcome = run_tiered_analysis(
-            "AAPL",
-            market=Market.US,
-            providers=[_StubProvider("technicals",
-                                     _technicals_dim_with_levels())],
-            analysis_runner=lambda symbol: result,
-            log_signal=False,
-            level_adjuster=_FakeAdjuster(),
-            sizing_settings=SizingSettings(capital=100000.0,
-                                           risk_fraction=0.01),
-        )
+        outcome, _, _, _ = self._run(analysis_result=result)
         self.assertEqual(outcome.sizing["reason_code"], "not_a_buy")
-        self.assertTrue(outcome.final_report.sizing.is_empty)
+        self.assertEqual(outcome.outlook, Outlook.NEUTRAL)
+        self.assertEqual(outcome.action, Action.NO_TRADE)
 
     def test_per_run_overrides_enable_sizing(self):
         outcome, _, _, _ = self._run(
             sizing_overrides={"capital": 100000.0, "risk_fraction": 0.01})
         self.assertEqual(outcome.sizing["shares"], 166)
 
-    def test_ownership_reaches_the_risk_engine(self):
-        debate, risk = _buy_verdicts()
-        outcome, _, _, risk_engine = self._run(
-            depth=3, debate_verdict=debate, risk_verdict=risk,
-            sizing_overrides={"ownership": 300})
-        self.assertEqual(risk_engine.calls,
-                         [{"symbol": "AAPL", "ownership": 300}])
+    def test_bullish_while_holding_is_keep_holding(self):
+        outcome, _, _, _ = self._run(sizing_overrides={"ownership": 300})
+        self.assertEqual(outcome.outlook, Outlook.BULLISH)
+        self.assertEqual(outcome.action, Action.KEEP_HOLDING)
         self.assertEqual(outcome.sizing["ownership"], 300)
 
-    def test_sell_verdict_with_ownership_prints_an_exit_size(self):
-        from dataclasses import replace as dc_replace
-
-        from src.tiered_analysis.debate import DebateVerdict
-
-        debate = DebateVerdict(direction=Direction.SELL, final_score=2.5,
-                               summary="the bear case wins",
-                               initial_score=3.0, pools={})
-        _, risk = _buy_verdicts()
-        risk = dc_replace(risk, stance=Direction.SELL)  # multiplier 0.5
+    def test_bearish_with_ownership_sells_the_full_holding(self):
         outcome, _, _, _ = self._run(
-            depth=3, debate_verdict=debate, risk_verdict=risk,
+            depth=2, debate_verdict=_debate_verdict(Direction.SELL, 2.5),
             sizing_overrides={"ownership": 300})
-        # Sell sizing needs no capital/risk settings — the count IS the
-        # holding; buy sizing still refuses with not_a_buy.
-        self.assertEqual(outcome.sizing["reason_code"], "not_a_buy")
-        self.assertEqual(outcome.sizing["sell_shares_before_multiplier"], 300)
-        self.assertEqual(outcome.sizing["sell_shares"], 150)
-        self.assertTrue(any("scaled the exit" in note
-                            for note in outcome.sizing["notes"]))
-
-    def test_sell_without_tier3_exits_the_full_holding(self):
-        from src.tiered_analysis.debate import DebateVerdict
-
-        debate = DebateVerdict(direction=Direction.SELL, final_score=2.5,
-                               summary="the bear case wins",
-                               initial_score=3.0, pools={})
-        outcome, _, _, _ = self._run(
-            depth=2, debate_verdict=debate,
-            sizing_overrides={"ownership": 300})
+        self.assertEqual(outcome.outlook, Outlook.BEARISH)
+        self.assertEqual(outcome.action, Action.SELL_ALL)
         self.assertEqual(outcome.sizing["sell_shares"], 300)
-        self.assertIsNone(outcome.sizing["sell_shares_before_multiplier"])
+        # buy sizing still refuses with not_a_buy... unless settings off
+        self.assertIn(outcome.sizing["reason_code"], ("not_a_buy", "sizing_off"))
 
-    def test_no_ownership_means_no_sell_size(self):
-        from src.tiered_analysis.debate import DebateVerdict
-
-        debate = DebateVerdict(direction=Direction.SELL, final_score=2.5,
-                               summary="the bear case wins",
-                               initial_score=3.0, pools={})
-        outcome, _, _, _ = self._run(depth=2, debate_verdict=debate)
+    def test_bearish_without_ownership_is_no_trade(self):
+        outcome, _, _, _ = self._run(
+            depth=2, debate_verdict=_debate_verdict(Direction.SELL, 2.5))
+        self.assertEqual(outcome.action, Action.NO_TRADE)
         self.assertEqual(outcome.sizing["ownership"], 0)
         self.assertIsNone(outcome.sizing["sell_shares"])
 
+    def test_risk_card_always_present_with_all_13_entries(self):
+        outcome, _, _, _ = self._run(
+            sizing_overrides={"capital": 100000.0, "risk_fraction": 0.01})
+        self.assertEqual([e["id"] for e in outcome.risk_card],
+                         list(RISK_CARD_IDS))
+        by_id = {e["id"]: e for e in outcome.risk_card}
+        self.assertEqual(by_id["concentration"]["status"], "ok")
+        self.assertEqual(by_id["reward_risk"]["values"]["ratio"], 2.0)
+
+    def test_earnings_detail_rides_along(self):
+        outcome, _, _, _ = self._run()
+        self.assertIsNotNone(outcome.earnings)
+        self.assertIsNone(outcome.earnings.next_date)
+
     def test_llm_usage_always_present_with_scope_note(self):
-        outcome, _, _, _ = self._run(depth=3, debate_verdict=None,
-                                     risk_verdict=None)
+        outcome, _, _, _ = self._run(depth=2, debate_verdict=None)
         self.assertEqual(outcome.llm_usage["total"]["calls"], 0)  # all fakes
         self.assertIn("tier-1", outcome.llm_usage["scope"])
 

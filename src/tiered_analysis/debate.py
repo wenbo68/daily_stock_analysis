@@ -285,8 +285,7 @@ def _strip_citation_markers(text: str, links: Sequence[Any]) -> str:
 # ---------------------------------------------------------------------------
 
 _CONTEXT_TEMPLATE = """Stock under debate: {symbol}
-Tier-1 verdict so far: direction={direction}, score={score}, confidence={confidence}
-Tier-1 levels: entry={entry}, backup={secondary_entry}, stop={stop_loss}, target={take_profit}
+Formula-computed plan levels: entry={entry}, backup={secondary_entry}, stop={stop_loss}, target={take_profit}
 
 Collected evidence (the ONLY facts you may use — no outside knowledge):
 {evidence_block}
@@ -525,9 +524,6 @@ class DebateEngine:
     ) -> DebateResult:
         context = _CONTEXT_TEMPLATE.format(
             symbol=symbol,
-            direction=tier1.direction.value,
-            score=tier1.score,
-            confidence=tier1.confidence,
             entry=tier1.levels.entry,
             secondary_entry=tier1.levels.secondary_entry,
             stop_loss=tier1.levels.stop_loss,
