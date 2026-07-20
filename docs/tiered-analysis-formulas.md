@@ -77,84 +77,122 @@ A weighted composite of the indicators above (trend position, momentum, RSI zone
 extension) produced by deterministic rules in `technicals.py` — higher = technically
 stronger. It is a ranking aid, not a probability.
 
-### Swing low (20-day)
+### Swing lows and highs (20- and 60-day), 52-week range
 
 ```
-swing_low = min(low of each of the last 20 trading days)
+swing_low(n)  = min(low  of each of the last n trading days)    n = 20, 60
+swing_high(n) = max(high of each of the last n trading days)    n = 20, 60
+high_52w / low_52w = the same over the last 250 trading days (~1 year)
 ```
 
-The lowest price actually traded in the last month — a floor the market has already
-defended once. Added to the technicals payload in v2 slice 3 as a support anchor.
+Swing lows are floors the market has already defended; swing highs are ceilings
+where sellers appeared before. The outlook redesign (2026-07) extended the price
+history to ~250 bars so the 52-week range and the 60-day swings exist.
 
-## 2. Price levels — deterministic bases (v2 slice 3, `levels.py`)
-
-Design rule (anchor-and-adjust): **formulas produce a base for every level; the AI
-may only nudge a base within a bounded band, with cited evidence; code re-validates.**
-
-### Ideal entry (base)
+### Average daily volume (20-day) and worst-5% day
 
 ```
-ideal_entry = min(close, max(SMA(20), swing_low))
+avg_volume_20 = mean(volume of the last 20 trading days)        (None if no volume data)
+worst_day_5pct = the 5th-percentile daily return of the last ~250 bars
 ```
 
-"Buy the pullback to the nearest real support." The higher of the two support
-anchors (20-day average, 20-day swing low) is the nearest floor; the `min(close, …)`
-cap makes sure we never suggest paying more than the current price.
+Both feed the display-only risk card (§7) only — they never move levels or sizing.
 
-### Backup entry (base)
+## 2. Price levels — formula-only (outlook redesign, `levels.py`)
+
+Owner decision 2026-07-20: **levels are pure formulas at every depth. The AI level
+adjuster is deleted** — no nudging, no bands. What the formulas print is the plan.
+
+### Trend gate
 
 ```
-backup_entry = highest support anchor strictly below ideal_entry
-               (candidates: SMA(60), swing_low)
+if close ≤ SMA(60):  no buy plan at all (warning explains)
+if SMA(60) missing:  gate skipped, warning notes it
+```
+
+Pullback-buying only makes sense in an uptrend. Below the one-quarter average the
+"support" anchors are falling with the price, so the whole plan is withheld rather
+than printed with false confidence.
+
+### Ideal entry
+
+```
+support candidates = {SMA(20), SMA(60), swing_low_20, swing_low_60, round_number_below(close)}
+ideal_entry = min(close, max(candidates))
+```
+
+"Buy the pullback to the nearest real support." The candidate set grew in the
+redesign: both averages, both swing lows, and the nearest round number below the
+price (10s above 100, 5s above 20, …) — round numbers act as psychological floors
+because many resting orders sit exactly there. The `min(close, …)` cap makes sure
+we never suggest paying more than the current price.
+
+### Backup entry
+
+```
+backup_entry = highest support candidate strictly below ideal_entry
 ```
 
 The "if it falls further" level: the next genuine floor beneath the ideal entry.
 If no candidate sits below the ideal entry, there is no backup — the report says so
 instead of inventing one.
 
-### Stop-loss (base)
+### Stop-loss
 
 ```
 stop_loss = ideal_entry − 2 × ATR
 ```
 
-Two typical days of adverse movement below the planned entry (v2 slice 2,
-`stops.py`). Far enough that ordinary daily noise doesn't eject you; close enough
-that a real breakdown gets you out. Volatile stocks automatically get wider stops.
+Two typical days of adverse movement below the planned entry. Far enough that
+ordinary daily noise doesn't eject you; close enough that a real breakdown gets you
+out. Volatile stocks automatically get wider stops.
 
-### Target / take-profit (base)
+### Target / take-profit — resistance-aware
 
 ```
-target = ideal_entry + 2 × (ideal_entry − stop_loss)
+geometric   = ideal_entry + 2 × (ideal_entry − stop_loss)
+resistances = {swing_high_20, swing_high_60, high_52w} strictly above close
+target      = min(geometric, nearest resistance above close)
 ```
 
-A reward-to-risk multiple: demand twice as much upside as the downside you accept.
-With the ATR stop above, this works out to entry + 4 × ATR. If a trade can't
-plausibly pay 2-to-1, it isn't worth taking — that discipline is the formula.
+Demand twice the upside of the accepted downside — but never pretend the price can
+sail through a ceiling where sellers already showed up once. If overhead resistance
+caps the target, the target honestly stops there.
+
+### Room gate
+
+```
+if (target − ideal_entry) / (ideal_entry − stop_loss) < 1.5:  no plan (warning)
+```
+
+If the nearest ceiling is so close that the capped trade cannot pay at least
+1.5-to-1, the whole plan is withheld — a trade without room is not worth printing.
 
 ### Dependency chain
 
-`swing_low/SMA → ideal entry → stop → target`. A missing upstream input makes the
-downstream levels explicitly unavailable (with a warning) — never silently guessed.
+`trend gate → supports → ideal entry → backup → stop → target → room gate`. A
+missing upstream input makes the downstream levels explicitly unavailable (with a
+warning) — never silently guessed.
 
-## 3. AI adjustment guardrails (v2 slice 3, `adjustments.py` + `levels.py`)
+## 3. Outlook → action table (outlook redesign, `schema.py`)
 
-The AI reads the collected evidence and may propose a new value per level, with a
-reason. Code then enforces:
+The run's judgment splits into two things: the **outlook** on the stock itself
+(bullish / neutral / bearish — the tier-2 vote's direction, or tier 1's at depth 1)
+and the **action** for this user, derived by a pure code table from outlook ×
+ownership (the share count the user typed):
 
 ```
-band:      |adjusted − base| ≤ 1 × ATR            else adjustment rejected
-ordering:  stop < backup ≤ ideal < target          checked after each adjustment
-reward:    (target − ideal) / (ideal − stop) ≥ 1.5 checked after each adjustment
-evidence:  every reason must cite ≥ 1 verifiable ref
-           (a dimension payload key, or a verified sentiment citation [n])
+outlook   ownership = 0    ownership > 0
+bullish   enter            keep_holding      (deliberately NOT "buy more")
+neutral   no_trade         keep_holding
+bearish   no_trade         sell_all          (sell_shares = the full holding)
+unknown   unknown          unknown           (failed run — re-run)
 ```
 
-A rejected adjustment never edits the number — the base stands and the rejection is
-shown as a warning. Rationale: an adjustment bigger than one typical day's swing is
-no longer "context on top of the formula", it's a different number without an audit
-trail; and a reason that cites nothing verifiable is indistinguishable from a
-hallucination.
+Next-earnings date (US tickers, yfinance): fetched per run, **warning-only** — a
+"{N} days until next earnings — expect turbulence" note when within 7 calendar
+days. It never gates a plan and never moves a number. No expiry mechanism exists;
+a report from a previous trading day just shows a "re-run for a fresh plan" note.
 
 ## 4. Position sizing (v2 slice 1, `sizing.py`)
 
@@ -176,20 +214,29 @@ entry, missing settings, count rounds to zero…) produces an explicit refusal w
 reason — never a silent zero. Spread and slippage are deliberately out of scope:
 they can't be known in advance.
 
+Outlook redesign: the tier-3 size multiplier is gone. A bearish outlook while
+holding exits the **full** holding (`sell_shares = ownership`); shares are never
+scaled by any AI-derived factor.
+
 ## 5. Constants
 
 | Constant | Value | Where | Why this value |
 | --- | --- | --- | --- |
 | ATR period | 14 days | technicals | Wilder's original; the de-facto standard |
-| Swing-low lookback | 20 days | levels | ≈ one trading month, matches SMA-20 |
+| Swing lookbacks | 20 / 60 days | levels | one trading month / one quarter |
+| Year of bars | 250 trading days | technicals | 52-week range and worst-day history |
 | Stop distance | 2 × ATR | stops | classic noise-vs-breakdown balance point |
-| Reward-to-risk (base target) | 2.0 | levels | common minimum for a trade to be worth it |
-| Reward-to-risk (validation floor) | 1.5 | levels | adjusted set may not degrade below this |
-| Adjustment band | 1 × ATR | levels | beyond one typical day's swing = re-invention |
+| Reward-to-risk (geometric target) | 2.0 | levels | common minimum for a trade to be worth it |
+| Reward-to-risk (room gate) | 1.5 | levels | a resistance-capped plan below this is withheld |
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
+| Earnings warning window | 7 calendar days | earnings | close enough that turbulence is imminent |
+| Bullet weight range | 1–3 | debate | minor / normal / thesis-changing |
+| Risk-card ADV flag | 5% of avg volume | risk card | above this, a one-day exit moves the price |
+| Risk-card volatility flag | 4% ATR/close | risk card | above this, daily noise dominates tight stops |
+| Risk-card gap scenario | 1 × ATR past stop | risk card | one ordinary day's jump beyond the stop |
 
-## 6. Tier-2 evidence vote (v8/v9, `debate.py` + `debate_models.py`)
+## 6. Tier-2 evidence vote (v10 — weighted, `debate.py` + `debate_models.py`)
 
 No roles, no personas — membership in the evidence pool is a majority
 vote with at most three votes per bullet, and no AI authors any number
@@ -234,15 +281,27 @@ contract (a reason stating a decimal or percentage must cite it; links
 inside reasons are code-checked with the same fix loop) — votes that
 cannot be fixed are discarded and carry no weight.
 
-The score (code, pure counting — v9 flat, no per-dimension averaging):
+Weights (v10, owner spec 2026-07-20): every voter also RATES each
+bullet's importance — 1 = minor detail, 2 = normal evidence, 3 =
+thesis-changing. Listers rate their own bullets in the same call (the
+second author's rating rides in on the merge match map); check and
+deciding votes carry a rating regardless of their verdict. An omitted
+rating degrades to 2 (which reproduces flat counting exactly);
+citation-fix rounds freeze the original rating so a fix reply cannot
+silently reset it.
+
+The score (code, pure arithmetic):
 
 ```
-score = 10 × bullish / total          over the whole pool (2 decimals)
+bullet_weight = median of its voters' 1-3 ratings
+                (two voters → their mean, so halves like 2.5 happen)
 
-initial = the merged list (struck bullets excluded; stored for the
-          audit trail, not displayed)
-final   = the bullets holding a majority of valid votes — the
-          displayed score
+score = 10 × Σweight(bullish) / Σweight(all)     over the pool (2 decimals)
+
+initial = the merged list, weighted by the authors' own ratings
+          (struck bullets excluded; stored for the audit trail)
+final   = the bullets holding a majority of valid votes, weighted by
+          the full voter median — the displayed score
 
 direction = sell if final < 4, hold if 4 ≤ final ≤ 6, else buy
 empty final pool → 5.00, hold, warning
@@ -254,43 +313,44 @@ clicks the vote's ✓/✗ mark).
 5-6 base calls per run (the two lists parallel, each with its fix loop;
 the deciding round only when there are ties; fix rounds add one call
 each), all at temperature 0 (`deterministic_summarizer`). Failure
-rules: both lists failing voids (tier-1 direction stands); one list
-failing proceeds with the other; a failed merge drops the second list;
-a failed check round counts bullets on the author's vote alone; a
-failed deciding round excludes ties as unresolved; the summary's
-failure never voids anything.
+rules: both lists failing voids the run (NO tier-1 fallback since the
+outlook redesign — a failed vote is an honest UNKNOWN with a "re-run"
+warning); one list failing proceeds with the other; a failed merge
+drops the second list; a failed check round counts bullets on the
+author's vote alone; a failed deciding round excludes ties as
+unresolved; the summary's failure never voids anything.
 
-## 7. Tier-3 risk vote (format 2, `risk.py` + `risk_models.py`)
+Depth semantics since the redesign: depth 1 runs the one-blob tier-1
+judge as before; depth 2 SKIPS the blob entirely — the run builds a
+data-layer foundation report (levels + dimensions, direction unknown)
+and the vote above is the sole judge. Depth 3 is a validation error
+(tier 3 is retired; `risk.py`, `risk_models.py`, `adjustments.py` are
+deleted).
 
-The same vote machinery as §6, run over RISK bullets — concrete,
-evidence-cited ways the tier-2 trade plan could lose money (owner spec
-2026-07-19). Differences from the tier-2 vote:
+## 7. Display-only risk card (outlook redesign, `risk_card.py`)
 
-- Risk bullets carry NO direction tag, and there is NO per-group floor:
-  an empty list is a valid answer ("no material risks"). Ceilings are
-  the §6 leaf-count ceilings, plus the plan payload's field count for
-  the fifth group.
-- A fifth group `plan` (ids P1, P2…) covers risks about the plan
-  itself. The engine exposes a synthetic `plan.<key>` payload — the
-  tier-2 levels plus the user's held shares (`plan.ownership_shares`,
-  from the per-run ownership input) — citable under the same
-  display-value contract.
-- Tier 3 no longer re-judges anything: the stance is tier 2's
-  direction echoed, the levels stand unchanged (stop advice is gone),
-  and NO AI picks the size.
+Thirteen deterministic pre-trade checks — the numbers a firm's risk
+desk and a disciplined trader would look at — computed from data the
+run already has. ZERO LLM calls, and by explicit owner decision the
+card affects NOTHING: outlook, action, levels and sizing never read
+it. Each entry is `{id, status, values}` with status `ok`, `flag`
+(a threshold crossed) or `na` (inputs missing on this run); all
+wording lives in the frontend i18n layer.
 
-The size multiplier (code, fixed mapping):
+The 13 entries, in frozen order (`RISK_CARD_IDS`):
 
 ```
-confirmed = risks holding a majority of valid votes
-multiplier = 1.0  if confirmed == 0     (full size)
-             0.5  if 1 ≤ confirmed ≤ 3  (half)
-             0.0  if confirmed ≥ 4      (no position)
+ 1 concentration      position cost / capital, vs the 25% cap
+ 2 cash               capital − position cost
+ 3 max_loss           stop-hit loss; flags lot-rounding drift > requested risk
+ 4 liquidity          shares / avg_volume_20; flags > 5% of a day's volume
+ 5 var                |worst_day_5pct| × position value; flags > planned risk
+ 6 gap_stress         loss if the open lands 1 ATR below the stop
+ 7 volatility         ATR / close; flags > 4%
+ 8 reward_risk        (target − entry) / (entry − stop)
+ 9 stop_atr           (entry − stop) / ATR
+10 stop_vs_swing_low  flags a stop at/above the 20-day low
+11 staleness          run-time price vs the plan (fresh by construction)
+12 both_entries       double-fill risk vs the risk budget
+13 ownership_context  held + new position vs the 25% cap
 ```
-
-Code applies the multiplier (`apply_size_multiplier`, lot-aware):
-on a buy it scales the §4 share count; on a sell with the ownership
-input set it scales the held shares (`sell_shares = ownership ×
-multiplier`; without tier 3 a sell exits the full holding). Failure
-rules mirror §6, with degradation falling back to the tier-2 output at
-full size (no multiplier).
