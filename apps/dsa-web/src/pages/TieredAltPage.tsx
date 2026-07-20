@@ -17,6 +17,9 @@ const DEFAULT_TIER: TieredDepth = 1;
 // sees and can remove/replace the pill before starting.
 const DEFAULT_CAPITAL = '100000';
 const DEFAULT_RISK_PCT = '1';
+// Ownership is required like every other field (owner decision,
+// 2026-07-20); the page opens with 10 shares and 0 means "I hold none".
+const DEFAULT_OWNERSHIP = '10';
 
 // Shared with the main tiered page so the values carry across both skins.
 const SIZING_CAPITAL_STORAGE_KEY = 'tiered.sizing.capital';
@@ -59,9 +62,9 @@ const TieredAltPage = () => {
   const [riskPct, setRiskPct] = useState<string | null>(
     () => readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY) ?? DEFAULT_RISK_PCT,
   );
-  // Held shares are stock-specific, so they are per-run: no stored
-  // default, cleared after every start. Unset means 0.
-  const [ownership, setOwnership] = useState<string | null>(null);
+  // Held shares are stock-specific, so they are per-run: reset to the
+  // default after every start, never remembered across sessions.
+  const [ownership, setOwnership] = useState<string | null>(DEFAULT_OWNERSHIP);
   const [runs, setRuns] = useState<TieredRunSummary[]>([]);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, TieredResult>>({});
@@ -189,8 +192,8 @@ const TieredAltPage = () => {
   );
 
   const handleStart = useCallback(async () => {
-    // The form popup enforces all four fields; this is the last-line guard.
-    if (!ticker || tier === null || !capital || !riskPct || submitting) {
+    // The form popup enforces every field; this is the last-line guard.
+    if (!ticker || tier === null || !capital || !riskPct || ownership === null || submitting) {
       return;
     }
     setSubmitError(null);
@@ -220,7 +223,7 @@ const TieredAltPage = () => {
       setCapitalDefault(capital);
       setTicker(null);
       setCapital(null);
-      setOwnership(null);
+      setOwnership(DEFAULT_OWNERSHIP);
       setPendingTiers((prev) => ({ ...prev, [started.task_id]: tierUsed }));
       // The new run is already in the backend list as Running; show it at
       // the top of the history, expanded, until polling flips it to done.

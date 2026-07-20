@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type {
+  TieredDebateAuthorVote,
   TieredDebateCheck,
   TieredDebateDetail,
   TieredDebateItem,
@@ -532,23 +533,29 @@ export const MarkButton = ({ label, onClick }: { label: string; onClick: () => v
 
 export type MarkModal = { title: string; body: ReactNode };
 
-// One v8/v9 bullet, a single line telling its whole history: id, a
-// colored bullish/bearish word, then one ✓/✗ mark per check in order
-// (or the code's ✗ for a struck bullet). NO mark at all means both
-// analysts listed the bullet independently — already agreed, nothing to
-// check. Click a mark for the reasoning. A bullet out of the final pool
-// is crossed out; the claim wraps with a hanging indent (its own grid
-// column).
+// One v8-v11 bullet, a single line telling its whole history: id, a
+// colored bullish/bearish word, then the marks. v11 (rich): the median
+// importance score first, then one ✓ per lister who authored the bullet
+// and one ✓/✗ per check/deciding vote — clicking a mark opens the
+// voter's validity reason, their 1-5 score and why; clicking the median
+// lists every score. v8-v10 keep their layout: ✓/✗ marks for the vote
+// rounds only (no mark at all = both analysts listed it independently),
+// v10 with its `w N` weight badge. The code's ✗ marks a struck bullet
+// in every generation. A bullet out of the final pool is crossed out;
+// the claim wraps with a hanging indent (its own grid column).
 const VoteItem = ({
   item,
+  rich = false,
   onShow,
 }: {
   item: TieredDebateItem;
+  rich?: boolean;
   onShow: (modal: MarkModal) => void;
 }) => {
   const { t } = useUiLanguage();
   const dead = item.final_status === 'excluded';
   const votes = item.votes ?? [];
+  const authorVotes = item.author_votes ?? [];
   const showVote = (vote: TieredDebateVote, index: number) =>
     onShow({
       title: `${t(index === 0 ? 'tiered.tree.firstCheck' : 'tiered.tree.secondCheck')}: ${t(
@@ -586,6 +593,61 @@ const VoteItem = ({
         </div>
       ),
     });
+  // v11 modal body — the user-spec'd shape: the validity reason, a
+  // divider, then the voter's 1-5 score and why they rated it that.
+  const scoreBody = (
+    reasonNode: ReactNode,
+    weight: number | null | undefined,
+    weightReason?: string | null,
+  ) => (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-gray-300">{reasonNode}</p>
+      <hr className="border-gray-700/60" />
+      <p className="text-sm font-semibold text-gray-200">
+        {t('tiered.tree.scoreLine', { value: weight ?? '—' })}
+      </p>
+      {weightReason ? <p className="text-sm text-gray-400">{weightReason}</p> : null}
+    </div>
+  );
+  // A lister's own check: listing the bullet IS their valid vote, so the
+  // validity reason is the claim itself (with its verified links).
+  const showAuthor = (vote: TieredDebateAuthorVote) =>
+    onShow({
+      title: `${t('tiered.tree.lister', { n: vote.lister })}: ${t('tiered.tree.valid')}`,
+      body: scoreBody(
+        <LinkedTextV8 text={item.claim} links={item.links ?? []} />,
+        vote.weight,
+        vote.weight_reason,
+      ),
+    });
+  const showRichVote = (vote: TieredDebateVote) =>
+    onShow({
+      title: `${t(
+        vote.role === 'decider' ? 'tiered.tree.deciderRole' : 'tiered.tree.checkerRole',
+      )}: ${t(vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid')}`,
+      body: scoreBody(
+        vote.reason ? <LinkedTextV8 text={vote.reason} links={vote.links ?? []} /> : '—',
+        vote.weight,
+        vote.weight_reason,
+      ),
+    });
+  const showMedian = () => {
+    const scores = [
+      ...authorVotes.map((vote) => vote.weight),
+      ...votes.map((vote) => vote.weight),
+    ].filter((value): value is number => value != null);
+    onShow({
+      title: t('tiered.tree.medianTitle'),
+      body: (
+        <div className="flex flex-col gap-1 text-sm text-gray-300">
+          <p>{t('tiered.tree.scoresList', { value: scores.join(', ') || '—' })}</p>
+          <p className="font-semibold text-gray-200">
+            {t('tiered.tree.medianLine', { value: item.weight ?? '—' })}
+          </p>
+        </div>
+      ),
+    });
+  };
   return (
     <li
       data-testid={`alt-tree-item-${item.id}`}
@@ -596,7 +658,18 @@ const VoteItem = ({
         <span className={cn('font-semibold', DIRECTION_TEXT[item.direction])}>
           {t(item.direction === 'bullish' ? 'tiered.tree.bullish' : 'tiered.tree.bearish')}
         </span>
-        {item.weight != null ? (
+        {rich && item.weight != null ? (
+          // v11 median badge — the bare number; the modal lists every score.
+          <button
+            type="button"
+            data-testid={`alt-tree-weight-${item.id}`}
+            className="cursor-pointer font-mono text-gray-400 hover:text-gray-200"
+            onClick={showMedian}
+          >
+            {item.weight}
+          </button>
+        ) : null}
+        {!rich && item.weight != null ? (
           // v10 weight badge — the median of every voter's 1-3 rating.
           <button
             type="button"
@@ -624,11 +697,16 @@ const VoteItem = ({
             }
           />
         ) : null}
+        {rich
+          ? authorVotes.map((vote, index) => (
+              <MarkButton key={`a${index}`} label="✓" onClick={() => showAuthor(vote)} />
+            ))
+          : null}
         {votes.map((vote, index) => (
           <MarkButton
             key={index}
             label={vote.verdict === 'valid' ? '✓' : '✗'}
-            onClick={() => showVote(vote, index)}
+            onClick={() => (rich ? showRichVote(vote) : showVote(vote, index))}
           />
         ))}
       </span>
@@ -663,9 +741,11 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
     dimension,
     items: items.filter((item) => item.dimension === dimension),
   })).filter((group) => group.items.length > 0);
-  // v10 weights the score by the voters' 1-3 importance ratings;
-  // v8/v9 counted every bullet the same.
+  // v10+ weights the score by the voters' importance ratings; v8/v9
+  // counted every bullet the same. v11 (rich) also stores each voter's
+  // score reason and the listers' own checks.
   const weighted = detail.format != null && detail.format >= 10;
+  const rich = detail.format != null && detail.format >= 11;
   const numerator = weighted ? (finalPool?.bullish_weight ?? null) : (finalPool?.bullish ?? null);
   const denominator = weighted ? (finalPool?.total_weight ?? null) : (finalPool?.total ?? null);
   // Show the plugged-in formula only when it reproduces the stored
@@ -689,7 +769,9 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
               {EXPLAIN_KEYS.map((key) => (
                 <li key={key}>{t(key)}</li>
               ))}
-              {weighted ? <li>{t('tiered.tree.explainWeights')}</li> : null}
+              {weighted ? (
+                <li>{t(rich ? 'tiered.tree.explainWeights5' : 'tiered.tree.explainWeights')}</li>
+              ) : null}
             </ol>
           </div>
 
@@ -714,7 +796,7 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
                 </AltSectionLabel>
                 <ul className="flex flex-col gap-1.5">
                   {group.items.map((item) => (
-                    <VoteItem key={item.id} item={item} onShow={setModal} />
+                    <VoteItem key={item.id} item={item} rich={rich} onShow={setModal} />
                   ))}
                 </ul>
               </div>
@@ -940,7 +1022,7 @@ interface AltDebateTreeProps {
 }
 
 export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
-  if (detail.format != null && detail.format >= 8 && detail.format <= 10) {
+  if (detail.format != null && detail.format >= 8 && detail.format <= 11) {
     return <VoteTree detail={detail} />;
   }
   return <RoleDebateTree detail={detail} />;

@@ -798,8 +798,8 @@ describe('AltResult', () => {
       'alt-shares-computation',
     ]);
     expect(screen.getByText(/四维数据报告|Four-dimension reports/)).toBeInTheDocument();
-    expect(screen.getByText(/层级 1：初步立场|Tier 1: preliminary stance/)).toBeInTheDocument();
-    expect(screen.getByText(/层级 2：立场辩论|Tier 2: position debate/)).toBeInTheDocument();
+    expect(screen.getByText(/层级 1：初步分析|Tier 1: preliminary analysis/)).toBeInTheDocument();
+    expect(screen.getByText(/层级 2：深度分析|Tier 2: deep analysis/)).toBeInTheDocument();
     expect(screen.getByText(/层级 3：风险辩论|Tier 3: risk debate/)).toBeInTheDocument();
     expect(screen.getByText(/股数计算|Shares computation/)).toBeInTheDocument();
   });
@@ -923,8 +923,8 @@ describe('AltResult', () => {
     expect(within(tier2).getByText('Corrected bull case.')).toBeInTheDocument();
     expect(within(tier2).getByText('Corrected bear case.')).toBeInTheDocument();
     // transcript turns carry the debater's own score and citations
-    // (the label is "position score" for every generation since v4)
-    expect(tier2).toHaveTextContent(/(立场分|position score) 8\/10/);
+    // (the label is "outlook score" for every generation since v4)
+    expect(tier2).toHaveTextContent(/(展望分|outlook score) 8\/10/);
     expect(within(tier2).getByRole('button', { name: 'technicals.close' })).toBeInTheDocument();
   });
 
@@ -959,8 +959,8 @@ describe('AltResult', () => {
     expect(within(tier2).getAllByText(/立论|argument/).length).toBeGreaterThanOrEqual(2);
     expect(within(tier2).getAllByText(/质疑|attack/).length).toBeGreaterThanOrEqual(2);
     expect(tier2).not.toHaveTextContent(/第 1 轮|round 1/);
-    // the position score sits on the response turn
-    expect(tier2).toHaveTextContent(/(立场分|position score) 8\/10/);
+    // the outlook score sits on the response turn
+    expect(tier2).toHaveTextContent(/(展望分|outlook score) 8\/10/);
     expect(within(tier2).getByText('I stand by the momentum case.')).toBeInTheDocument();
   });
 
@@ -969,7 +969,7 @@ describe('AltResult', () => {
     deep.tier2!.debate_detail = makeThreadedDebate();
     renderResult(deep);
     const bull = screen.getByTestId('alt-scoring-bull');
-    expect(bull).toHaveTextContent(/(立场分|position score): 8\/10/);
+    expect(bull).toHaveTextContent(/(展望分|outlook score): 8\/10/);
     // sub-5 grade → the offending sentence, quoted, plus the reason
     expect(bull).toHaveTextContent('“Momentum is strong.” — Overstated from one indicator.');
     // 5/5 grade → N/A
@@ -1024,13 +1024,13 @@ describe('AltResult', () => {
     renderResult(makeDeepResult());
     const tier3 = screen.getByTestId('alt-tier3');
     // no pill anymore — the verdict is text like every other fact
-    expect(tier3).toHaveTextContent(/(结论|Verdict): (持有|Hold)/);
+    expect(tier3).toHaveTextContent(/(展望|Outlook): (中性|Neutral)/);
     expect(tier3).toHaveTextContent(/(仓位|Size): 0.5x/);
     expect(tier3).toHaveTextContent(/(止损|Stop loss): (维持|keep)/);
     // judge confidence 0.7 → a whole number out of 10
     expect(tier3).toHaveTextContent(/(评分|Score): 7\/10/);
     const tier1 = screen.getByTestId('alt-tier1');
-    expect(tier1).toHaveTextContent(/(结论|Verdict): (买入|Buy)/);
+    expect(tier1).toHaveTextContent(/(展望|Outlook): (看多|Bullish)/);
     // tier 1's stored score is a bullishness composite, not a judge
     // confidence — it is not shown as "Score"
     expect(tier1).not.toHaveTextContent(/评分|Score/);
@@ -1096,7 +1096,7 @@ describe('AltResult v5 debate tree', () => {
   it('shows the weight ledger and the final-score formula with this run’s numbers', () => {
     renderTree();
     const scores = screen.getByTestId('alt-tree-scores');
-    expect(scores).toHaveTextContent(/initial position score|初始立场分/);
+    expect(scores).toHaveTextContent(/initial outlook score|初始展望分/);
     expect(scores).toHaveTextContent('8/10');
     expect(scores).toHaveTextContent('7/10');
     expect(scores).toHaveTextContent('= 3/4');
@@ -1119,7 +1119,7 @@ describe('AltResult v5 debate tree', () => {
     expect(screen.getByTestId('alt-tree-item-T2')).toHaveTextContent('The price trend is up.');
     const scores = screen.getByTestId('alt-tree-scores');
     expect(scores).toHaveTextContent('8/10');
-    expect(scores).not.toHaveTextContent(/adjusted position score|调整后立场分/);
+    expect(scores).not.toHaveTextContent(/adjusted outlook score|调整后展望分/);
   });
 
   it('step 2 adds the attacker’s checks and additions but no responses yet', () => {
@@ -1196,7 +1196,7 @@ describe('AltResult v6 debate tree', () => {
     renderTreeV6();
     const scores = screen.getByTestId('alt-tree-scores');
     expect(scores).toHaveTextContent('10.00');
-    expect(scores).toHaveTextContent(/adjusted position score|调整后立场分/);
+    expect(scores).toHaveTextContent(/adjusted outlook score|调整后展望分/);
     expect(scores).toHaveTextContent('5.00');
     // per-dimension breakdown of the final pool
     expect(scores).toHaveTextContent(/technicals|技术面/i);
@@ -1300,7 +1300,7 @@ describe('AltResult v9 evidence vote', () => {
 
   it('tucks the whole vote record into a Transcript foldable with the how-it-works list on top', () => {
     renderTreeV9();
-    expect(screen.getByText(/Transcript|过程记录/)).toBeInTheDocument();
+    expect(screen.getByText(/Details|详情/)).toBeInTheDocument();
     const explain = screen.getByTestId('alt-tree-explain');
     expect(explain).toHaveTextContent(/How this works|规则说明/);
     // The list explains that mark-less bullets came from both AIs.
@@ -1377,7 +1377,7 @@ describe('AltResult v9 evidence vote', () => {
   it('shows the flat formula with a colon and no verdict-bands block', () => {
     renderTreeV9();
     const scores = screen.getByTestId('alt-tree-scores');
-    expect(scores).toHaveTextContent(/final position score: |最终立场分: /);
+    expect(scores).toHaveTextContent(/final outlook score: |最终展望分: /);
     expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent('= 10 × 1 / 2');
     expect(scores).toHaveTextContent('= 5.00');
     expect(scores).not.toHaveTextContent(/below 4 sell|低于 4 卖出/);
@@ -1500,7 +1500,7 @@ describe('AltResult format-2 risk vote', () => {
   it('shows only Verdict and Size in the header — no score, no stop advice', () => {
     renderRiskV2();
     const tier3 = screen.getByTestId('alt-tier3');
-    expect(tier3).toHaveTextContent(/(结论|Verdict): (持有|Hold)/);
+    expect(tier3).toHaveTextContent(/(展望|Outlook): (中性|Neutral)/);
     expect(tier3).toHaveTextContent(/(仓位|Size): 0.5x/);
     expect(tier3).not.toHaveTextContent(/(止损|Stop loss): (维持|keep)/);
     expect(tier3).not.toHaveTextContent(/(评分|Score): /);

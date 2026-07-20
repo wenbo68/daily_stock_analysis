@@ -3,7 +3,7 @@ import type { TieredResult, TieredRunSummary } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
-import { plainNumber, riskPctText } from './altFormat';
+import { directionOutlook, plainNumber, riskPctText } from './altFormat';
 import { ALT_COLOR, OUTLOOK_TEXT, STATUS_DOT } from './altStyles';
 import { AltPageSelector, AltPairField, AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltResult } from './AltResult';
@@ -85,15 +85,9 @@ function riskCell(run: TieredRunSummary): string {
 }
 
 // The row's outlook: stored on new runs; rows fetched before the backend
-// digest existed map their legacy verdict here as a fallback.
-const LEGACY_OUTLOOK: Record<string, string> = {
-  buy: 'bullish',
-  hold: 'neutral',
-  sell: 'bearish',
-};
-
+// digest existed map their legacy verdict as a fallback.
 function runOutlook(run: TieredRunSummary): string {
-  return run.outlook ?? LEGACY_OUTLOOK[run.direction ?? ''] ?? 'unknown';
+  return run.outlook ?? directionOutlook(run.direction);
 }
 
 interface HistoryFilters {
@@ -331,7 +325,13 @@ export const AltRunHistory = ({
         />
         <AltSelect
           label={t('tiered.altFilter.tier')}
-          options={FILTER_TIERS.map((value) => ({ value, label: value }))}
+          options={FILTER_TIERS.map((value) => ({
+            value,
+            // Tiers 1 and 2 carry their analysis names; 3 is legacy-only
+            // (old stored runs) and stays a bare number.
+            label:
+              value === '3' ? value : t(`tiered.altForm.tierOption${value}` as UiTextKey),
+          }))}
           selected={filters.tiers}
           placeholder={t('tiered.altFilter.tierPh')}
           multi

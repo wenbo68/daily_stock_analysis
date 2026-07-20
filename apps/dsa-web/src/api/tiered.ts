@@ -121,14 +121,24 @@ export type TieredDebateJudgeAddition = {
 
 // One v8 vote on a bullet: the check round's second vote or the
 // deciding round's tiebreaker. Reasons carry the same code-verified
-// links the bullets use. v10 votes carry the voter's own 1-3 importance
-// rating of the bullet.
+// links the bullets use. v10 votes carry the voter's own importance
+// rating of the bullet (1-3; 1-5 since v11); v11 adds one plain
+// sentence saying why (weight_reason).
 export type TieredDebateVote = {
   role: 'checker' | 'decider';
   verdict: 'valid' | 'invalid';
   reason: string | null;
   links: TieredDebateLink[];
   weight?: number;
+  weight_reason?: string | null;
+};
+
+// v11: one lister's own rating of a bullet they authored — which lister
+// (1 or 2), the 1-5 importance score, and why.
+export type TieredDebateAuthorVote = {
+  lister: number;
+  weight: number;
+  weight_reason?: string | null;
 };
 
 // One evidence item of the tree with everything that happened to it.
@@ -150,9 +160,12 @@ export type TieredDebateItem = {
   problems?: string[];
   authors?: number;
   votes?: TieredDebateVote[];
-  // v10 weighted votes: the authors' own 1-3 ratings (one or two), and
-  // the final median of every voter's rating (null on struck bullets).
+  // v10 weighted votes: the authors' own ratings (one or two), and the
+  // final median of every voter's rating (null on struck bullets).
+  // v11 adds author_votes: the same ratings with the lister number and
+  // the reason attached.
   author_weights?: number[];
+  author_votes?: TieredDebateAuthorVote[];
   weight?: number | null;
   added_by_attacker?: boolean;
   attacker_checks?: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;

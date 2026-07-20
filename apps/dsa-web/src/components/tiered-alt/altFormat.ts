@@ -13,3 +13,18 @@ export const plainNumber = (value: number): string => String(Number(value));
 // scroll-flash the cell a number came from.
 export const computedCellId = (key: string): string => `alt-level-computed-${key}`;
 export const adjustedCellId = (key: string): string => `alt-level-adjusted-${key}`;
+
+// The outlook word for a tier verdict — the outlook redesign renamed
+// buy/hold/sell to bullish/neutral/bearish everywhere the UI speaks.
+export const directionOutlook = (direction: string | null | undefined): string => {
+  switch (direction) {
+    case 'buy':
+      return 'bullish';
+    case 'hold':
+      return 'neutral';
+    case 'sell':
+      return 'bearish';
+    default:
+      return 'unknown';
+  }
+};

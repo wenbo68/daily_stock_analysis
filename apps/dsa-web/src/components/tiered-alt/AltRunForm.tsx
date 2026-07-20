@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Play } from 'lucide-react';
 import type { TieredDepth } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import type { UiTextKey } from '../../i18n/uiText';
 import { HelpTerm } from '../tiered/terms';
 import { tickerCurrency } from './altCurrency';
 import { AltPill, AltPillRow, AltSelect } from './AltFields';
@@ -14,7 +15,9 @@ const TIERS: TieredDepth[] = [1, 2];
 const TICKER_IDEAS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', '600519', 'hk00700'];
 const CAPITAL_IDEAS = ['10000', '50000', '100000', '200000', '500000', '1000000'];
 const RISK_IDEAS = ['0.5', '1', '2'];
-const OWNERSHIP_IDEAS = ['100', '200', '500', '1000', '2000'];
+// '0' = I hold none (the only way to get an "enter the position" action);
+// '10' is the default the page opens with.
+const OWNERSHIP_IDEAS = ['0', '10', '100', '200', '500', '1000', '2000'];
 
 // Field colors follow the ai-hedge-fund convention — by meaning, not by
 // position: cyan = the ticker's identity, plain gray = money values,
@@ -42,11 +45,11 @@ const isRiskPct = (raw: string): boolean => {
   return Number.isFinite(value) && value > 0 && value < 100;
 };
 
-// Whole positive share counts only — 0 shares is expressed by leaving the
-// field unset (its default).
+// Whole share counts only; 0 is a real answer ("I hold none"), since the
+// field is required like every other.
 const isShareCount = (raw: string): boolean => {
   const value = Number(raw);
-  return Number.isInteger(value) && value > 0;
+  return Number.isInteger(value) && value >= 0;
 };
 
 export interface AltRunFormProps {
@@ -66,12 +69,12 @@ export interface AltRunFormProps {
 }
 
 // Section 1: the new-run form. Fields are write-only — every choice lands
-// as a removable pill below; the Start pill launches the run only when the
-// four required fields are picked (a popup explains otherwise). Ownership
-// is the one optional field: no pill means 0 shares held. Capital is in
-// the ticker's own trading currency, so it can't be picked before the
-// ticker. Picking an already-picked dropdown option clears it, same as
-// clicking its pill.
+// as a removable pill below; the Start pill launches the run only when
+// every field is picked (a popup explains otherwise). All five fields are
+// required; ownership defaults to 10 shares and 0 means "I hold none".
+// Capital is in the ticker's own trading currency, so it can't be picked
+// before the ticker. Picking an already-picked dropdown option clears it,
+// same as clicking its pill.
 export const AltRunForm = ({
   ticker,
   tier,
@@ -101,7 +104,7 @@ export const AltRunForm = ({
   };
 
   const handleStart = () => {
-    if (!ticker || tier === null || !capital || !riskPct) {
+    if (!ticker || tier === null || !capital || !riskPct || ownership === null) {
       setNotice(t('tiered.altForm.allRequired'));
       return;
     }
@@ -175,7 +178,10 @@ export const AltRunForm = ({
           label={
             <HelpTerm label={t('tiered.altForm.tier')} helpKey="tiered.help.depth" underline={false} />
           }
-          options={TIERS.map((value) => ({ value: String(value), label: String(value) }))}
+          options={TIERS.map((value) => ({
+            value: String(value),
+            label: t(`tiered.altForm.tierOption${value}` as UiTextKey),
+          }))}
           selected={tier !== null ? [String(tier)] : undefined}
           placeholder={t('tiered.altForm.tierPh')}
           onCommit={(value) =>

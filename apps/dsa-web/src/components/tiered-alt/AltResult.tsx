@@ -14,8 +14,14 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
-import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
-import { ALT_LINK, DIRECTION_TEXT, OUTLOOK_TEXT } from './altStyles';
+import {
+  adjustedCellId,
+  computedCellId,
+  directionOutlook,
+  plainNumber,
+  riskPctText,
+} from './altFormat';
+import { ALT_LINK, OUTLOOK_TEXT } from './altStyles';
 import { AltRiskCard } from './AltRiskCard';
 import {
   AltCard,
@@ -279,18 +285,20 @@ interface TierHeaderProps {
 }
 
 // The card's title lives above the card (AltBlock); inside, the header is
-// one row of `Label: value` facts — Verdict first, any side facts (tier 3
+// one row of `Label: value` facts — Outlook first, any side facts (tier 3
 // puts Size and Stop loss there), Score last — and the data-notes mark
 // pinned top-right: nothing when the data was complete, ⚠ when partial, a
-// red X when unavailable.
+// red X when unavailable. The stored verdict is still buy/hold/sell; the
+// outlook rename maps it to bullish/neutral/bearish for display.
 const TierHeader = ({ section, notes, score, scoreHelpKey, side }: TierHeaderProps) => {
   const { t } = useUiLanguage();
+  const outlook = directionOutlook(section.direction);
   return (
     <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-1">
-      <AltFact label={t('tiered.alt.verdict')}>
-        {/* Same buy/hold/sell tint as the run-history rows. */}
-        <span className={DIRECTION_TEXT[section.direction]}>
-          {t(`tiered.direction.${section.direction}` as UiTextKey)}
+      <AltFact label={t('tiered.alt.outlook')}>
+        {/* Same bullish/neutral/bearish tint as the run-history rows. */}
+        <span className={OUTLOOK_TEXT[outlook]}>
+          {t(`tiered.outlook.${outlook}` as UiTextKey)}
         </span>
       </AltFact>
       {side}
@@ -365,55 +373,77 @@ interface AltTierOneProps {
   action?: TieredAction;
 }
 
-const AltTierOne = ({ result, citations, action }: AltTierOneProps) => {
+// The conditional plan display (owner decision): which levels show
+// depends on the action. Old runs (no action) keep the full table.
+const PlanBody = ({ result, citations, action }: AltTierOneProps) => {
   const { t } = useUiLanguage();
-  // Conditional plan display (owner decision): which levels show depends
-  // on the action. Old runs (no action) keep the full table.
   const plan =
     action === undefined || action === 'enter' || action === 'unknown'
       ? 'full'
       : action;
-  return (
-    <AltCard testId="alt-tier1">
-      {/* No score here: tier 1's stored score is the analyzer's bullishness
-          composite, not a judge confidence — showing it under the same
-          "Score" label would mean two different things. */}
-      <TierHeader
-        section={{ direction: result.direction, coverage: result.coverage }}
-        notes={result.warnings}
+  if (plan === 'full') {
+    return (
+      <AltLevels
+        levels={result.levels}
+        levelsDetail={result.levels_detail}
+        citations={citations}
       />
-      {plan === 'full' ? (
-        <AltLevels
-          levels={result.levels}
-          levelsDetail={result.levels_detail}
-          citations={citations}
-        />
-      ) : plan === 'keep_holding' ? (
-        // Holders get the one number that still matters: the structural
-        // exit level. Entries and targets are entry-plan material and a
-        // bullish-while-holding run deliberately does not say "buy more".
-        <p className="text-sm" data-testid="alt-structural-stop">
-          <span className="text-xs text-gray-500">
-            <HelpTerm
-              label={t('tiered.alt.structuralStop')}
-              helpKey="tiered.help.structuralStop"
-            />
-            {': '}
-          </span>
-          <span className="font-semibold tabular-nums text-gray-200">
-            {result.levels.stop_loss != null ? formatPrice(result.levels.stop_loss) : '—'}
-          </span>
-        </p>
-      ) : (
-        // no_trade / sell_all: no plan levels at all — the action line
-        // already said what to do (sell counts live in the shares block).
-        <p className="text-sm text-gray-500" data-testid="alt-no-plan">
-          {t('tiered.alt.noPlan')}
-        </p>
-      )}
-    </AltCard>
+    );
+  }
+  if (plan === 'keep_holding') {
+    // Holders get the one number that still matters: the structural
+    // exit level. Entries and targets are entry-plan material and a
+    // bullish-while-holding run deliberately does not say "buy more".
+    return (
+      <p className="text-sm" data-testid="alt-structural-stop">
+        <span className="text-xs text-gray-500">
+          <HelpTerm
+            label={t('tiered.alt.structuralStop')}
+            helpKey="tiered.help.structuralStop"
+          />
+          {': '}
+        </span>
+        <span className="font-semibold tabular-nums text-gray-200">
+          {result.levels.stop_loss != null ? formatPrice(result.levels.stop_loss) : '—'}
+        </span>
+      </p>
+    );
+  }
+  // no_trade / sell_all: no plan levels at all — the action line
+  // already said what to do (sell counts live in the shares block).
+  return (
+    <p className="text-sm text-gray-500" data-testid="alt-no-plan">
+      {t('tiered.alt.noPlan')}
+    </p>
   );
 };
+
+const AltTierOne = ({ result, citations, action }: AltTierOneProps) => (
+  <AltCard testId="alt-tier1">
+    {/* No score here: tier 1's stored score is the analyzer's bullishness
+        composite, not a judge confidence — showing it under the same
+        "Score" label would mean two different things. */}
+    <TierHeader
+      section={{ direction: result.direction, coverage: result.coverage }}
+      notes={result.warnings}
+    />
+    <PlanBody result={result} citations={citations} action={action} />
+  </AltCard>
+);
+
+// Depth-2 runs skip the tier-1 one-blob verdict entirely, so the tier-1
+// card is not shown — but the formula-computed plan still exists (and
+// the shares arithmetic links into its numbers), so it gets a card of
+// its own, with the run's data notes pinned top-right like a tier
+// header would.
+const AltPlanCard = ({ result, citations, action }: AltTierOneProps) => (
+  <AltCard testId="alt-plan">
+    <div className="mb-3 flex items-center justify-end">
+      <AltNotesButton notes={result.warnings ?? []} coverage={result.coverage} />
+    </div>
+    <PlanBody result={result} citations={citations} action={action} />
+  </AltCard>
+);
 
 interface AltTierSectionProps {
   section: TieredTierSection;
@@ -476,7 +506,7 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   if (
     detail?.format != null &&
     detail.format >= 5 &&
-    detail.format <= 10 &&
+    detail.format <= 11 &&
     Array.isArray(detail.items)
   ) {
     return (
@@ -762,9 +792,19 @@ export const AltResult = ({ result, taskId, runDate }: AltResultProps) => {
       <AltBlock title={t('tiered.alt.dimensionsTitle')}>
         <AltDimensions dimensions={result.dimensions} />
       </AltBlock>
-      <AltBlock title={t('tiered.alt.tier1Title')} helpKey="tiered.help.tier1">
-        <AltTierOne result={result} citations={citations} action={result.action} />
-      </AltBlock>
+      {result.tier2 && result.outlook ? (
+        // Deep-analysis (depth 2) runs skip the tier-1 verdict, so no
+        // tier-1 card at all — just the formula plan in its place. Old
+        // stored depth-2 runs (no outlook) had a real tier-1 verdict and
+        // keep their card.
+        <AltBlock title={t('tiered.alt.planTitle')} helpKey="tiered.help.plan">
+          <AltPlanCard result={result} citations={citations} action={result.action} />
+        </AltBlock>
+      ) : (
+        <AltBlock title={t('tiered.alt.tier1Title')} helpKey="tiered.help.tier1">
+          <AltTierOne result={result} citations={citations} action={result.action} />
+        </AltBlock>
+      )}
       {result.tier2 ? (
         <AltBlock title={t('tiered.alt.tier2Title')} helpKey="tiered.help.debate">
           <AltDebate section={result.tier2} citations={citations} />

@@ -899,7 +899,7 @@ const zh = {
   'tiered.depth.2': '+ 多空辩论',
   'tiered.depth.3': '+ 风险压力测试',
   'tiered.help.depth':
-    '层级 1：四份数据报告加一次 AI 结论。\n层级 2：加一场多空立场辩论。\n层级 3：再加一场风险辩论，给出仓位倍数。\n层级越高，AI 调用越多、越慢。',
+    '层级 1（初步分析）：四份数据报告加一次 AI 结论。\n层级 2（深度分析）：跳过单次 AI 结论，改由两位分析师逐条列证据、投票定分——更慢但更扎实。\n（层级 3 已下线。）',
   'tiered.final.title': '最终结论',
   'tiered.help.finalVerdict': '经过所选最深一层复核后的方向，也是记入 AI 建议台账的那条结论。',
   'tiered.final.decidedBy': '由第 {tier} 层复核得出',
@@ -960,7 +960,7 @@ const zh = {
   'tiered.debate.bullCase': '多方总结',
   'tiered.debate.bearCase': '空方总结',
   'tiered.debate.scoringTitle': '评分与计算',
-  'tiered.debate.positionScore': '立场分',
+  'tiered.debate.positionScore': '展望分',
   'tiered.debate.comment': '评语',
   'tiered.debate.citationValidity': '引用有效性',
   'tiered.debate.knowledgeValidity': '知识有效性',
@@ -993,8 +993,8 @@ const zh = {
   'tiered.tree.bogus': '不成立',
   'tiered.tree.counted': '计 {num}/{den}',
   'tiered.tree.scores': '评分',
-  'tiered.tree.initialScore': '初始立场分',
-  'tiered.tree.adjustedScore': '调整后立场分',
+  'tiered.tree.initialScore': '初始展望分',
+  'tiered.tree.adjustedScore': '调整后展望分',
   'tiered.tree.kept': '（维持）',
   'tiered.tree.weightWords': '正确保留数 / (正确保留数 + 失误数)',
   'tiered.tree.ranges': '低于 4 卖出 · 4–6 持有 · 高于 6 买入',
@@ -1002,10 +1002,10 @@ const zh = {
   'tiered.tree.code': '代码',
   'tiered.tree.countedWord': '计入',
   'tiered.tree.excludedWord': '不计入',
-  'tiered.tree.finalScore': '最终立场分',
+  'tiered.tree.finalScore': '最终展望分',
   'tiered.tree.total': '总条数',
   'tiered.tree.dimensionAverage': '{n} 个维度的平均分',
-  'tiered.tree.transcript': '过程记录',
+  'tiered.tree.transcript': '详情',
   'tiered.tree.howItWorks': '规则说明',
   'tiered.tree.explain1': '两个 AI 各自独立通读四份报告，分别列出全部看多与看空证据。',
   'tiered.tree.explain2':
@@ -1064,7 +1064,7 @@ const zh = {
   'tiered.note.thinBase': '守方最初的证据大多未能成立——权重建立在较薄的证据基础上。',
   'tiered.note.treeBadRefs': '{side}引用的证据无法解析为单一数值——无效引用已剔除。',
   'tiered.help.debateScore':
-    '辩论得出的最终立场分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 卖出，4–6 持有，高于 6 买入。\n完全由代码计数得出：得分 = 10 × 看多条数 ÷ 总条数，只统计经受住检验的证据——见证据清单底部的「评分」。',
+    '投票得出的最终展望分，满分 10，保留两位小数。\n0 = 强烈看空，5 = 中性，10 = 强烈看多。\n低于 4 看空，4–6 中性，高于 6 看多。\n完全由代码算出：得分 = 10 × 看多证据的权重和 ÷ 全部证据的权重和，只统计经受住检验的证据——见「详情」底部的「评分」。',
   'tiered.risk.title': '第 3 层 · 风险压力测试',
   'tiered.help.risk':
     '两个 AI 各自独立列出这套交易计划的风险，逐条经代码引用校验和多数投票确认——与第 2 层同一套机制。\n仓位倍数完全由代码按确认风险数决定；方向沿用第 2 层结论。\n（旧的运行记录仍显示当时的三视角点评。）',
@@ -1125,15 +1125,17 @@ const zh = {
   'tiered.altForm.start': '开始',
   'tiered.altForm.noticeTitle': '提示',
   'tiered.altForm.needTickerFirst': '请先选择股票代码——本金使用该股票所在市场的货币。',
-  'tiered.altForm.allRequired': '代码、层级、本金、单笔风险四项都需要填写。',
+  'tiered.altForm.allRequired': '代码、层级、本金、单笔风险、持仓五项都需要填写。',
+  'tiered.altForm.tierOption1': '1：初步分析',
+  'tiered.altForm.tierOption2': '2：深度分析',
   'tiered.altForm.tickerPh': '输入代码…',
   'tiered.altForm.tierPh': '选择层级…',
   'tiered.altForm.capitalPh': '输入本金…',
   'tiered.altForm.riskPh': '输入风险…',
-  'tiered.altForm.ownership': '持仓',
+  'tiered.altForm.ownership': '持仓: 股数',
   'tiered.altForm.ownershipPh': '已持有股数…',
   'tiered.help.ownership':
-    '这只股票你已持有的股数，默认 0（不填即为 0）。\n填了之后：卖出结论会给出具体卖出股数，第 3 层风险压测也会把持仓当作可引用的计划数据。',
+    '这只股票你已持有的股数。必填，默认 10；填 0 表示未持有。\n它决定「操作」：只有看多且持仓为 0 才会给出建仓计划；看空且已持有会给出清仓股数。',
   'tiered.pill.ticker': '代码: {value}',
   'tiered.pill.tier': '层级: {value}',
   'tiered.pill.capital': '本金: {value} {currency}',
@@ -1168,8 +1170,8 @@ const zh = {
   'tiered.altHistory.none': '没有符合筛选的运行',
   'tiered.altHistory.loading': '加载报告…',
   'tiered.alt.dimensionsTitle': '四维数据报告',
-  'tiered.alt.tier1Title': '层级 1：初步立场',
-  'tiered.alt.tier2Title': '层级 2：立场辩论',
+  'tiered.alt.tier1Title': '层级 1：初步分析',
+  'tiered.alt.tier2Title': '层级 2：深度分析',
   'tiered.alt.tier3Title': '层级 3：风险辩论',
   'tiered.alt.sharesTitle': '股数计算',
   'tiered.alt.f.capital': '本金',
@@ -1183,8 +1185,8 @@ const zh = {
   'tiered.alt.f.belowNote': '只保留低于理想买入价 {value} 的数值',
   'tiered.alt.f.bullWeight': '多方权重',
   'tiered.alt.f.bearWeight': '空方权重',
-  'tiered.alt.f.bullScore': '多方立场分',
-  'tiered.alt.f.bearScore': '空方立场分',
+  'tiered.alt.f.bullScore': '多方展望分',
+  'tiered.alt.f.bearScore': '空方展望分',
   'tiered.alt.sources': '来源',
   'tiered.alt.verdict': '结论',
   'tiered.alt.size': '仓位',
@@ -1218,6 +1220,9 @@ const zh = {
   'tiered.help.structuralStop':
     '若你已持有该股，收盘跌破这个价位说明支撑结构已被破坏，是常用的离场参考。\n持有场景刻意只显示这一个价位（不建议加仓，所以不显示买入价）。',
   'tiered.alt.noPlan': '本次操作无需买卖计划价位。',
+  'tiered.alt.planTitle': '交易计划',
+  'tiered.help.plan':
+    '由固定公式从价格数据算出的计划价位（不经 AI）。\n显示内容随「操作」变化：可建仓→完整价位表；继续持有→仅结构性止损位；不交易 / 清仓→无价位。',
   'tiered.altFilter.outlook': '展望',
   'tiered.altFilter.outlookPh': '筛选展望…',
   'tiered.pill.outlook': '展望：{value}',
@@ -1233,6 +1238,17 @@ const zh = {
   'tiered.tree.totalWeight': '总权重和',
   'tiered.tree.explainWeights':
     '每位 AI 还会给每条证据打 1-3 的重要性评分；最终得分按权重计算：10 × 看多证据的权重和 ÷ 全部证据的权重和。',
+
+  // ---- 层级 2 详情（v11：1-5 评分 + 评分理由）----
+  'tiered.tree.explainWeights5':
+    '每位 AI 还会给每条证据打 1-5 的重要性评分（1 = 非常次要，5 = 非常重要）；证据的最终分是所有评分的中位数，总分按它加权：10 × 看多证据的权重和 ÷ 全部证据的权重和。点击分数或勾叉可看理由。',
+  'tiered.tree.lister': '列出者 {n}',
+  'tiered.tree.checkerRole': '核查员',
+  'tiered.tree.deciderRole': '裁决者',
+  'tiered.tree.scoreLine': '评分：{value}',
+  'tiered.tree.scoresList': '各方评分：{value}',
+  'tiered.tree.medianTitle': '重要性评分',
+  'tiered.tree.medianLine': '中位数：{value}',
 
   // ---- 风险检查卡（仅展示，13 项）----
   'tiered.alt.riskCardTitle': '风险检查（仅展示）',
@@ -2261,7 +2277,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.depth.2': '+ Debate',
   'tiered.depth.3': '+ Risk stress test',
   'tiered.help.depth':
-    'Tier 1: the four data reports plus one AI verdict.\nTier 2: adds the bull/bear position debate.\nTier 3: adds the risk debate, which sets the size multiplier.\nHigher tiers make more AI calls and run slower.',
+    'Tier 1 (preliminary analysis): the four data reports plus one AI verdict.\nTier 2 (deep analysis): skips the single AI verdict — two analysts list the evidence and every bullet is voted on instead. Slower, more thorough.\n(Tier 3 is retired.)',
   'tiered.final.title': 'Final verdict',
   'tiered.help.finalVerdict':
     'The direction after the deepest review you selected — this is the call recorded in the AI-signals ledger.',
@@ -2330,7 +2346,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.debate.bullCase': 'Bull case',
   'tiered.debate.bearCase': 'Bear case',
   'tiered.debate.scoringTitle': 'Scoring and calculation',
-  'tiered.debate.positionScore': 'position score',
+  'tiered.debate.positionScore': 'outlook score',
   'tiered.debate.comment': 'comment',
   'tiered.debate.citationValidity': 'citation validity',
   'tiered.debate.knowledgeValidity': 'knowledge validity',
@@ -2363,8 +2379,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.bogus': 'bogus',
   'tiered.tree.counted': 'counted {num}/{den}',
   'tiered.tree.scores': 'Scores',
-  'tiered.tree.initialScore': 'initial position score',
-  'tiered.tree.adjustedScore': 'adjusted position score',
+  'tiered.tree.initialScore': 'initial outlook score',
+  'tiered.tree.adjustedScore': 'adjusted outlook score',
   'tiered.tree.kept': '(kept)',
   'tiered.tree.weightWords': 'correct keeps / (correct keeps + errors)',
   'tiered.tree.ranges': 'below 4 sell · 4–6 hold · above 6 buy',
@@ -2372,10 +2388,10 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.code': 'code',
   'tiered.tree.countedWord': 'counted',
   'tiered.tree.excludedWord': 'excluded',
-  'tiered.tree.finalScore': 'final position score',
+  'tiered.tree.finalScore': 'final outlook score',
   'tiered.tree.total': 'total items',
   'tiered.tree.dimensionAverage': 'average of {n} dimensions',
-  'tiered.tree.transcript': 'Transcript',
+  'tiered.tree.transcript': 'Details',
   'tiered.tree.howItWorks': 'How this works',
   'tiered.tree.explain1':
     'Two AIs read the four reports independently and each lists every piece of bullish and bearish evidence.',
@@ -2458,7 +2474,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.treeBadRefs':
     'The {side} cited evidence that does not point at a single value — invalid references were dropped.',
   'tiered.help.debateScore':
-    'The debate’s final position score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 sell, 4–6 hold, above 6 buy.\nPure counting by code: 10 × bullish bullets ÷ total bullets, over only the evidence that survived checking. See Scores at the bottom of the evidence list.',
+    'The vote’s final outlook score, out of 10, at two decimals.\n0 = strongly bearish, 5 = neutral, 10 = strongly bullish.\nBelow 4 bearish, 4–6 neutral, above 6 bullish.\nPure code: 10 × the bullish bullets’ weight ÷ all bullets’ weight, over only the evidence that survived checking. See Scores at the bottom of Details.',
   'tiered.risk.title': 'Tier 3 · Risk stress test',
   'tiered.help.risk':
     'Two AIs independently list the risks of the trade plan; every risk is citation-checked by code and confirmed by majority vote — the same machinery as tier 2.\nThe size multiplier is pure code, from the confirmed-risk count; the direction stays tier 2’s verdict.\n(Old stored runs still show their three-persona reviews.)',
@@ -2538,15 +2554,18 @@ const en: Record<UiTextKey, string> = {
   'tiered.altForm.noticeTitle': 'Heads up',
   'tiered.altForm.needTickerFirst':
     'Pick a ticker first — capital is in the currency of the ticker’s market.',
-  'tiered.altForm.allRequired': 'All four fields are required: ticker, tier, capital and risk.',
+  'tiered.altForm.allRequired':
+    'All five fields are required: ticker, tier, capital, risk and ownership.',
+  'tiered.altForm.tierOption1': '1: preliminary analysis',
+  'tiered.altForm.tierOption2': '2: deep analysis',
   'tiered.altForm.tickerPh': 'Enter ticker...',
   'tiered.altForm.tierPh': 'Select tier...',
   'tiered.altForm.capitalPh': 'Enter capital...',
   'tiered.altForm.riskPh': 'Enter risk...',
-  'tiered.altForm.ownership': 'Ownership',
+  'tiered.altForm.ownership': 'Ownership: shares',
   'tiered.altForm.ownershipPh': 'Shares held...',
   'tiered.help.ownership':
-    'Shares of this stock you already hold; 0 when left unset (the default).\nWith a holding set, a sell verdict prints a concrete share count to sell, and the tier-3 risk stress test can cite the holding as plan evidence.',
+    'Shares of this stock you already hold. Required; the default is 10, and 0 means you hold none.\nIt drives the Action: only bullish with 0 shares produces an entry plan, and bearish with a holding prints the share count to sell.',
   'tiered.pill.ticker': 'Ticker: {value}',
   'tiered.pill.tier': 'Tier: {value}',
   'tiered.pill.capital': 'Capital: {value} {currency}',
@@ -2581,8 +2600,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.altHistory.none': 'No runs match these filters',
   'tiered.altHistory.loading': 'Loading report…',
   'tiered.alt.dimensionsTitle': 'Four-dimension reports',
-  'tiered.alt.tier1Title': 'Tier 1: preliminary stance',
-  'tiered.alt.tier2Title': 'Tier 2: position debate',
+  'tiered.alt.tier1Title': 'Tier 1: preliminary analysis',
+  'tiered.alt.tier2Title': 'Tier 2: deep analysis',
   'tiered.alt.tier3Title': 'Tier 3: risk debate',
   'tiered.alt.sharesTitle': 'Shares computation',
   'tiered.alt.f.capital': 'capital',
@@ -2596,8 +2615,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.f.belowNote': 'only values below the ideal entry {value} are kept',
   'tiered.alt.f.bullWeight': 'bull weight',
   'tiered.alt.f.bearWeight': 'bear weight',
-  'tiered.alt.f.bullScore': 'bull position score',
-  'tiered.alt.f.bearScore': 'bear position score',
+  'tiered.alt.f.bullScore': 'bull outlook score',
+  'tiered.alt.f.bearScore': 'bear outlook score',
   'tiered.alt.sources': 'Sources',
   'tiered.alt.verdict': 'Verdict',
   'tiered.alt.size': 'Size',
@@ -2635,6 +2654,9 @@ const en: Record<UiTextKey, string> = {
   'tiered.help.structuralStop':
     'If you already hold this stock, a close below this level means the support structure broke — a common exit reference.\nHolding runs deliberately show only this one level (no “buy more”, so no entry prices).',
   'tiered.alt.noPlan': 'No plan levels for this action.',
+  'tiered.alt.planTitle': 'Trade plan',
+  'tiered.help.plan':
+    'The plan levels a fixed formula computed from the price data (no AI).\nWhat shows depends on the Action: enter → the full levels table; keep holding → the structural stop only; no trade / sell → no levels.',
   'tiered.altFilter.outlook': 'Outlook',
   'tiered.altFilter.outlookPh': 'Filter outlook...',
   'tiered.pill.outlook': 'Outlook: {value}',
@@ -2650,6 +2672,17 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.totalWeight': 'total weight',
   'tiered.tree.explainWeights':
     'Each AI also rates every bullet’s importance 1-3; the final score is weighted: 10 × the bullish bullets’ weight ÷ all bullets’ weight.',
+
+  // ---- Tier-2 details (v11: 1-5 scores + score reasons) ----
+  'tiered.tree.explainWeights5':
+    'Each AI also rates every bullet’s importance 1-5 (1 = very minor, 5 = very important); a bullet’s final score is the median of its ratings, and the total score is weighted by it: 10 × the bullish bullets’ weight ÷ all bullets’ weight. Click a score or a mark for the reasoning.',
+  'tiered.tree.lister': 'Lister {n}',
+  'tiered.tree.checkerRole': 'Checker',
+  'tiered.tree.deciderRole': 'Decider',
+  'tiered.tree.scoreLine': 'Score: {value}',
+  'tiered.tree.scoresList': 'Scores: {value}',
+  'tiered.tree.medianTitle': 'Importance score',
+  'tiered.tree.medianLine': 'Median: {value}',
 
   // ---- Risk checks card (display only, 13 entries) ----
   'tiered.alt.riskCardTitle': 'Risk checks (display only)',

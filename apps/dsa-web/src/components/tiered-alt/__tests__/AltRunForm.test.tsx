@@ -58,11 +58,13 @@ describe('AltRunForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
 
     expect(props.onStart).not.toHaveBeenCalled();
-    expect(screen.getByText(/四项都需要填写|All four fields are required/)).toBeInTheDocument();
+    expect(screen.getByText(/五项都需要填写|All five fields are required/)).toBeInTheDocument();
   });
 
   it('shows selections as Label: value pills; clicking a pill removes it', () => {
-    const props = renderForm({ ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1' });
+    const props = renderForm({
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: '10',
+    });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
     expect(props.onStart).toHaveBeenCalled();
@@ -101,12 +103,22 @@ describe('AltRunForm', () => {
     ).toBeInTheDocument();
   });
 
-  it('treats ownership as optional and shows a removable pill when set', () => {
+  it('requires ownership like every other field', () => {
+    const props = renderForm({
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: null,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
+
+    expect(props.onStart).not.toHaveBeenCalled();
+    expect(screen.getByText(/五项都需要填写|All five fields are required/)).toBeInTheDocument();
+  });
+
+  it('shows the ownership pill and clicking it removes it', () => {
     const props = renderForm({
       ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: '300',
     });
 
-    // Start works with or without ownership — it is the optional field.
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
     expect(props.onStart).toHaveBeenCalled();
 
@@ -114,22 +126,30 @@ describe('AltRunForm', () => {
     expect(props.onOwnership).toHaveBeenCalledWith(null);
   });
 
-  it('rejects a fractional ownership entry', () => {
+  it('accepts 0 shares ("I hold none") but rejects a fractional entry', () => {
     const props = renderForm({ ticker: 'AAPL' });
     const box = screen.getByPlaceholderText(/已持有股数|Shares held/);
 
     fireEvent.change(box, { target: { value: '10.5' } });
     fireEvent.keyDown(box, { key: 'Enter' });
-
     expect(props.onOwnership).not.toHaveBeenCalled();
+
+    fireEvent.change(box, { target: { value: '0' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(props.onOwnership).toHaveBeenCalledWith('0');
   });
 
-  it('clears a selection when its dropdown option is picked again', () => {
+  it('names the tier options after their analyses and clears on re-pick', () => {
     const props = renderForm({ tier: 2 });
 
     fireEvent.focus(screen.getByPlaceholderText(/选择层级|Select tier/));
-    fireEvent.click(screen.getByRole('button', { name: '2' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /2: deep analysis|2：深度分析/ }),
+    );
 
     expect(props.onTier).toHaveBeenCalledWith(null);
+    expect(
+      screen.getByRole('button', { name: /1: preliminary analysis|1：初步分析/ }),
+    ).toBeInTheDocument();
   });
 });

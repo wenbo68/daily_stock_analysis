@@ -179,6 +179,69 @@ function makeWeightedDebate(): TieredDebateDetail {
   };
 }
 
+// A tier-2 section wrapping the given stored detail.
+function makeTier2(detail: TieredDebateDetail): NonNullable<TieredResult['tier2']> {
+  return {
+    tier: 2,
+    coverage: 'full',
+    direction: 'hold',
+    confidence: null,
+    score: null,
+    levels: LEVELS,
+    narrative: 'Weighted to hold.',
+    warnings: [],
+    debate_detail: detail,
+  };
+}
+
+// A v11 tree: T1 both-listed (lister ratings 4 and 5 → median 4.5); S1
+// single-author (lister 2 rated 3) checked invalid (2) and ruled valid
+// by the decider (2) → median 2. Every rating carries its reason.
+function makeRichDebate(): TieredDebateDetail {
+  const detail = makeWeightedDebate();
+  return {
+    ...detail,
+    format: 11,
+    items: [
+      {
+        ...detail.items![0],
+        author_weights: [4, 5],
+        author_votes: [
+          { lister: 1, weight: 4, weight_reason: 'Strong but not decisive.' },
+          { lister: 2, weight: 5, weight_reason: 'Momentum drives the thesis.' },
+        ],
+        weight: 4.5,
+      },
+      {
+        ...detail.items![1],
+        author_weights: [3],
+        author_votes: [
+          { lister: 2, weight: 3, weight_reason: 'Sentiment is soft evidence.' },
+        ],
+        weight: 2,
+        votes: [
+          {
+            role: 'checker',
+            verdict: 'invalid',
+            reason: 'The deal risk is already priced in.',
+            links: [],
+            weight: 2,
+            weight_reason: 'A minor point either way.',
+          },
+          {
+            role: 'decider',
+            verdict: 'valid',
+            reason: 'The objection is speculation.',
+            links: [],
+            weight: 2,
+            weight_reason: 'Still a side note.',
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function renderResult(result: TieredResult, runDate?: Date | null) {
   render(
     <MemoryRouter>
@@ -374,5 +437,71 @@ describe('AltResult v10 weighted vote tree', () => {
     expect(scores).toHaveTextContent(/看多权重和|bullish weight/);
     expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent('= 10 × 3 / 5.5');
     expect(scores).toHaveTextContent('= 5.45');
+  });
+});
+
+describe('AltResult deep-analysis layout', () => {
+  it('hides the tier-1 card on a new deep run and shows the trade plan instead', () => {
+    renderResult(
+      makeOutlookResult({ depth: 2, tier2: makeTier2(makeWeightedDebate()) }),
+    );
+    expect(screen.queryByTestId('alt-tier1')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/层级 1：初步分析|Tier 1: preliminary analysis/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/交易计划|Trade plan/)).toBeInTheDocument();
+    // action = enter → the plan block carries the full levels table.
+    expect(
+      within(screen.getByTestId('alt-plan')).getByTestId('alt-levels-table'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('alt-tier2')).toBeInTheDocument();
+  });
+});
+
+describe('AltResult v11 detail tree', () => {
+  function renderRich() {
+    renderResult(makeOutlookResult({ depth: 2, tier2: makeTier2(makeRichDebate()) }));
+  }
+
+  it('shows the median as a bare number whose modal lists every score', () => {
+    renderRich();
+    const badge = screen.getByTestId('alt-tree-weight-T1');
+    expect(badge).toHaveTextContent(/^4\.5$/);
+    fireEvent.click(badge);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/各方评分：4, 5|Scores: 4, 5/);
+    expect(dialog).toHaveTextContent(/中位数：4\.5|Median: 4\.5/);
+  });
+
+  it('shows one check per lister; its modal carries validity, score and reason', () => {
+    renderRich();
+    const marks = within(screen.getByTestId('alt-tree-item-T1')).getAllByRole('button', {
+      name: '✓',
+    });
+    expect(marks).toHaveLength(2); // both listers, no longer hidden
+    fireEvent.click(marks[0]);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/列出者 1|Lister 1/);
+    expect(dialog).toHaveTextContent(/有效|valid/i);
+    expect(dialog).toHaveTextContent('The 14-day RSI (71.20) is above 70.');
+    expect(dialog).toHaveTextContent(/评分：4|Score: 4/);
+    expect(dialog).toHaveTextContent('Strong but not decisive.');
+  });
+
+  it('a checker ✗ modal shows the objection, then the score and its reason', () => {
+    renderRich();
+    fireEvent.click(
+      within(screen.getByTestId('alt-tree-item-S1')).getByRole('button', { name: '✗' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/核查员|Checker/);
+    expect(dialog).toHaveTextContent('The deal risk is already priced in.');
+    expect(dialog).toHaveTextContent(/评分：2|Score: 2/);
+    expect(dialog).toHaveTextContent('A minor point either way.');
+  });
+
+  it('the how-it-works list explains the 1-5 scale', () => {
+    renderRich();
+    expect(screen.getByTestId('alt-tree-explain')).toHaveTextContent(/1-5/);
   });
 });
