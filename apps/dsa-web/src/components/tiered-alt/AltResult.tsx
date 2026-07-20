@@ -1,8 +1,10 @@
 import { type ComponentProps, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
+  TieredAction,
   TieredAnchoredReason,
   TieredCitation,
+  TieredEarnings,
   TieredResult,
   TieredSizing,
   TieredTierSection,
@@ -13,7 +15,8 @@ import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
-import { ALT_LINK, DIRECTION_TEXT } from './altStyles';
+import { ALT_LINK, DIRECTION_TEXT, OUTLOOK_TEXT } from './altStyles';
+import { AltRiskCard } from './AltRiskCard';
 import {
   AltCard,
   AltEvidenceRefs,
@@ -106,7 +109,8 @@ const AltSharesComputation = ({
   const riskFraction = sizing.inputs.risk_fraction;
   const entry = sizing.inputs.entry;
   const stopLoss = sizing.inputs.stop_loss;
-  const multiplier = sizing.risk_multiplier;
+  // Multiplier died with tier 3 — new runs don't store the key at all.
+  const multiplier = sizing.risk_multiplier ?? null;
   const feeFraction = sizing.inputs.fee_fraction ?? 0;
 
   // A sell verdict on a held position prints the exit size instead of a
@@ -298,23 +302,118 @@ const TierHeader = ({ section, notes, score, scoreHelpKey, side }: TierHeaderPro
   );
 };
 
+// ---------- the conclusion (outlook redesign) ----------
+
+// True when the run's local calendar day is before today's — a plan from
+// a previous trading day should be re-run, not traded (owner decision:
+// no expiry mechanism, just this note).
+const isFromPreviousDay = (runDate: Date): boolean => {
+  const now = new Date();
+  return (
+    new Date(runDate.getFullYear(), runDate.getMonth(), runDate.getDate()).getTime() <
+    new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  );
+};
+
+interface AltConclusionProps {
+  result: TieredResult;
+  runDate?: Date | null;
+}
+
+// The run's bottom line, above everything else: the impersonal outlook,
+// the personal action code derived from outlook × your ownership, the
+// warning-only earnings note, and the previous-day staleness note.
+const AltConclusion = ({ result, runDate }: AltConclusionProps) => {
+  const { t } = useUiLanguage();
+  const outlook = result.outlook ?? 'unknown';
+  const action = result.action ?? 'unknown';
+  const earnings: TieredEarnings | null = result.earnings ?? null;
+  const stale = runDate ? isFromPreviousDay(runDate) : false;
+  return (
+    <AltCard testId="alt-conclusion">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+        <AltFact label={t('tiered.alt.outlook')} helpKey="tiered.help.outlook">
+          <span className={OUTLOOK_TEXT[outlook]}>
+            {t(`tiered.outlook.${outlook}` as UiTextKey)}
+          </span>
+        </AltFact>
+        <AltFact label={t('tiered.alt.action')} helpKey="tiered.help.action">
+          {t(`tiered.action.${action}` as UiTextKey)}
+        </AltFact>
+      </div>
+      {earnings?.is_near && earnings.days_until != null ? (
+        <p className="mt-2 text-xs text-amber-300" data-testid="alt-earnings-warning">
+          {t('tiered.alt.earningsWarning', {
+            days: earnings.days_until,
+            date: earnings.next_date ?? '—',
+          })}
+        </p>
+      ) : null}
+      {stale ? (
+        <p className="mt-2 text-xs text-amber-300" data-testid="alt-stale-note">
+          {t('tiered.alt.staleNote')}
+        </p>
+      ) : null}
+    </AltCard>
+  );
+};
+
 interface AltTierOneProps {
   result: TieredResult;
   citations: TieredCitation[];
+  /** Undefined on old stored runs → the full levels table (legacy). */
+  action?: TieredAction;
 }
 
-const AltTierOne = ({ result, citations }: AltTierOneProps) => (
-  <AltCard testId="alt-tier1">
-    {/* No score here: tier 1's stored score is the analyzer's bullishness
-        composite, not a judge confidence like tiers 2/3 — showing it under
-        the same "Score" label would mean two different things. */}
-    <TierHeader
-      section={{ direction: result.direction, coverage: result.coverage }}
-      notes={result.warnings}
-    />
-    <AltLevels levels={result.levels} levelsDetail={result.levels_detail} citations={citations} />
-  </AltCard>
-);
+const AltTierOne = ({ result, citations, action }: AltTierOneProps) => {
+  const { t } = useUiLanguage();
+  // Conditional plan display (owner decision): which levels show depends
+  // on the action. Old runs (no action) keep the full table.
+  const plan =
+    action === undefined || action === 'enter' || action === 'unknown'
+      ? 'full'
+      : action;
+  return (
+    <AltCard testId="alt-tier1">
+      {/* No score here: tier 1's stored score is the analyzer's bullishness
+          composite, not a judge confidence — showing it under the same
+          "Score" label would mean two different things. */}
+      <TierHeader
+        section={{ direction: result.direction, coverage: result.coverage }}
+        notes={result.warnings}
+      />
+      {plan === 'full' ? (
+        <AltLevels
+          levels={result.levels}
+          levelsDetail={result.levels_detail}
+          citations={citations}
+        />
+      ) : plan === 'keep_holding' ? (
+        // Holders get the one number that still matters: the structural
+        // exit level. Entries and targets are entry-plan material and a
+        // bullish-while-holding run deliberately does not say "buy more".
+        <p className="text-sm" data-testid="alt-structural-stop">
+          <span className="text-xs text-gray-500">
+            <HelpTerm
+              label={t('tiered.alt.structuralStop')}
+              helpKey="tiered.help.structuralStop"
+            />
+            {': '}
+          </span>
+          <span className="font-semibold tabular-nums text-gray-200">
+            {result.levels.stop_loss != null ? formatPrice(result.levels.stop_loss) : '—'}
+          </span>
+        </p>
+      ) : (
+        // no_trade / sell_all: no plan levels at all — the action line
+        // already said what to do (sell counts live in the shares block).
+        <p className="text-sm text-gray-500" data-testid="alt-no-plan">
+          {t('tiered.alt.noPlan')}
+        </p>
+      )}
+    </AltCard>
+  );
+};
 
 interface AltTierSectionProps {
   section: TieredTierSection;
@@ -377,7 +476,7 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   if (
     detail?.format != null &&
     detail.format >= 5 &&
-    detail.format <= 9 &&
+    detail.format <= 10 &&
     Array.isArray(detail.items)
   ) {
     return (
@@ -623,13 +722,15 @@ interface AltResultProps {
   result: TieredResult;
   /** The run's task id — lets formula numbers link back to the run row. */
   taskId?: string;
+  /** When the run happened — drives the previous-day staleness note. */
+  runDate?: Date | null;
 }
 
 // The same fixed skeleton at every depth, each block titled above its
 // card: the four dimension reports (the raw material) → tier 1 → tier 2 →
 // tier 3 → the shares computation, so the reading order matches the order
 // things actually happened in.
-export const AltResult = ({ result, taskId }: AltResultProps) => {
+export const AltResult = ({ result, taskId, runDate }: AltResultProps) => {
   const { t } = useUiLanguage();
   const citations = sentimentCitations(result.dimensions);
   const usage = result.llm_usage ?? null;
@@ -651,11 +752,18 @@ export const AltResult = ({ result, taskId }: AltResultProps) => {
 
   return (
     <div className="flex flex-col gap-6">
+      {result.outlook ? (
+        // Outlook-redesign runs lead with the bottom line; old stored
+        // runs never carried it and keep their legacy layout.
+        <AltBlock title={t('tiered.alt.conclusionTitle')} helpKey="tiered.help.outlook">
+          <AltConclusion result={result} runDate={runDate} />
+        </AltBlock>
+      ) : null}
       <AltBlock title={t('tiered.alt.dimensionsTitle')}>
         <AltDimensions dimensions={result.dimensions} />
       </AltBlock>
       <AltBlock title={t('tiered.alt.tier1Title')} helpKey="tiered.help.tier1">
-        <AltTierOne result={result} citations={citations} />
+        <AltTierOne result={result} citations={citations} action={result.action} />
       </AltBlock>
       {result.tier2 ? (
         <AltBlock title={t('tiered.alt.tier2Title')} helpKey="tiered.help.debate">
@@ -675,6 +783,11 @@ export const AltResult = ({ result, taskId }: AltResultProps) => {
             entryTargetId={entryTargetId}
             stopTargetId={stopTargetId}
           />
+        </AltBlock>
+      ) : null}
+      {result.risk_card && result.risk_card.length > 0 ? (
+        <AltBlock title={t('tiered.alt.riskCardTitle')} helpKey="tiered.help.riskCard">
+          <AltRiskCard entries={result.risk_card} />
         </AltBlock>
       ) : null}
       <div className="flex flex-col gap-1 text-xs">

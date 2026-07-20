@@ -45,7 +45,7 @@ const DATE_MIN = 3;
 const SHARES_MIN = 2;
 
 describe('AltRunHistory', () => {
-  it('shows ticker, capital, risk, tier, verdict, shares and date per row', () => {
+  it('shows ticker, capital, risk, tier, outlook, shares and date per row', () => {
     renderHistory({
       runs: [
         makeRun('t1', { stock_code: 'MSFT', tier: 3 }),
@@ -66,7 +66,8 @@ describe('AltRunHistory', () => {
     expect(screen.getByText('1%')).toBeInTheDocument();
     expect(screen.getAllByText(/^\d{4}\/\d{2}\/\d{2}, \d{2}:\d{2}$/)).toHaveLength(2);
     expect(screen.getByText(/层级 3|Tier 3/)).toBeInTheDocument();
-    expect(screen.getByText(/买入|Buy/)).toBeInTheDocument();
+    // an old row without a stored outlook maps its buy verdict to bullish
+    expect(screen.getByText(/看多|Bullish/)).toBeInTheDocument();
     expect(screen.getByText(/41/)).toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
     expect(screen.getByText(/分析中|Running/)).toBeInTheDocument();
@@ -123,20 +124,22 @@ describe('AltRunHistory', () => {
     expect(screen.getByText('NVDA')).toBeInTheDocument();
   });
 
-  it('clears a verdict filter by picking the same option again', () => {
+  it('clears an outlook filter by picking the same option again', () => {
     renderHistory({
       runs: [
-        makeRun('t1', { stock_code: 'MSFT', direction: 'buy' }),
+        // a new run stores its outlook; an old run maps hold → neutral
+        makeRun('t1', { stock_code: 'MSFT', direction: 'buy', outlook: 'bullish' }),
         makeRun('t2', { stock_code: 'NVDA', direction: 'hold' }),
       ],
     });
 
-    fireEvent.focus(screen.getByPlaceholderText(/筛选结论|Filter verdict/));
-    fireEvent.click(screen.getAllByText(/持有|Hold/)[0]);
+    fireEvent.focus(screen.getByPlaceholderText(/筛选展望|Filter outlook/));
+    fireEvent.click(screen.getAllByText(/中性|Neutral/)[0]);
     expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
+    expect(screen.getByText('NVDA')).toBeInTheDocument();
 
     // the dropdown stays open for multi-pick filters — same option clears
-    fireEvent.click(screen.getAllByText(/持有|Hold/)[0]);
+    fireEvent.click(screen.getAllByText(/中性|Neutral/)[0]);
     expect(screen.getByText('MSFT')).toBeInTheDocument();
   });
 

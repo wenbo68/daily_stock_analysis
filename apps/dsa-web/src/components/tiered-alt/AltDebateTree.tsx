@@ -555,13 +555,35 @@ const VoteItem = ({
         vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid',
       )}`,
       body: (
-        <p className="text-sm text-gray-300">
-          {vote.reason ? (
-            <LinkedTextV8 text={vote.reason} links={vote.links ?? []} />
-          ) : (
-            '—'
-          )}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-gray-300">
+            {vote.reason ? (
+              <LinkedTextV8 text={vote.reason} links={vote.links ?? []} />
+            ) : (
+              '—'
+            )}
+          </p>
+          {vote.weight != null ? (
+            // v10: the voter's own 1-3 importance rating of the bullet.
+            <p className="text-xs text-gray-500">
+              {t('tiered.tree.voteWeight', { value: vote.weight })}
+            </p>
+          ) : null}
+        </div>
+      ),
+    });
+  const showWeight = () =>
+    onShow({
+      title: t('tiered.tree.weightTitle'),
+      body: (
+        <div className="flex flex-col gap-1 text-sm text-gray-300">
+          <p>{t('tiered.tree.weightExplain')}</p>
+          <p className="text-xs text-gray-500">
+            {t('tiered.tree.authorWeights', {
+              value: (item.author_weights ?? []).join(', ') || '—',
+            })}
+          </p>
+        </div>
       ),
     });
   return (
@@ -574,6 +596,17 @@ const VoteItem = ({
         <span className={cn('font-semibold', DIRECTION_TEXT[item.direction])}>
           {t(item.direction === 'bullish' ? 'tiered.tree.bullish' : 'tiered.tree.bearish')}
         </span>
+        {item.weight != null ? (
+          // v10 weight badge — the median of every voter's 1-3 rating.
+          <button
+            type="button"
+            data-testid={`alt-tree-weight-${item.id}`}
+            className="cursor-pointer font-mono text-gray-500 hover:text-gray-300"
+            onClick={showWeight}
+          >
+            {t('tiered.tree.weightBadge', { value: item.weight })}
+          </button>
+        ) : null}
         {item.struck ? (
           <MarkButton
             label="✗"
@@ -630,11 +663,16 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
     dimension,
     items: items.filter((item) => item.dimension === dimension),
   })).filter((group) => group.items.length > 0);
+  // v10 weights the score by the voters' 1-3 importance ratings;
+  // v8/v9 counted every bullet the same.
+  const weighted = detail.format != null && detail.format >= 10;
+  const numerator = weighted ? (finalPool?.bullish_weight ?? null) : (finalPool?.bullish ?? null);
+  const denominator = weighted ? (finalPool?.total_weight ?? null) : (finalPool?.total ?? null);
   // Show the plugged-in formula only when it reproduces the stored
   // score (stored format-8 runs used a per-dimension mean).
   const flat =
-    finalPool && finalPool.total > 0
-      ? Math.round((10 * finalPool.bullish * 100) / finalPool.total) / 100
+    numerator != null && denominator != null && denominator > 0
+      ? Math.round((10 * numerator * 100) / denominator) / 100
       : null;
   const showFormula =
     flat != null &&
@@ -651,6 +689,7 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
               {EXPLAIN_KEYS.map((key) => (
                 <li key={key}>{t(key)}</li>
               ))}
+              {weighted ? <li>{t('tiered.tree.explainWeights')}</li> : null}
             </ol>
           </div>
 
@@ -691,12 +730,14 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
               <div className="flex flex-col gap-1 overflow-x-auto text-sm">
                 <p className={FORMULA_LINE}>
                   {t('tiered.tree.finalScore')}: 10 ×{' '}
-                  <FVar>{t('tiered.tree.bullish')}</FVar> /{' '}
-                  <FVar>{t('tiered.tree.total')}</FVar>
+                  <FVar>
+                    {t(weighted ? 'tiered.tree.bullishWeight' : 'tiered.tree.bullish')}
+                  </FVar>{' '}
+                  / <FVar>{t(weighted ? 'tiered.tree.totalWeight' : 'tiered.tree.total')}</FVar>
                 </p>
                 {showFormula ? (
                   <p className={FORMULA_LINE} data-testid="alt-tree-final-formula">
-                    = 10 × {finalPool.bullish} / {finalPool.total}
+                    = 10 × {numerator} / {denominator}
                   </p>
                 ) : null}
                 <p className={FORMULA_RESULT}>= {verdict.final_score?.toFixed(2)}</p>
@@ -899,7 +940,7 @@ interface AltDebateTreeProps {
 }
 
 export const AltDebateTree = ({ detail }: AltDebateTreeProps) => {
-  if (detail.format === 8 || detail.format === 9) {
+  if (detail.format != null && detail.format >= 8 && detail.format <= 10) {
     return <VoteTree detail={detail} />;
   }
   return <RoleDebateTree detail={detail} />;

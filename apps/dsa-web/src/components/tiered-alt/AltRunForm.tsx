@@ -7,7 +7,8 @@ import { tickerCurrency } from './altCurrency';
 import { AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltModal } from './AltUi';
 
-const TIERS: TieredDepth[] = [1, 2, 3];
+// Tier 3 retired (outlook redesign) — the picker offers 1 and 2 only.
+const TIERS: TieredDepth[] = [1, 2];
 
 // Dropdown suggestions only — any ticker can still be typed and entered.
 const TICKER_IDEAS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', '600519', 'hk00700'];

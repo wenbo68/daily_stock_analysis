@@ -121,12 +121,14 @@ export type TieredDebateJudgeAddition = {
 
 // One v8 vote on a bullet: the check round's second vote or the
 // deciding round's tiebreaker. Reasons carry the same code-verified
-// links the bullets use.
+// links the bullets use. v10 votes carry the voter's own 1-3 importance
+// rating of the bullet.
 export type TieredDebateVote = {
   role: 'checker' | 'decider';
   verdict: 'valid' | 'invalid';
   reason: string | null;
   links: TieredDebateLink[];
+  weight?: number;
 };
 
 // One evidence item of the tree with everything that happened to it.
@@ -148,6 +150,10 @@ export type TieredDebateItem = {
   problems?: string[];
   authors?: number;
   votes?: TieredDebateVote[];
+  // v10 weighted votes: the authors' own 1-3 ratings (one or two), and
+  // the final median of every voter's rating (null on struck bullets).
+  author_weights?: number[];
+  weight?: number | null;
   added_by_attacker?: boolean;
   attacker_checks?: { citation: TieredDebateCheck; logic: TieredDebateCheck } | null;
   attacker_check?: TieredDebateCheck | null;
@@ -170,15 +176,27 @@ export type TieredDebateItem = {
 // Pool snapshot: per-dimension bullish/bearish counts plus the
 // pool-wide totals and score. v6-v8 store a per-dimension score and an
 // averaged overall score; v9 stores flat counting (10 × bullish/total)
-// and no per-dimension score.
+// and no per-dimension score; v10 adds importance-weight sums and a
+// weighted score (10 × bullish weight / total weight).
 export type TieredDebatePool = {
   dimensions: Record<
     string,
-    { bullish: number; bearish: number; total: number; score?: number | null }
+    {
+      bullish: number;
+      bearish: number;
+      total: number;
+      score?: number | null;
+      bullish_weight?: number;
+      bearish_weight?: number;
+      total_weight?: number;
+    }
   >;
   bullish: number;
   bearish: number;
   total: number;
+  bullish_weight?: number;
+  bearish_weight?: number;
+  total_weight?: number;
   score: number | null;
 };
 
@@ -283,10 +301,34 @@ export type TieredRiskDetail = {
 
 export type TieredCoverage = 'full' | 'partial' | 'unavailable';
 
+// Outlook redesign (2026-07): the impersonal judgment on the stock…
+export type TieredOutlook = 'bullish' | 'neutral' | 'bearish' | 'unknown';
+// …and the personal instruction code derives from outlook × ownership.
+export type TieredAction = 'enter' | 'keep_holding' | 'no_trade' | 'sell_all' | 'unknown';
+
+// Warning-only earnings info: never gates anything, never moves numbers.
+export type TieredEarnings = {
+  next_date: string | null;
+  days_until: number | null;
+  warning_days: number;
+  is_near: boolean;
+  note: string | null;
+};
+
+// One display-only risk-card entry. The 13 ids and their value keys are
+// fixed by the backend (risk_card.py); wording lives in the i18n layer.
+export type TieredRiskCardEntry = {
+  id: string;
+  status: 'ok' | 'flag' | 'na';
+  values: Record<string, unknown>;
+};
+
 // The deepest tier's verdict in summary form — what the run ends on.
 export type TieredFinal = {
   tier: number;
   direction: 'buy' | 'hold' | 'sell' | 'unknown';
+  outlook?: TieredOutlook;
+  action?: TieredAction;
   coverage: 'full' | 'partial' | 'unavailable';
   confidence: string | null;
   levels: TieredLevels;
@@ -309,8 +351,9 @@ export type TieredTierSection = {
 export type TieredSizing = {
   enabled: boolean;
   shares: number | null;
-  shares_before_multiplier: number | null;
-  risk_multiplier: number | null;
+  // Multiplier keys died with tier 3 — absent on outlook-redesign runs.
+  shares_before_multiplier?: number | null;
+  risk_multiplier?: number | null;
   // Ownership block (absent on runs stored before the ownership input):
   // held shares, and the exit size a sell verdict prints from them.
   ownership?: number | null;
@@ -366,6 +409,11 @@ export type TieredResult = {
   tier3?: TieredTierSection | null;
   sizing?: TieredSizing | null;
   llm_usage?: TieredLlmUsage | null;
+  // Outlook redesign additions — absent on old stored runs.
+  outlook?: TieredOutlook;
+  action?: TieredAction;
+  earnings?: TieredEarnings | null;
+  risk_card?: TieredRiskCardEntry[] | null;
 };
 
 export type TieredRunStatus = 'running' | 'done' | 'failed';
@@ -382,6 +430,9 @@ export type TieredRunSummary = {
   // shares mirrors the report card: 0 = sizing ran but bought nothing,
   // null = the run has no sizing block (shown as a dash).
   direction?: 'buy' | 'hold' | 'sell' | 'unknown' | null;
+  // Outlook digest: stored on new runs; the backend maps old runs'
+  // buy/hold/sell to bullish/neutral/bearish so the filter is uniform.
+  outlook?: TieredOutlook | null;
   shares?: number | null;
   // The tier the run went to (1-3); null while running/failed.
   tier?: number | null;
@@ -395,6 +446,9 @@ export type TieredRun = TieredRunSummary & {
   result: TieredResult | null;
 };
 
+// Tier 3 retired (outlook redesign): the backend rejects depth 3 with a
+// validation error and the alt form offers 1-2 only. The type keeps 3 so
+// the legacy /tiered page (deliberately untouched) still compiles.
 export type TieredDepth = 1 | 2 | 3;
 
 export type TieredSizingRequest = {

@@ -93,7 +93,7 @@ export const SizingCard = ({ sizing }: SizingCardProps) => {
             />
           </div>
 
-          {sizing.risk_multiplier !== null && sizing.shares_before_multiplier !== null ? (
+          {sizing.risk_multiplier != null && sizing.shares_before_multiplier != null ? (
             <p className="mt-2 text-xs text-secondary-text">
               {t('tiered.sizing.multiplierApplied', {
                 before: sizing.shares_before_multiplier,

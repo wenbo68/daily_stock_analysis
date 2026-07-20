@@ -4,12 +4,15 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { plainNumber, riskPctText } from './altFormat';
-import { ALT_COLOR, DIRECTION_TEXT, STATUS_DOT } from './altStyles';
+import { ALT_COLOR, OUTLOOK_TEXT, STATUS_DOT } from './altStyles';
 import { AltPageSelector, AltPairField, AltPill, AltPillRow, AltSelect } from './AltFields';
 import { AltResult } from './AltResult';
 
 const PAGE_SIZE = 10;
-const FILTER_DIRECTIONS = ['buy', 'hold', 'sell'] as const;
+// Outlook redesign: the verdict filter became the outlook filter. Old
+// stored runs are mapped by the backend digest (buy→bullish, …).
+const FILTER_OUTLOOKS = ['bullish', 'neutral', 'bearish'] as const;
+// Old stored runs went to tier 3, so the history filter keeps offering it.
 const FILTER_TIERS = ['1', '2', '3'] as const;
 
 // The filter grid and every run row share this template, so each row value
@@ -81,6 +84,18 @@ function riskCell(run: TieredRunSummary): string {
   return run.risk_fraction == null ? '—' : `${riskPctText(run.risk_fraction)}%`;
 }
 
+// The row's outlook: stored on new runs; rows fetched before the backend
+// digest existed map their legacy verdict here as a fallback.
+const LEGACY_OUTLOOK: Record<string, string> = {
+  buy: 'bullish',
+  hold: 'neutral',
+  sell: 'bearish',
+};
+
+function runOutlook(run: TieredRunSummary): string {
+  return run.outlook ?? LEGACY_OUTLOOK[run.direction ?? ''] ?? 'unknown';
+}
+
 interface HistoryFilters {
   tickers: string[];
   capitalMin: string | null;
@@ -88,7 +103,7 @@ interface HistoryFilters {
   riskMin: string | null;
   riskMax: string | null;
   tiers: string[];
-  directions: string[];
+  outlooks: string[];
   sharesMin: string | null;
   sharesMax: string | null;
   dateMin: string | null;
@@ -102,7 +117,7 @@ const NO_FILTERS: HistoryFilters = {
   riskMin: null,
   riskMax: null,
   tiers: [],
-  directions: [],
+  outlooks: [],
   sharesMin: null,
   sharesMax: null,
   dateMin: null,
@@ -135,7 +150,7 @@ function matchesFilters(run: TieredRunSummary, filters: HistoryFilters): boolean
   if (filters.tiers.length > 0 && !filters.tiers.includes(String(run.tier ?? ''))) {
     return false;
   }
-  if (filters.directions.length > 0 && !filters.directions.includes(run.direction ?? '')) {
+  if (filters.outlooks.length > 0 && !filters.outlooks.includes(runOutlook(run))) {
     return false;
   }
   if (filters.sharesMin && !(run.shares != null && run.shares >= Number(filters.sharesMin))) {
@@ -202,7 +217,7 @@ export const AltRunHistory = ({
   const hasFilters =
     filters.tickers.length > 0 ||
     filters.tiers.length > 0 ||
-    filters.directions.length > 0 ||
+    filters.outlooks.length > 0 ||
     filters.capitalMin !== null ||
     filters.capitalMax !== null ||
     filters.riskMin !== null ||
@@ -246,14 +261,14 @@ export const AltRunHistory = ({
       onRemove: () => updateFilters({ tiers: toggled(filters.tiers, tier) }),
     });
   });
-  filters.directions.forEach((direction) => {
+  filters.outlooks.forEach((outlook) => {
     pills.push({
-      key: `direction-${direction}`,
+      key: `outlook-${outlook}`,
       tone: TONE.verdict,
-      label: t('tiered.pill.verdict', {
-        value: t(`tiered.direction.${direction}` as UiTextKey),
+      label: t('tiered.pill.outlook', {
+        value: t(`tiered.outlook.${outlook}` as UiTextKey),
       }),
-      onRemove: () => updateFilters({ directions: toggled(filters.directions, direction) }),
+      onRemove: () => updateFilters({ outlooks: toggled(filters.outlooks, outlook) }),
     });
   });
   ([
@@ -323,15 +338,15 @@ export const AltRunHistory = ({
           onCommit={(value) => updateFilters({ tiers: toggled(filters.tiers, value) })}
         />
         <AltSelect
-          label={t('tiered.altFilter.direction')}
-          options={FILTER_DIRECTIONS.map((value) => ({
+          label={t('tiered.altFilter.outlook')}
+          options={FILTER_OUTLOOKS.map((value) => ({
             value,
-            label: t(`tiered.direction.${value}` as UiTextKey),
+            label: t(`tiered.outlook.${value}` as UiTextKey),
           }))}
-          selected={filters.directions}
-          placeholder={t('tiered.altFilter.directionPh')}
+          selected={filters.outlooks}
+          placeholder={t('tiered.altFilter.outlookPh')}
           multi
-          onCommit={(value) => updateFilters({ directions: toggled(filters.directions, value) })}
+          onCommit={(value) => updateFilters({ outlooks: toggled(filters.outlooks, value) })}
         />
         <AltPairField
           label={t('tiered.altFilter.shares')}
@@ -417,8 +432,8 @@ export const AltRunHistory = ({
                   ) : run.status === 'failed' ? (
                     <span className="text-xs text-red-300">{t('tiered.status.failed')}</span>
                   ) : (
-                    <span className={cn('text-xs', DIRECTION_TEXT[run.direction ?? 'unknown'])}>
-                      {t(`tiered.direction.${run.direction ?? 'unknown'}` as UiTextKey)}
+                    <span className={cn('text-xs', OUTLOOK_TEXT[runOutlook(run)])}>
+                      {t(`tiered.outlook.${runOutlook(run)}` as UiTextKey)}
                     </span>
                   )}
                   <span className="text-xs tabular-nums text-gray-400">
@@ -437,7 +452,11 @@ export const AltRunHistory = ({
                     ) : run.status === 'running' ? (
                       <p className="text-sm text-gray-500">{t('tiered.running')}</p>
                     ) : expandedResult ? (
-                      <AltResult result={expandedResult} taskId={run.task_id} />
+                      <AltResult
+                        result={expandedResult}
+                        taskId={run.task_id}
+                        runDate={runTime(run)}
+                      />
                     ) : expandedError ? (
                       <p className="text-sm text-red-300">{expandedError}</p>
                     ) : (

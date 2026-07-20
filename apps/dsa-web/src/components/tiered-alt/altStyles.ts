@@ -12,6 +12,15 @@ export const DIRECTION_TEXT: Record<TieredResult['direction'], string> = {
   unknown: 'text-gray-400',
 };
 
+// Outlooks share the verdict palette: bullish = buy green, neutral =
+// hold amber, bearish = sell red.
+export const OUTLOOK_TEXT: Record<string, string> = {
+  bullish: 'text-emerald-300',
+  neutral: 'text-amber-300',
+  bearish: 'text-red-300',
+  unknown: 'text-gray-400',
+};
+
 // -300 shades on purpose: the app-wide index.css redefines
 // --color-emerald-400/--color-red-400 as bare HSL triplets for its own
 // hsl(var(...)) tokens, which silently voids Tailwind's bg-*-400 utilities.

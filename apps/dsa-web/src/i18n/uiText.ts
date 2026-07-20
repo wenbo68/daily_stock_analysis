@@ -1194,6 +1194,139 @@ const zh = {
   'tiered.alt.signalSaved': '已记录到 AI 建议 #{id}',
   'tiered.help.capital': '你的交易本金，货币跟随股票所在市场。\n股数计算以它为起点。\n会记住，供下次运行使用。',
   'tiered.help.riskPct': '单笔交易你最多接受亏掉本金的百分之几。\n常见为 1-2%。',
+
+  // ---- 展望改版（outlook redesign）----
+  'tiered.alt.conclusionTitle': '结论与操作',
+  'tiered.alt.outlook': '展望',
+  'tiered.alt.action': '操作',
+  'tiered.outlook.bullish': '看多',
+  'tiered.outlook.neutral': '中性',
+  'tiered.outlook.bearish': '看空',
+  'tiered.outlook.unknown': '未知',
+  'tiered.action.enter': '可建仓（见下方买入计划）',
+  'tiered.action.keep_holding': '继续持有',
+  'tiered.action.no_trade': '不交易',
+  'tiered.action.sell_all': '清仓卖出',
+  'tiered.action.unknown': '未知——本次运行未产生可用结论，请重跑',
+  'tiered.help.outlook':
+    '「展望」是对这只股票本身的判断（看多 / 中性 / 看空），与你是否持有无关。\n「操作」由代码根据展望和你的持仓推出：看多且未持有→可建仓；看多或中性且已持有→继续持有；中性且未持有→不交易；看空且已持有→清仓卖出；看空且未持有→不交易。',
+  'tiered.help.action':
+    '由展望和你填写的持仓股数按固定表格推出的个人操作建议。\n注意：看多且已持有时本产品刻意不建议加仓——只建议继续持有。',
+  'tiered.alt.earningsWarning': '{days} 天后（{date}）发布财报——预计波动加大，谨慎交易。',
+  'tiered.alt.staleNote': '本报告来自之前的交易日——请重跑一次以获得最新计划。',
+  'tiered.alt.structuralStop': '结构性止损位',
+  'tiered.help.structuralStop':
+    '若你已持有该股，收盘跌破这个价位说明支撑结构已被破坏，是常用的离场参考。\n持有场景刻意只显示这一个价位（不建议加仓，所以不显示买入价）。',
+  'tiered.alt.noPlan': '本次操作无需买卖计划价位。',
+  'tiered.altFilter.outlook': '展望',
+  'tiered.altFilter.outlookPh': '筛选展望…',
+  'tiered.pill.outlook': '展望：{value}',
+
+  // ---- 层级 2 权重投票（v10）----
+  'tiered.tree.weightBadge': '权重 {value}',
+  'tiered.tree.weightTitle': '证据权重',
+  'tiered.tree.weightExplain':
+    '每位投票的 AI 都会给这条证据打一个重要性评分：1 = 次要细节，2 = 普通证据，3 = 足以改变整体结论。徽标显示所有评分的中位数（两票时取平均，可能出现 .5）。',
+  'tiered.tree.authorWeights': '列出者的评分：{value}',
+  'tiered.tree.voteWeight': '该投票者给这条证据的重要性评分：{value}（1-3）',
+  'tiered.tree.bullishWeight': '看多权重和',
+  'tiered.tree.totalWeight': '总权重和',
+  'tiered.tree.explainWeights':
+    '每位 AI 还会给每条证据打 1-3 的重要性评分；最终得分按权重计算：10 × 看多证据的权重和 ÷ 全部证据的权重和。',
+
+  // ---- 风险检查卡（仅展示，13 项）----
+  'tiered.alt.riskCardTitle': '风险检查（仅展示）',
+  'tiered.help.riskCard':
+    '13 项专业风控台会做的开仓前检查，全部由本次运行已有的数字算出，不调用 AI。\n它们不影响任何结果——展望、操作、价位和股数都不读取它们。\n请你自己过目，之后再决定哪些要纳入决策。',
+  'tiered.riskCard.intro':
+    '以下 13 项检查仅供参考——不会改变展望、操作、价位或股数。',
+  'tiered.riskCard.ok': '正常',
+  'tiered.riskCard.flag': '注意',
+  'tiered.riskCard.na': '不适用',
+  'tiered.riskCard.naNotSized': '本次运行没有计算买入股数',
+  'tiered.riskCard.naMissingData': '缺少此项检查所需的数据',
+  'tiered.riskCard.naNoOwnership': '你未持有该股票',
+  'tiered.riskCard.actionLabel': '建议：',
+  'tiered.riskCard.reasonLabel': '原因：',
+  'tiered.riskCard.concentration': '集中度',
+  'tiered.riskCard.concentration.value': '本次买入占本金的 {fraction}%（上限 {cap}%）',
+  'tiered.riskCard.concentration.action':
+    '若被标注，说明单股 25% 上限已触发、仓位被削减——想想是否愿意在一只股票上放这么多钱。',
+  'tiered.riskCard.concentration.reason':
+    '太多资金压在一只股票上，一次意外就会伤到整个账户。',
+  'tiered.riskCard.cash': '买入后现金',
+  'tiered.riskCard.cash.value': '{capital} 中还剩 {cashLeft} 现金',
+  'tiered.riskCard.cash.action': '确认剩余现金够覆盖你的其他计划。',
+  'tiered.riskCard.cash.reason':
+    '本金全部花光，就没有余地抓下一个机会。',
+  'tiered.riskCard.max_loss': '最大计划亏损',
+  'tiered.riskCard.max_loss.value': '止损被打到会亏 {amount}（本金的 {fraction}%）',
+  'tiered.riskCard.max_loss.action':
+    '若被标注，说明按手数取整后亏损略超你设定的风险比例——介意就少买一点。',
+  'tiered.riskCard.max_loss.reason':
+    '止损亏损额是你事先亲自选定的数字，应该和你的设定一致。',
+  'tiered.riskCard.liquidity': '流动性',
+  'tiered.riskCard.liquidity.value':
+    '你的下单量占 20 日平均成交量的 {fraction}%（超过 {flag}% 标注）',
+  'tiered.riskCard.liquidity.action':
+    '若被标注，说明这只股票平时成交不多，你的仓位一天内出完可能砸到价格——考虑缩小仓位。',
+  'tiered.riskCard.liquidity.reason': '成交清淡的仓位买进容易、卖出难。',
+  'tiered.riskCard.var': '单日最坏情形（VaR）',
+  'tiered.riskCard.var.value': '按历史最差 5% 的单日跌幅估算约亏 {amount}（计划风险 {planned}）',
+  'tiered.riskCard.var.action':
+    '若被标注，说明一个大跌日的亏损可能超过你计划的止损金额——入场前要有数。',
+  'tiered.riskCard.var.reason':
+    '止损挡不住隔夜跳空；这项告诉你一个「典型的坏日子」会对仓位做什么。',
+  'tiered.riskCard.gap_stress': '跳空压力',
+  'tiered.riskCard.gap_stress.value':
+    '若开盘直接跳到 {gapPrice}（比止损再低一个典型日波动），亏损为 {loss}',
+  'tiered.riskCard.gap_stress.action':
+    '记住这个数字——真正的坏情形是价格跳空越过止损，而不是止损价本身。',
+  'tiered.riskCard.gap_stress.reason':
+    '价格隔夜跳空时，止损单按开盘价成交，不是按你设的价位成交。',
+  'tiered.riskCard.volatility': '波动性',
+  'tiered.riskCard.volatility.value':
+    '这只股票的典型日波动为价格的 {fraction}%（超过 {flag}% 标注）',
+  'tiered.riskCard.volatility.action':
+    '若被标注，预期振幅会很大——高波动的股票适合更小的仓位、更宽的止损。',
+  'tiered.riskCard.volatility.reason':
+    '一天动 5% 的股票，纯噪音就能打掉过紧的止损。',
+  'tiered.riskCard.reward_risk': '盈亏比',
+  'tiered.riskCard.reward_risk.value': '这份计划的潜在盈利是风险的 {ratio} 倍',
+  'tiered.riskCard.reward_risk.action':
+    '低于 1.5 时引擎会直接拒绝出计划；接近 1.5 时自己权衡值不值得做。',
+  'tiered.riskCard.reward_risk.reason':
+    '赢的单要能补亏的单；盈亏比太低，胜率再高也亏钱。',
+  'tiered.riskCard.stop_atr': '止损距离',
+  'tiered.riskCard.stop_atr.value': '止损位于入场价下方 {multiple} 个典型日波动',
+  'tiered.riskCard.stop_atr.action':
+    '设计目标约为 2。小太多容易被噪音打掉，大太多每次止损代价过高。',
+  'tiered.riskCard.stop_atr.reason':
+    '止损距离同时决定被打掉的频率和每次被打掉的代价。',
+  'tiered.riskCard.stop_vs_swing_low': '止损与 20 日低点',
+  'tiered.riskCard.stop_vs_swing_low.value': '止损 {stop}，近 20 日最低价 {low}',
+  'tiered.riskCard.stop_vs_swing_low.action':
+    '若被标注，止损在近期低点之上——价格常规回踩低点就会打掉你。考虑把止损放到低点下方。',
+  'tiered.riskCard.stop_vs_swing_low.reason':
+    '价格在继续上行前常会回踩近期低点；高于低点的止损死于这种常规动作。',
+  'tiered.riskCard.staleness': '时效',
+  'tiered.riskCard.staleness.value': '运行时价格 {close}，计划入场价 {entry}',
+  'tiered.riskCard.staleness.action':
+    '这些数字在运行那一刻是准的。若你是之后才看到，请重跑。',
+  'tiered.riskCard.staleness.reason': '价位由运行时的快照算出，而市场一直在动。',
+  'tiered.riskCard.both_entries': '两个入场价都成交时',
+  'tiered.riskCard.both_entries.value': '合计风险 {risk}，你的风险预算 {budget}',
+  'tiered.riskCard.both_entries.action':
+    '若被标注，理想价和备选价都成交会超出你的风险预算——缩小仓位或放弃其中一个入场价。',
+  'tiered.riskCard.both_entries.reason':
+    '股数是按单个入场价算的；备选价也成交时，敞口翻倍。',
+  'tiered.riskCard.ownership_context': '与已持仓合计',
+  'tiered.riskCard.ownership_context.value':
+    '已持 + 新买合计 {value}（本金的 {fraction}%）',
+  'tiered.riskCard.ownership_context.action':
+    '若被标注，合计仓位超过了单股 25% 上限——仓位引擎只限制新买的部分，不管合计。',
+  'tiered.riskCard.ownership_context.reason':
+    '风险取决于总仓位，不只是这一笔新单。',
 } as const;
 
 export type UiTextKey = keyof typeof zh;
@@ -2476,6 +2609,150 @@ const en: Record<UiTextKey, string> = {
     'The money you trade with, in the ticker’s own currency.\nThe shares computation starts from it.\nRemembered for your next run.',
   'tiered.help.riskPct':
     'The most you accept losing on one trade, as a percent of capital.\n1–2% is common.',
+
+  // ---- Outlook redesign ----
+  'tiered.alt.conclusionTitle': 'Conclusion',
+  'tiered.alt.outlook': 'Outlook',
+  'tiered.alt.action': 'Action',
+  'tiered.outlook.bullish': 'Bullish',
+  'tiered.outlook.neutral': 'Neutral',
+  'tiered.outlook.bearish': 'Bearish',
+  'tiered.outlook.unknown': 'Unknown',
+  'tiered.action.enter': 'Enter (see the buy plan below)',
+  'tiered.action.keep_holding': 'Keep holding',
+  'tiered.action.no_trade': 'No trade',
+  'tiered.action.sell_all': 'Sell all shares',
+  'tiered.action.unknown': 'Unknown — this run produced no usable outlook; re-run it',
+  'tiered.help.outlook':
+    'The outlook is the judgment on the stock itself (bullish / neutral / bearish), regardless of whether you hold it.\nThe action is derived by code from the outlook and your holding: bullish + not holding → enter; bullish or neutral + holding → keep holding; neutral + not holding → no trade; bearish + holding → sell all; bearish + not holding → no trade.',
+  'tiered.help.action':
+    'Your personal instruction, derived by a fixed code table from the outlook and the share count you entered.\nNote: when bullish while already holding, this product deliberately does NOT suggest buying more — only keeping what you hold.',
+  'tiered.alt.earningsWarning':
+    '{days} day(s) until the next earnings report ({date}) — expect turbulence; trade with care.',
+  'tiered.alt.staleNote':
+    'This report is from a previous trading day — re-run for a fresh plan.',
+  'tiered.alt.structuralStop': 'Structural stop',
+  'tiered.help.structuralStop':
+    'If you already hold this stock, a close below this level means the support structure broke — a common exit reference.\nHolding runs deliberately show only this one level (no “buy more”, so no entry prices).',
+  'tiered.alt.noPlan': 'No plan levels for this action.',
+  'tiered.altFilter.outlook': 'Outlook',
+  'tiered.altFilter.outlookPh': 'Filter outlook...',
+  'tiered.pill.outlook': 'Outlook: {value}',
+
+  // ---- Tier-2 weighted votes (v10) ----
+  'tiered.tree.weightBadge': 'w {value}',
+  'tiered.tree.weightTitle': 'Evidence weight',
+  'tiered.tree.weightExplain':
+    'Every voting AI rates this bullet’s importance: 1 = minor detail, 2 = normal evidence, 3 = thesis-changing. The badge shows the median of all ratings (the mean when there are two, so halves happen).',
+  'tiered.tree.authorWeights': 'Author rating(s): {value}',
+  'tiered.tree.voteWeight': 'This voter’s importance rating: {value} (of 1-3)',
+  'tiered.tree.bullishWeight': 'bullish weight',
+  'tiered.tree.totalWeight': 'total weight',
+  'tiered.tree.explainWeights':
+    'Each AI also rates every bullet’s importance 1-3; the final score is weighted: 10 × the bullish bullets’ weight ÷ all bullets’ weight.',
+
+  // ---- Risk checks card (display only, 13 entries) ----
+  'tiered.alt.riskCardTitle': 'Risk checks (display only)',
+  'tiered.help.riskCard':
+    'Thirteen pre-trade checks a professional risk desk would run, computed from this run’s own numbers with no AI involved.\nThey change NOTHING — the outlook, action, levels and share count never read them.\nReview them yourself and decide later which to act on.',
+  'tiered.riskCard.intro':
+    'These 13 checks are informational only — they do not change the outlook, the action, the levels, or the share count.',
+  'tiered.riskCard.ok': 'ok',
+  'tiered.riskCard.flag': 'check this',
+  'tiered.riskCard.na': 'n/a',
+  'tiered.riskCard.naNotSized': 'no buy was sized in this run',
+  'tiered.riskCard.naMissingData': 'the data needed for this check is missing',
+  'tiered.riskCard.naNoOwnership': 'you hold no shares of this stock',
+  'tiered.riskCard.actionLabel': 'Action:',
+  'tiered.riskCard.reasonLabel': 'Why:',
+  'tiered.riskCard.concentration': 'Concentration',
+  'tiered.riskCard.concentration.value':
+    'this buy is {fraction}% of your capital (cap {cap}%)',
+  'tiered.riskCard.concentration.action':
+    'If flagged, the 25% single-stock cap kicked in and the position was clipped — decide whether you want that much in one name at all.',
+  'tiered.riskCard.concentration.reason':
+    'Too much money in one stock means one bad surprise hurts the whole account.',
+  'tiered.riskCard.cash': 'Cash after the buy',
+  'tiered.riskCard.cash.value': '{cashLeft} of {capital} stays in cash',
+  'tiered.riskCard.cash.action': 'Make sure the remaining cash covers your other plans.',
+  'tiered.riskCard.cash.reason':
+    'Fully spent capital leaves no room for the next opportunity.',
+  'tiered.riskCard.max_loss': 'Max planned loss',
+  'tiered.riskCard.max_loss.value':
+    'if the stop is hit you lose {amount} ({fraction}% of capital)',
+  'tiered.riskCard.max_loss.action':
+    'If flagged, rounding to whole lots pushed the loss above the risk % you asked for — trim shares if that bothers you.',
+  'tiered.riskCard.max_loss.reason':
+    'The stop-hit loss is the one number you chose in advance; it should match what you asked for.',
+  'tiered.riskCard.liquidity': 'Liquidity',
+  'tiered.riskCard.liquidity.value':
+    'your order is {fraction}% of the 20-day average daily volume (flagged above {flag}%)',
+  'tiered.riskCard.liquidity.action':
+    'If flagged, this stock trades thinly relative to your size — exiting in one day could move the price. Consider a smaller position.',
+  'tiered.riskCard.liquidity.reason':
+    'Thinly traded positions are easy to buy and hard to sell.',
+  'tiered.riskCard.var': 'One-day worst case (VaR)',
+  'tiered.riskCard.var.value':
+    'a historically worst-5% day costs about {amount} (planned risk {planned})',
+  'tiered.riskCard.var.action':
+    'If flagged, one bad day can lose more than your planned stop-loss amount — know that before entering.',
+  'tiered.riskCard.var.reason':
+    'Stops don’t cap overnight moves; this shows what a typically-bad day does to the position.',
+  'tiered.riskCard.gap_stress': 'Gap stress',
+  'tiered.riskCard.gap_stress.value':
+    'if the open gaps to {gapPrice} (one typical daily move past the stop), the loss is {loss}',
+  'tiered.riskCard.gap_stress.action':
+    'Know this number — the realistic bad case is the price jumping past your stop, not the stop price itself.',
+  'tiered.riskCard.gap_stress.reason':
+    'When the price jumps overnight, stop orders execute at the opening price, not at your chosen level.',
+  'tiered.riskCard.volatility': 'Volatility',
+  'tiered.riskCard.volatility.value':
+    'this stock typically moves {fraction}% a day (flagged above {flag}%)',
+  'tiered.riskCard.volatility.action':
+    'If flagged, expect wide swings — volatile names fit smaller sizes and wider stops.',
+  'tiered.riskCard.volatility.reason':
+    'A stock that moves 5% a day hits tight stops on pure noise.',
+  'tiered.riskCard.reward_risk': 'Reward-to-risk',
+  'tiered.riskCard.reward_risk.value': 'the plan stands to make {ratio}× what it risks',
+  'tiered.riskCard.reward_risk.action':
+    'Below 1.5 the engine refuses to print a plan at all; near 1.5, weigh whether the trade is worth taking.',
+  'tiered.riskCard.reward_risk.reason':
+    'Winners must pay for losers; with a low ratio even a good hit rate loses money.',
+  'tiered.riskCard.stop_atr': 'Stop distance',
+  'tiered.riskCard.stop_atr.value':
+    'the stop sits {multiple} typical daily moves below the entry',
+  'tiered.riskCard.stop_atr.action':
+    'Around 2 is the design target. Much less and noise stops you out; much more and each stop-out costs too much.',
+  'tiered.riskCard.stop_atr.reason':
+    'The stop distance decides both how often you get stopped and how much each stop costs.',
+  'tiered.riskCard.stop_vs_swing_low': 'Stop vs the 20-day low',
+  'tiered.riskCard.stop_vs_swing_low.value':
+    'stop {stop} vs the last-20-days low {low}',
+  'tiered.riskCard.stop_vs_swing_low.action':
+    'If flagged, the stop sits at or above the recent low — a routine retest of that low would stop you out. Consider a stop below it.',
+  'tiered.riskCard.stop_vs_swing_low.reason':
+    'Prices commonly revisit recent lows before resuming; a stop above the low dies to that routine move.',
+  'tiered.riskCard.staleness': 'Freshness',
+  'tiered.riskCard.staleness.value':
+    'price {close} vs planned entry {entry} at run time',
+  'tiered.riskCard.staleness.action':
+    'These numbers were true the moment the run happened. If you are reading this later, re-run.',
+  'tiered.riskCard.staleness.reason':
+    'Levels come from a snapshot; the market keeps moving.',
+  'tiered.riskCard.both_entries': 'If both entries fill',
+  'tiered.riskCard.both_entries.value':
+    'combined risk {risk} vs your risk budget {budget}',
+  'tiered.riskCard.both_entries.action':
+    'If flagged, filling both the ideal and the backup entry risks more than your budget — size down or drop one of the two entries.',
+  'tiered.riskCard.both_entries.reason':
+    'The share count is sized for one entry; if the backup also fills, the exposure doubles.',
+  'tiered.riskCard.ownership_context': 'Combined with what you hold',
+  'tiered.riskCard.ownership_context.value':
+    'held + new = {value} ({fraction}% of capital)',
+  'tiered.riskCard.ownership_context.action':
+    'If flagged, the combined position crosses the 25% single-stock cap — the sizing engine only caps the NEW purchase, not the total.',
+  'tiered.riskCard.ownership_context.reason':
+    'Risk lives in the total position, not just the new order.',
 };
 
 export const UI_TEXT: Record<UiLanguage, Record<UiTextKey, string>> = {
