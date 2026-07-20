@@ -1110,7 +1110,7 @@ const zh = {
   'tiered.sizing.reason.sizing_off': '仓位计算未开启（未提供本金和单笔风险比例）。',
   'tiered.sizing.reason.sizing_off_capital': '仓位计算未开启（未提供本金）。',
   'tiered.sizing.reason.sizing_off_risk': '仓位计算未开启（未提供单笔风险比例）。',
-  'tiered.sizing.reason.not_a_buy': '当前结论不是「买入」，没有要开的仓位，因此不计算股数。',
+  'tiered.sizing.reason.not_a_buy': '当前展望不是「看多」，没有要开的仓位，因此不计算股数。',
   'tiered.sizing.reason.no_entry': '缺少可用的入场价，无法计算仓位。',
   'tiered.sizing.reason.no_stop': '缺少止损价——没有它就无法衡量每股风险，宁可不给股数也不编造。',
   'tiered.sizing.reason.stop_not_below_entry': '止损价不低于入场价，价位自相矛盾，拒绝计算。',
@@ -2558,7 +2558,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.sizing.reason.sizing_off_risk':
     'Sizing is off (risk per trade was not provided).',
   'tiered.sizing.reason.not_a_buy':
-    'The verdict is not “buy”, so there is no position to open and no share count to print.',
+    'The outlook is not bullish, so there is no position to open and no share count to print.',
   'tiered.sizing.reason.no_entry': 'No usable entry price — cannot size a position.',
   'tiered.sizing.reason.no_stop':
     'No stop-loss price — without it the risk per share is unmeasurable, so no share count is printed rather than a made-up one.',
