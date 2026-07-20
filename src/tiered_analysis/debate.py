@@ -501,6 +501,14 @@ Reply with JSON only:
 {{"votes": {{"T2": {{"verdict": "valid", "reason": "why the bullet stands", "links": [], "weight": 3, "weight_reason": "why it matters this much"}}}}}}
 "votes" must cover exactly these bullet ids: {tied_ids}."""
 
+# The summary speaks in outlook words (user-facing tier-2 prose) — the
+# internal Direction enum never leaks its buy/hold/sell vocabulary there.
+_OUTLOOK_WORD = {
+    Direction.BUY: "bullish",
+    Direction.HOLD: "neutral",
+    Direction.SELL: "bearish",
+}
+
 _SUMMARY_TEMPLATE = """{context}
 The voted evidence list:
 {tree}
@@ -512,13 +520,15 @@ bullet's weight is the median of its voters' 1-5 ratings):
 - final score {final} ({final_bullish} bullish vs {final_bearish}
   bearish of {final_total} bullets; bullish weight {final_bullish_weight}
   of {final_total_weight} total)
-- verdict: {direction} (below 4 sell, 4-6 hold, above 6 buy)
+- outlook: {outlook} (below 4 bearish, 4-6 neutral, above 6 bullish)
 
-Write the user-facing report. Reply with JSON only:
-{{"summary": "one plain-language paragraph explaining why the computed verdict is what it is"}}
+Write the user-facing report. Reply with JSON only. Never use the words
+"verdict", "buy", "hold" or "sell" — describe the outlook as bullish,
+neutral or bearish:
+{{"summary": "one plain-language paragraph explaining why the computed outlook is what it is"}}
 
 Rules:
-- Support the computed verdict; if little evidence survived, say plainly
+- Support the computed outlook; if little evidence survived, say plainly
   that the case is weak.
 - Use only the evidence above; do not invent facts."""
 
@@ -1182,7 +1192,7 @@ class DebateEngine:
             final_total=pools["final"]["total"],
             final_bullish_weight=pools["final"]["bullish_weight"],
             final_total_weight=pools["final"]["total_weight"],
-            direction=direction.value,
+            outlook=_OUTLOOK_WORD.get(direction, "neutral"),
         )
         try:
             raw = self._summarize(prompt)

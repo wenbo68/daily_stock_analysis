@@ -23,8 +23,13 @@ ENV_CAPITAL = "TIERED_SIZING_CAPITAL"
 ENV_RISK_FRACTION = "TIERED_SIZING_RISK_FRACTION"
 ENV_MAX_POSITION_FRACTION = "TIERED_SIZING_MAX_POSITION_FRACTION"
 ENV_FEE_FRACTION = "TIERED_SIZING_FEE_FRACTION"
+ENV_REWARD_RISK = "TIERED_SIZING_REWARD_RISK"
 
 DEFAULT_FEE_FRACTION = 0.0
+#: The reward-to-risk ratio the target aims for (target = entry + R × risk).
+#: A resistance-capped target below this ratio draws a warning; the 1.5
+#: hard floor in levels.py still voids the plan outright.
+DEFAULT_REWARD_RISK = 2.0
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,8 @@ class SizingSettings:
     #: holding is stock-specific, so an .env default makes no sense);
     #: 0 = none, which keeps every pre-ownership behavior unchanged.
     ownership: int = 0
+    #: Target reward-to-risk ratio the user asks the plan for.
+    reward_risk: float = DEFAULT_REWARD_RISK
     warnings: Tuple[str, ...] = ()
 
     @property
@@ -74,6 +81,14 @@ def load_sizing_settings(env: Optional[Mapping[str, str]] = None) -> SizingSetti
     fee = _parse_optional(env, ENV_FEE_FRACTION, warnings)
     if fee is None:
         fee = DEFAULT_FEE_FRACTION
+    reward = _parse_optional(env, ENV_REWARD_RISK, warnings)
+    if reward is None or reward <= 1.0:
+        if reward is not None:
+            warnings.append(
+                f"{ENV_REWARD_RISK}={reward:g} must be above 1 — using the "
+                f"default {DEFAULT_REWARD_RISK:g}"
+            )
+        reward = DEFAULT_REWARD_RISK
 
     # Range sanity lives in the sizing engine (single source of refusal
     # reasons); here we only guarantee "number or absent".
@@ -82,6 +97,7 @@ def load_sizing_settings(env: Optional[Mapping[str, str]] = None) -> SizingSetti
         risk_fraction=risk_fraction,
         max_position_fraction=max_position,
         fee_fraction=fee,
+        reward_risk=reward,
         warnings=tuple(warnings),
     )
 
@@ -91,6 +107,7 @@ def merge_overrides(
     capital: Optional[float] = None,
     risk_fraction: Optional[float] = None,
     ownership: Optional[float] = None,
+    reward_risk: Optional[float] = None,
 ) -> SizingSettings:
     """Per-run overrides (from the API request) on top of saved settings.
 
@@ -103,4 +120,6 @@ def merge_overrides(
         merged = replace(merged, risk_fraction=float(risk_fraction))
     if ownership is not None and int(ownership) >= 0:
         merged = replace(merged, ownership=int(ownership))
+    if reward_risk is not None and float(reward_risk) > 1.0:
+        merged = replace(merged, reward_risk=float(reward_risk))
     return merged

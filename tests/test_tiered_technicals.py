@@ -21,7 +21,7 @@ from src.tiered_analysis.providers.technicals import (
     compute_sma,
     compute_swing_high,
     compute_wilder_rsi,
-    compute_worst_day_5pct,
+    compute_worst_day_1y,
 )
 
 # Classic 14-period RSI walkthrough dataset (Wilder's method, as popularized
@@ -241,21 +241,21 @@ class TestSwingAndTailAdditions(unittest.TestCase):
     def test_avg_volume_none_when_source_has_no_volume(self):
         self.assertIsNone(compute_avg_volume(_flat_bars(20)))
 
-    def test_worst_day_5pct_picks_left_tail(self):
-        # 40 returns of +1% and one crash of -10%: the 5th percentile
-        # (index int(0.05*40) = 2) sits just above the crash.
+    def test_worst_day_1y_picks_the_single_worst_return(self):
+        # 40 returns of +1% and one crash of -10%: the worst single day
+        # IS the crash — no percentile softening.
         closes = [100.0]
         for _ in range(20):
             closes.append(closes[-1] * 1.01)
         closes.append(closes[-1] * 0.90)
         for _ in range(20):
             closes.append(closes[-1] * 1.01)
-        worst = compute_worst_day_5pct(closes)
+        worst = compute_worst_day_1y(closes)
         self.assertIsNotNone(worst)
-        self.assertLessEqual(worst, 0.011)
+        self.assertAlmostEqual(worst, -0.10)
 
     def test_worst_day_needs_enough_history(self):
-        self.assertIsNone(compute_worst_day_5pct([100.0] * 10))
+        self.assertIsNone(compute_worst_day_1y([100.0] * 10))
 
     def test_payload_contains_resistance_and_tail_keys(self):
         closes = [100.0 * (1.002 ** i) for i in range(60)]
@@ -263,7 +263,7 @@ class TestSwingAndTailAdditions(unittest.TestCase):
         payload = provider.collect("AAPL").payload
         for key in (
             "swing_high_20", "swing_low_60", "swing_high_60",
-            "high_52w", "low_52w", "worst_day_5pct",
+            "high_52w", "low_52w", "worst_day_1y",
         ):
             self.assertIsNotNone(payload[key], key)
         # 60 bars: the "52w" window honestly covers what exists.

@@ -206,14 +206,17 @@ class TestTieredAnalyzeEndpoint:
         monkeypatch.setenv("TIERED_SIZING_RISK_FRACTION", "0.01")
         response = client.get("/tiered/sizing-defaults")
         assert response.status_code == 200
-        assert response.json() == {"capital": 100000.0, "risk_fraction": 0.01}
+        assert response.json() == {
+            "capital": 100000.0, "risk_fraction": 0.01, "reward_risk": 2.0}
 
     def test_sizing_defaults_null_when_unconfigured(self, client, monkeypatch):
         monkeypatch.delenv("TIERED_SIZING_CAPITAL", raising=False)
         monkeypatch.delenv("TIERED_SIZING_RISK_FRACTION", raising=False)
         response = client.get("/tiered/sizing-defaults")
         assert response.status_code == 200
-        assert response.json() == {"capital": None, "risk_fraction": None}
+        # reward_risk always has a default — the form needs a number.
+        assert response.json() == {
+            "capital": None, "risk_fraction": None, "reward_risk": 2.0}
 
 
 class TestTieredDepthAndSizingApi:

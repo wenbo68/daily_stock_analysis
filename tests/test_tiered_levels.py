@@ -2,10 +2,12 @@
 """Offline tests for deterministic base levels + adjustment validation.
 
 Formulas under test are documented in docs/tiered-analysis-formulas.md:
-ideal entry = min(close, max(support candidates)); backup = highest
-candidate strictly below ideal; stop = ideal - 2*ATR; target = min(ideal +
-2*(ideal - stop), nearest overhead resistance). Trend gate (close must sit
-above sma_60) and room gate (capped reward-to-risk >= 1.5) void the plan.
+ideal entry = min(close, max(support candidates)); stop = ideal - 2*ATR;
+target = min(ideal + R*(ideal - stop), nearest overhead resistance) with
+R the user's chosen reward-to-risk ratio (default 2). Trend gate (close
+must sit above sma_60) and room gate (capped reward-to-risk >= 1.5) void
+the plan; a capped ratio above the floor but below R only warns. The
+backup entry is retired.
 AI adjustments must stay within +/-1 ATR, keep ordering and reward-to-risk.
 """
 from __future__ import annotations
@@ -39,9 +41,8 @@ class TestComputeBaseLevels(unittest.TestCase):
     def test_happy_path_chain(self):
         bases = _bases()
         # ideal = min(100, max(96, 94)) = 96; stop = 96 - 6 = 90;
-        # target = 96 + 2*(96-90) = 108; backup = highest support < 96 -> 94.
+        # target = 96 + 2*(96-90) = 108. No backup entry (retired).
         self.assertAlmostEqual(bases.entry.value, 96.0)
-        self.assertAlmostEqual(bases.secondary_entry.value, 94.0)
         self.assertAlmostEqual(bases.stop_loss.value, 90.0)
         self.assertAlmostEqual(bases.take_profit.value, 108.0)
         self.assertEqual(bases.warnings, [])
@@ -72,19 +73,19 @@ class TestComputeBaseLevels(unittest.TestCase):
         self.assertIsNone(bases.entry)
         self.assertTrue(bases.warnings)
 
-    def test_backup_uses_any_candidate_below_entry(self):
-        bases = _bases(sma_60=None, swing_low=97.0)
-        # ideal = min(100, max(96, 97)) = 97; sma_20 (96) is now a backup
-        # candidate too (richer candidate set), so backup = 96.
-        self.assertAlmostEqual(bases.entry.value, 97.0)
-        self.assertAlmostEqual(bases.secondary_entry.value, 96.0)
+    def test_chosen_reward_ratio_scales_the_target(self):
+        bases = _bases(reward_risk=3.0)
+        # target = 96 + 3*(96-90) = 114, and the formula names the ratio.
+        self.assertAlmostEqual(bases.take_profit.value, 114.0)
+        self.assertIn("3 ×", bases.take_profit.formula)
 
-    def test_round_number_can_serve_as_backup(self):
-        bases = _bases(sma_60=None, sma_20=96.0, swing_low=96.0)
-        # Only structural support is at 96 (entry); the round level 90 is
-        # the sole candidate strictly below it.
-        self.assertAlmostEqual(bases.entry.value, 96.0)
-        self.assertAlmostEqual(bases.secondary_entry.value, 90.0)
+    def test_capped_target_below_the_chosen_goal_warns(self):
+        # Resistance at 106 (> close 100) caps the 108 geometric target:
+        # ratio (106-96)/6 = 1.67 clears the 1.5 floor but misses the 2x
+        # goal -> plan stands with a "reward below goal" warning.
+        bases = _bases(swing_high_20=106.0)
+        self.assertAlmostEqual(bases.take_profit.value, 106.0)
+        self.assertTrue(any("below" in w and "goal" in w for w in bases.warnings))
 
     def test_missing_atr_means_no_stop_and_no_target(self):
         bases = _bases(atr=None)
@@ -144,7 +145,7 @@ class TestTrendAndRoomGates(unittest.TestCase):
 class TestApplyAdjustments(unittest.TestCase):
     def test_in_band_adjustment_accepted(self):
         bases = _bases()
-        # 96 -> 94.5: in band (1.5 < 3), ordering holds (backup 94 <= 94.5),
+        # 96 -> 94.5: in band (1.5 < 3), ordering holds,
         # and R:R improves to (108-94.5)/(94.5-90) = 3.0.
         proposals = [
             AdjustmentProposal(
@@ -184,14 +185,16 @@ class TestApplyAdjustments(unittest.TestCase):
         self.assertTrue(warnings)
 
     def test_ordering_violation_rejected(self):
-        # Move the stop above the ideal entry: in band (90 -> 92.9 < 1 ATR) but
-        # then push further via entry down? Use stop -> 92.9 with entry 96 stays
-        # ordered; instead adjust entry below the backup to break ordering.
+        # Entry adjusted down to 93 (in band: |93-96| = 3), then the stop
+        # adjusted up to 93 (in band: |93-90| = 3): the stop would sit ON
+        # the entry, so the stop proposal is rejected for ordering.
         proposals = [
-            AdjustmentProposal(level="entry", value=93.5, reason="x", evidence=("e",))
-        ]  # in band (|93.5-96|=2.5 < 3) but 93.5 < backup 94 -> ordering breaks
+            AdjustmentProposal(level="entry", value=93.0, reason="x", evidence=("e",)),
+            AdjustmentProposal(level="stop_loss", value=93.0, reason="x", evidence=("e",)),
+        ]
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
-        self.assertIsNone(decisions["entry"].adjusted)
+        self.assertAlmostEqual(decisions["entry"].adjusted, 93.0)
+        self.assertIsNone(decisions["stop_loss"].adjusted)
         self.assertTrue(any("order" in w.lower() for w in warnings))
 
     def test_reward_risk_degradation_rejected(self):
@@ -206,17 +209,15 @@ class TestApplyAdjustments(unittest.TestCase):
         self.assertTrue(any("reward" in w.lower() for w in warnings))
 
     def test_adjustment_without_base_rejected(self):
-        # entry lands exactly on the only support (90) and the round level
-        # equals it, so nothing sits strictly below -> no backup base.
-        bases = _bases(close=90.5, sma_20=90.0, sma_60=None, swing_low=None)
+        # No close -> no bases at all; a proposal for the entry has no
+        # deterministic base to adjust and is rejected.
+        bases = _bases(close=None)
         proposals = [
-            AdjustmentProposal(
-                level="secondary_entry", value=95.0, reason="x", evidence=("e",)
-            )
+            AdjustmentProposal(level="entry", value=95.0, reason="x", evidence=("e",))
         ]
         decisions, warnings = apply_adjustments(bases, proposals, atr=3.0)
-        self.assertIsNone(decisions["secondary_entry"].adjusted)
-        self.assertTrue(decisions["secondary_entry"].rejection)
+        self.assertIsNone(decisions["entry"].adjusted)
+        self.assertTrue(decisions["entry"].rejection)
 
     def test_duplicate_proposal_rejected(self):
         proposals = [

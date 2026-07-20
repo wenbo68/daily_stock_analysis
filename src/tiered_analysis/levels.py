@@ -17,7 +17,8 @@ from .providers.base import DimensionResult
 from .schema import SniperLevels
 from .stops import DEFAULT_ATR_MULTIPLIER, suggest_atr_stop
 
-#: Base target demands twice the upside of the accepted downside.
+#: Default target multiple when the user picked none: twice the upside of
+#: the accepted downside (the run form's reward filter overrides this).
 REWARD_RISK_MULTIPLE = 2.0
 
 #: An adjusted set may not degrade reward-to-risk below this floor.
@@ -28,8 +29,10 @@ MIN_REWARD_RISK = 1.5
 ADJUSTMENT_BAND_ATR_MULTIPLE = 1.0
 
 #: Level keys, in both SniperLevels field order and adjustment-application
-#: order (entries first so stop/target checks see the final entry).
-LEVEL_KEYS = ("entry", "secondary_entry", "stop_loss", "take_profit")
+#: order (entry first so stop/target checks see the final entry). The
+#: backup entry is retired (owner decision, 2026-07-21): the plan is one
+#: order at the ideal entry — old stored runs may still carry one.
+LEVEL_KEYS = ("entry", "stop_loss", "take_profit")
 
 
 def _valid(value: Optional[float]) -> bool:
@@ -48,7 +51,6 @@ class LevelBasis:
 @dataclass(frozen=True)
 class BaseLevels:
     entry: Optional[LevelBasis] = None
-    secondary_entry: Optional[LevelBasis] = None
     stop_loss: Optional[LevelBasis] = None
     take_profit: Optional[LevelBasis] = None
     warnings: List[str] = field(default_factory=list)
@@ -88,14 +90,18 @@ def compute_base_levels(
     swing_high_20: Optional[float] = None,
     swing_high_60: Optional[float] = None,
     high_52w: Optional[float] = None,
+    reward_risk: float = REWARD_RISK_MULTIPLE,
 ) -> BaseLevels:
-    """The four base levels; missing inputs degrade loudly, never silently.
+    """The base levels; missing inputs degrade loudly, never silently.
 
-    Gates (each voids the whole buy plan with an explicit warning):
+    ``reward_risk`` is the user's chosen target multiple (target = entry
+    + reward_risk × risk). Gates (each voids the whole buy plan with an
+    explicit warning):
     - trend gate: no pullback-buy plan in a downtrend (close ≤ sma_60);
     - room gate: overhead resistance may cap the target, and a capped
       target that drops reward-to-risk below MIN_REWARD_RISK means the
-      trade no longer pays for its risk.
+      trade no longer pays for its risk. A capped target that clears the
+      floor but misses the user's chosen ratio draws a warning instead.
     """
     warnings: List[str] = []
 
@@ -144,26 +150,6 @@ def compute_base_levels(
         ),
     )
 
-    backup_candidates = [v for v in candidates if v < entry_value]
-    secondary: Optional[LevelBasis] = None
-    if backup_candidates:
-        secondary = LevelBasis(
-            value=max(backup_candidates),
-            formula="max(support candidate strictly below ideal entry)",
-            inputs=_present(
-                ideal_entry=entry_value,
-                sma_20=sma_20,
-                sma_60=sma_60,
-                swing_low_20=swing_low,
-                swing_low_60=swing_low_60,
-                round_level=round_level,
-            ),
-        )
-    else:
-        warnings.append(
-            "no deeper support strictly below the ideal entry — no backup entry"
-        )
-
     stop: Optional[LevelBasis] = None
     target: Optional[LevelBasis] = None
     stop_value = suggest_atr_stop(entry_value, atr)
@@ -182,7 +168,7 @@ def compute_base_levels(
             },
         )
 
-        geometric = entry_value + REWARD_RISK_MULTIPLE * (entry_value - stop_value)
+        geometric = entry_value + reward_risk * (entry_value - stop_value)
         resistances = [
             v
             for v in (swing_high_20, swing_high_60, high_52w)
@@ -192,20 +178,26 @@ def compute_base_levels(
         if nearest_res is not None and nearest_res < geometric:
             target_value = nearest_res
             risk = entry_value - stop_value
-            reward_risk = (target_value - entry_value) / risk if risk > 0 else 0.0
-            if reward_risk < MIN_REWARD_RISK:
+            actual_ratio = (target_value - entry_value) / risk if risk > 0 else 0.0
+            if actual_ratio < MIN_REWARD_RISK:
                 return BaseLevels(
                     warnings=warnings
                     + [
                         f"room gate: overhead resistance at {nearest_res:g} caps "
-                        f"reward-to-risk at {reward_risk:.2f} (< {MIN_REWARD_RISK:g}) "
+                        f"reward-to-risk at {actual_ratio:.2f} (< {MIN_REWARD_RISK:g}) "
                         "— not enough room above to pay for the risk, so no buy plan"
                     ]
                 )
+            if actual_ratio < reward_risk:
+                warnings.append(
+                    f"reward below goal: overhead resistance at {nearest_res:g} "
+                    f"caps the plan's reward-to-risk at {actual_ratio:.2f}, below "
+                    f"your {reward_risk:g}× goal"
+                )
             target = LevelBasis(
                 value=target_value,
-                formula="min(ideal_entry + 2 × (ideal_entry − stop_loss), "
-                "nearest overhead resistance)",
+                formula=f"min(ideal_entry + {reward_risk:g} × (ideal_entry − "
+                "stop_loss), nearest overhead resistance)",
                 inputs=_present(
                     ideal_entry=entry_value,
                     stop_loss=stop_value,
@@ -218,17 +210,16 @@ def compute_base_levels(
         else:
             target = LevelBasis(
                 value=geometric,
-                formula="ideal_entry + 2 × (ideal_entry − stop_loss)",
+                formula=f"ideal_entry + {reward_risk:g} × (ideal_entry − stop_loss)",
                 inputs={
                     "ideal_entry": entry_value,
                     "stop_loss": stop_value,
-                    "reward_risk_multiple": REWARD_RISK_MULTIPLE,
+                    "reward_risk_multiple": reward_risk,
                 },
             )
 
     return BaseLevels(
         entry=entry,
-        secondary_entry=secondary,
         stop_loss=stop,
         take_profit=target,
         warnings=warnings,
@@ -239,7 +230,10 @@ def _present(**values: Optional[float]) -> Dict[str, float]:
     return {name: value for name, value in values.items() if value is not None}
 
 
-def bases_from_dimensions(dimensions: Sequence[DimensionResult]) -> BaseLevels:
+def bases_from_dimensions(
+    dimensions: Sequence[DimensionResult],
+    reward_risk: float = REWARD_RISK_MULTIPLE,
+) -> BaseLevels:
     """Pull the level inputs out of the technicals dimension payload."""
     payload: Optional[Dict[str, Any]] = None
     for dim in dimensions:
@@ -267,6 +261,7 @@ def bases_from_dimensions(dimensions: Sequence[DimensionResult]) -> BaseLevels:
         swing_high_20=_num("swing_high_20"),
         swing_high_60=_num("swing_high_60"),
         high_52w=_num("high_52w"),
+        reward_risk=reward_risk,
     )
 
 
@@ -300,20 +295,16 @@ class LevelDecision:
 def _ordering_problem(finals: Dict[str, Optional[float]]) -> Optional[str]:
     """Sanity of the whole set for a buy; None when consistent."""
     entry = finals["entry"]
-    backup = finals["secondary_entry"]
     stop = finals["stop_loss"]
     target = finals["take_profit"]
 
     pairs = [
-        (stop, backup, "stop-loss must stay below the backup entry"),
         (stop, entry, "stop-loss must stay below the ideal entry"),
         (entry, target, "ideal entry must stay below the target"),
     ]
     for low, high, message in pairs:
         if low is not None and high is not None and low >= high:
             return f"levels out of order: {message}"
-    if backup is not None and entry is not None and backup > entry:
-        return "levels out of order: backup entry must not exceed the ideal entry"
 
     if entry is not None and stop is not None and target is not None:
         risk = entry - stop

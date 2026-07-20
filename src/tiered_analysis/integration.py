@@ -144,7 +144,7 @@ class TieredRunOutcome:
     action: Action = Action.UNKNOWN
     #: Warning-only next-earnings-date lookup.
     earnings: Optional[EarningsInfo] = None
-    #: Display-only 13-entry risk card — affects nothing by design.
+    #: Display-only 6-entry risk card — affects nothing by design.
     risk_card: Optional[list] = None
 
     def __post_init__(self) -> None:
@@ -245,6 +245,7 @@ def _sizing_block(
             "risk_fraction": settings.risk_fraction,
             "max_position_fraction": settings.max_position_fraction,
             "fee_fraction": settings.fee_fraction,
+            "reward_risk": settings.reward_risk,
             "entry": final.levels.entry,
             "stop_loss": final.levels.stop_loss,
         },
@@ -304,6 +305,7 @@ def run_tiered_analysis(
             capital=sizing_overrides.get("capital"),
             risk_fraction=sizing_overrides.get("risk_fraction"),
             ownership=sizing_overrides.get("ownership"),
+            reward_risk=sizing_overrides.get("reward_risk"),
         )
     if earnings_lookup is None:
         earnings_lookup = next_earnings_info
@@ -315,7 +317,9 @@ def run_tiered_analysis(
         # Formula-only levels: deterministic bases from the technicals
         # payload; the adjustment machinery runs with zero proposals so
         # the audit-trail shape (base/formula/inputs per level) stays.
-        bases = bases_from_dimensions(dimensions)
+        bases = bases_from_dimensions(
+            dimensions, reward_risk=sizing_settings.reward_risk
+        )
         decisions, adjust_warnings = apply_adjustments(
             bases, [], atr=_technicals_atr(dimensions)
         )

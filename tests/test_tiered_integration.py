@@ -393,14 +393,15 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
         self.assertEqual(outcome.sizing["ownership"], 0)
         self.assertIsNone(outcome.sizing["sell_shares"])
 
-    def test_risk_card_always_present_with_all_13_entries(self):
+    def test_risk_card_always_present_with_all_entries(self):
         outcome, _, _, _ = self._run(
             sizing_overrides={"capital": 100000.0, "risk_fraction": 0.01})
         self.assertEqual([e["id"] for e in outcome.risk_card],
                          list(RISK_CARD_IDS))
         by_id = {e["id"]: e for e in outcome.risk_card}
-        self.assertEqual(by_id["concentration"]["status"], "ok")
+        self.assertEqual(by_id["reward_risk"]["status"], "ok")
         self.assertEqual(by_id["reward_risk"]["values"]["ratio"], 2.0)
+        self.assertEqual(by_id["reward_risk"]["values"]["goal"], 2.0)
 
     def test_earnings_detail_rides_along(self):
         outcome, _, _, _ = self._run()

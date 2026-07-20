@@ -39,9 +39,12 @@ class SizingOverride(BaseModel):
 
     capital: Optional[float] = Field(default=None, gt=0)
     risk_fraction: Optional[float] = Field(default=None, gt=0, lt=1)
-    #: Shares of this stock the user already holds (0 = none). Lets a
-    #: sell verdict print a share count and tier 3 scale the exit.
+    #: Shares of this stock the user already holds (0 = none). Kept for
+    #: API compatibility; the alt page no longer sends it (the ownership
+    #: input is deferred to the future portfolio feature).
     ownership: Optional[int] = Field(default=None, ge=0)
+    #: Target reward-to-risk ratio for the plan (target = entry + R × risk).
+    reward_risk: Optional[float] = Field(default=None, gt=1, le=10)
 
 
 class TieredAnalyzeRequest(BaseModel):
@@ -154,7 +157,7 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
         "llm_usage": outcome.llm_usage,
         # Outlook redesign (additive): the impersonal judgment, the
         # personal action, the warning-only earnings date, and the
-        # display-only 13-entry risk card.
+        # display-only 6-entry risk card.
         "outlook": outcome.outlook.value,
         "action": outcome.action.value,
         "earnings": outcome.earnings.to_detail() if outcome.earnings else None,
@@ -202,7 +205,8 @@ def get_sizing_defaults() -> Dict[str, Optional[float]]:
 
     settings = load_sizing_settings()
     return {"capital": settings.capital,
-            "risk_fraction": settings.risk_fraction}
+            "risk_fraction": settings.risk_fraction,
+            "reward_risk": settings.reward_risk}
 
 
 @router.get("/runs")

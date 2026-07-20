@@ -192,23 +192,24 @@ def compute_avg_volume(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optio
     return sum(volumes) / len(volumes)
 
 
-def compute_worst_day_5pct(closes: List[float]) -> Optional[float]:
-    """5th-percentile daily return (close-to-close) — the "bad day" size.
+def compute_worst_day_1y(closes: List[float]) -> Optional[float]:
+    """Worst single daily return (close-to-close) in the loaded history —
+    the honest "how bad has one day actually gotten" number the gap-risk
+    check stresses with.
 
-    Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer observations a
-    tail percentile is noise, so None (loud) beats a fake number.
+    Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer observations
+    the extreme is noise, so None (loud) beats a fake number.
     """
     if len(closes) < MIN_RETURNS_FOR_TAIL + 1:
         return None
-    returns = sorted(
+    returns = [
         closes[i] / closes[i - 1] - 1.0
         for i in range(1, len(closes))
         if closes[i - 1] > 0
-    )
+    ]
     if len(returns) < MIN_RETURNS_FOR_TAIL:
         return None
-    index = int(0.05 * (len(returns) - 1))
-    return returns[index]
+    return min(returns)
 
 
 def compute_bias(closes: List[float], period: int = BIAS_PERIOD) -> Optional[float]:
@@ -332,7 +333,7 @@ class TechnicalsProvider(DimensionProvider):
             "high_52w": compute_swing_high(bars, YEAR_BARS),
             "low_52w": compute_swing_low(bars, YEAR_BARS),
             "avg_volume_20": compute_avg_volume(bars),
-            "worst_day_5pct": compute_worst_day_5pct(closes),
+            "worst_day_1y": compute_worst_day_1y(closes),
             "bias_20": compute_bias(closes),
             "score": compute_score(bars),
         }

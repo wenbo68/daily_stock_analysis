@@ -1121,7 +1121,8 @@ class PromptContentTest(unittest.TestCase):
         # The builders rate everything a 2: bullish weight 6 of 12 total.
         self.assertIn("bullish weight 6", summary)
         self.assertIn("of 12 total", summary)
-        self.assertIn("verdict: hold", summary)
+        self.assertIn("outlook: neutral", summary)
+        self.assertNotIn("verdict:", summary)
 
     def test_list_and_vote_prompts_carry_the_weight_rubric(self):
         _, fake = _run()

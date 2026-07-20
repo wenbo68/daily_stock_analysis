@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the display-only 13-entry risk card.
+"""Offline tests for the display-only 6-entry risk card.
 
-Pure function, zero LLM. The card must always ship all 13 entries in
+Pure function, zero LLM. The card must always ship all 6 entries in
 RISK_CARD_IDS order, with honest "na" statuses when inputs are missing,
 and — by explicit owner decision — it affects nothing else in the run.
 """
@@ -29,7 +29,7 @@ def _tech(payload=None):
     base = {
         "close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
         "swing_low_20": 94.0, "atr_14": 3.0,
-        "avg_volume_20": 1_000_000.0, "worst_day_5pct": -0.03,
+        "avg_volume_20": 1_000_000.0, "worst_day_1y": -0.03,
     }
     if payload:
         base.update(payload)
@@ -39,8 +39,7 @@ def _tech(payload=None):
     )
 
 
-LEVELS = SniperLevels(entry=96.0, secondary_entry=94.0,
-                      stop_loss=90.0, take_profit=108.0)
+LEVELS = SniperLevels(entry=96.0, stop_loss=90.0, take_profit=108.0)
 
 SIZING = {
     "shares": 166, "position_value": 15936.0, "risk_amount": 996.0,
@@ -62,7 +61,7 @@ def _by_id(card):
 
 
 class TestRiskCardShape(unittest.TestCase):
-    def test_all_13_entries_in_frozen_order_and_json_ready(self):
+    def test_all_6_entries_in_frozen_order_and_json_ready(self):
         card = _card()
         self.assertEqual([e["id"] for e in card], list(RISK_CARD_IDS))
         json.dumps(card)  # must not raise
@@ -72,28 +71,11 @@ class TestRiskCardShape(unittest.TestCase):
             dimensions=[], levels=SniperLevels(), sizing=None,
             settings=SizingSettings(),
         )
-        self.assertEqual(len(card), 13)
+        self.assertEqual(len(card), 6)
         self.assertTrue(all(e["status"] == "na" for e in card))
 
 
-class TestRiskSideEntries(unittest.TestCase):
-    def test_concentration_ok_and_flag(self):
-        entry = _by_id(_card())["concentration"]
-        self.assertEqual(entry["status"], "ok")
-        self.assertAlmostEqual(entry["values"]["fraction"], 0.15936)
-        capped = _by_id(_card(sizing={**SIZING, "cap_applied": True}))
-        self.assertEqual(capped["concentration"]["status"], "flag")
-
-    def test_cash_left(self):
-        entry = _by_id(_card())["cash"]
-        self.assertAlmostEqual(entry["values"]["cash_left"], 84064.0)
-
-    def test_max_loss_flags_lot_rounding_drift(self):
-        entry = _by_id(_card())["max_loss"]
-        self.assertEqual(entry["status"], "ok")
-        drifted = _by_id(_card(sizing={**SIZING, "risk_amount": 1200.0}))
-        self.assertEqual(drifted["max_loss"]["status"], "flag")
-
+class TestRiskEntries(unittest.TestCase):
     def test_liquidity_flags_large_fraction_of_adv(self):
         entry = _by_id(_card())["liquidity"]
         self.assertEqual(entry["status"], "ok")
@@ -103,17 +85,42 @@ class TestRiskSideEntries(unittest.TestCase):
             thin["liquidity"]["values"]["fraction_of_adv"], ADV_FLAG_FRACTION
         )
 
-    def test_var_flags_when_bad_day_exceeds_planned_risk(self):
-        entry = _by_id(_card())["var"]
-        # 3% of 15936 = 478 < planned 996 -> ok
-        self.assertEqual(entry["status"], "ok")
-        wild = _by_id(_card(dimensions=[_tech({"worst_day_5pct": -0.10})]))
-        self.assertEqual(wild["var"]["status"], "flag")
-
-    def test_gap_stress_scenario_numbers(self):
+    def test_gap_stress_atr_scenario_numbers(self):
         entry = _by_id(_card())["gap_stress"]
-        self.assertAlmostEqual(entry["values"]["gap_price"], 87.0)  # 90 - 3
-        self.assertAlmostEqual(entry["values"]["loss_if_gap"], 166 * 9.0)
+        values = entry["values"]
+        # ATR scenario: open = 90 - 3 = 87; loss = 166 * (96 - 87) = 1494;
+        # 498 more than the planned 996.
+        self.assertAlmostEqual(values["atr_open"], 87.0)
+        self.assertAlmostEqual(values["atr_loss"], 166 * 9.0)
+        self.assertAlmostEqual(values["atr_extra"], 1494.0 - 996.0)
+
+    def test_gap_stress_mild_worst_day_does_not_gap_the_stop(self):
+        entry = _by_id(_card())["gap_stress"]
+        # Worst day -3% from entry 96 -> open 93.12, above the stop 90:
+        # the stop is not gapped, the planned loss holds, no flag.
+        self.assertEqual(entry["status"], "ok")
+        values = entry["values"]
+        self.assertAlmostEqual(values["worst_open"], 96.0 * 0.97)
+        self.assertFalse(values["worst_gaps_stop"])
+        self.assertNotIn("worst_loss", values)
+
+    def test_gap_stress_big_worst_day_gaps_the_stop_and_flags(self):
+        card = _by_id(_card(dimensions=[_tech({"worst_day_1y": -0.10})]))
+        gap = card["gap_stress"]
+        # Worst day -10% from entry 96 -> open 86.4 < stop 90: gapped.
+        self.assertEqual(gap["status"], "flag")
+        self.assertAlmostEqual(gap["values"]["worst_open"], 86.4)
+        self.assertAlmostEqual(gap["values"]["worst_loss"], 166 * (96.0 - 86.4))
+        self.assertAlmostEqual(
+            gap["values"]["worst_extra"], 166 * (96.0 - 86.4) - 996.0
+        )
+
+    def test_gap_stress_survives_missing_worst_day(self):
+        card = _by_id(_card(dimensions=[_tech({"worst_day_1y": None})]))
+        gap = card["gap_stress"]
+        self.assertEqual(gap["status"], "ok")  # ATR scenario still shown
+        self.assertIn("atr_open", gap["values"])
+        self.assertNotIn("worst_open", gap["values"])
 
     def test_volatility_flag_threshold(self):
         entry = _by_id(_card())["volatility"]
@@ -125,11 +132,18 @@ class TestRiskSideEntries(unittest.TestCase):
             VOLATILITY_FLAG_FRACTION,
         )
 
-
-class TestTraderSideEntries(unittest.TestCase):
-    def test_reward_risk_ratio(self):
+    def test_reward_risk_meets_the_default_goal(self):
         entry = _by_id(_card())["reward_risk"]
+        self.assertEqual(entry["status"], "ok")
         self.assertAlmostEqual(entry["values"]["ratio"], 2.0)
+        self.assertAlmostEqual(entry["values"]["goal"], 2.0)
+
+    def test_reward_risk_flags_a_ratio_below_the_chosen_goal(self):
+        picky = SizingSettings(capital=100000.0, risk_fraction=0.01,
+                               reward_risk=3.0)
+        entry = _by_id(_card(settings=picky))["reward_risk"]
+        self.assertEqual(entry["status"], "flag")  # 2.0 < the 3x goal
+        self.assertAlmostEqual(entry["values"]["goal"], 3.0)
 
     def test_stop_atr_multiple(self):
         entry = _by_id(_card())["stop_atr"]
@@ -139,32 +153,8 @@ class TestTraderSideEntries(unittest.TestCase):
         entry = _by_id(_card())["stop_vs_swing_low"]
         self.assertEqual(entry["status"], "ok")  # stop 90 < swing low 94
         shallow = _by_id(_card(levels=SniperLevels(
-            entry=96.0, secondary_entry=94.0, stop_loss=95.0,
-            take_profit=108.0)))
+            entry=96.0, stop_loss=95.0, take_profit=108.0)))
         self.assertEqual(shallow["stop_vs_swing_low"]["status"], "flag")
-
-    def test_staleness_snapshot_is_fresh_by_construction(self):
-        entry = _by_id(_card())["staleness"]
-        self.assertFalse(entry["values"]["close_below_stop"])
-
-    def test_both_entries_flags_busted_risk_budget(self):
-        entry = _by_id(_card())["both_entries"]
-        # 166 * (6 + 4) = 1660 > 1000 budget -> the double fill busts it.
-        self.assertEqual(entry["status"], "flag")
-        self.assertAlmostEqual(entry["values"]["combined_risk"], 1660.0)
-        self.assertAlmostEqual(entry["values"]["risk_budget"], 1000.0)
-
-    def test_ownership_context_na_when_nothing_held(self):
-        entry = _by_id(_card())["ownership_context"]
-        self.assertEqual(entry["status"], "na")
-
-    def test_ownership_context_combines_held_and_new(self):
-        settings = SizingSettings(capital=100000.0, risk_fraction=0.01,
-                                  ownership=300)
-        entry = _by_id(_card(settings=settings))["ownership_context"]
-        self.assertEqual(entry["status"], "flag")  # 30000+15936 > 25% cap
-        self.assertAlmostEqual(entry["values"]["combined_value"], 45936.0)
-        self.assertAlmostEqual(entry["values"]["combined_shares"], 466.0)
 
 
 if __name__ == "__main__":
