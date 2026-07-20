@@ -231,12 +231,12 @@ scaled by any AI-derived factor.
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 | Earnings warning window | 7 calendar days | earnings | close enough that turbulence is imminent |
-| Bullet weight range | 1–3 | debate | minor / normal / thesis-changing |
+| Bullet weight range | 1–5 | debate | very minor → very important (thesis-changing) |
 | Risk-card ADV flag | 5% of avg volume | risk card | above this, a one-day exit moves the price |
 | Risk-card volatility flag | 4% ATR/close | risk card | above this, daily noise dominates tight stops |
 | Risk-card gap scenario | 1 × ATR past stop | risk card | one ordinary day's jump beyond the stop |
 
-## 6. Tier-2 evidence vote (v10 — weighted, `debate.py` + `debate_models.py`)
+## 6. Tier-2 evidence vote (v11 — weighted 1–5, `debate.py` + `debate_models.py`)
 
 No roles, no personas — membership in the evidence pool is a majority
 vote with at most three votes per bullet, and no AI authors any number
@@ -281,19 +281,24 @@ contract (a reason stating a decimal or percentage must cite it; links
 inside reasons are code-checked with the same fix loop) — votes that
 cannot be fixed are discarded and carry no weight.
 
-Weights (v10, owner spec 2026-07-20): every voter also RATES each
-bullet's importance — 1 = minor detail, 2 = normal evidence, 3 =
-thesis-changing. Listers rate their own bullets in the same call (the
-second author's rating rides in on the merge match map); check and
-deciding votes carry a rating regardless of their verdict. An omitted
-rating degrades to 2 (which reproduces flat counting exactly);
-citation-fix rounds freeze the original rating so a fix reply cannot
-silently reset it.
+Weights (v11, owner spec 2026-07-20; v10 used a 1–3 scale): every
+voter also RATES each bullet's importance 1–5 — 1 = very minor, 3 =
+normal evidence, 5 = very important (could change the whole thesis
+alone) — and gives ONE short plain sentence saying why
+(`weight_reason`, shown in the UI's check modals; report numbers are
+banned there — they belong in the cited claim/reason). Listers rate
+their own bullets in the same call (the second author's rating and its
+reason ride in on the merge match map; stored per lister in
+`author_votes`); check and deciding votes carry a rating regardless of
+their verdict. An omitted rating degrades to 3 (the middle, which
+reproduces flat counting exactly); citation-fix rounds freeze the
+original rating and its reason so a fix reply cannot silently reset
+them.
 
 The score (code, pure arithmetic):
 
 ```
-bullet_weight = median of its voters' 1-3 ratings
+bullet_weight = median of its voters' 1-5 ratings
                 (two voters → their mean, so halves like 2.5 happen)
 
 score = 10 × Σweight(bullish) / Σweight(all)     over the pool (2 decimals)

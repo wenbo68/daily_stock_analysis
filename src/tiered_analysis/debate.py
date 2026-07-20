@@ -26,12 +26,14 @@ focused fix calls; bullets that cannot be fixed are STRUCK (crossed
 out, never voted on, in no pool) and unfixable votes are discarded.
 
 NO AI authors any number, but every voter RATES each bullet's
-importance 1-3 (v10 owner spec, 2026-07-20: 1 = minor detail, 2 =
-normal evidence, 3 = thesis-changing). Listers rate their own bullets
-in the same call; check/decider votes carry a weight alongside the
-verdict. A bullet's final weight is the MEDIAN of its voters' weights
-(two voters → their mean, so halves happen). The position score is
-computed by code from the direction tags and the weights:
+importance 1-5 (v11 owner spec, 2026-07-20: 1 = very minor, 3 = normal
+evidence, 5 = very important — thesis-changing) and gives one short
+plain sentence saying why (``weight_reason``, shown in the UI's check
+modals). Listers rate their own bullets in the same call; check/decider
+votes carry a weight alongside the verdict. A bullet's final weight is
+the MEDIAN of its voters' weights (two voters → their mean, so halves
+happen). The outlook score is computed by code from the direction tags
+and the weights:
 ``10 × Σweight(bullish) / Σweight(all)`` over the whole pool
 (per-dimension counts and weight sums are stored for the section
 headers). Two snapshots: initial (the merged list before voting,
@@ -95,10 +97,11 @@ HOLD_MAX = 6.0
 MAX_FIX_ROUNDS = 3
 
 #: Stored-detail version marker — the frontend picks its renderer by this.
-#: 10 = weighted votes (bullets and votes carry 1-3 importance weights;
-#: score = 10 × Σweight(bullish) / Σweight(all)); stored format-9 runs
-#: are the same shapes minus the weight keys, with flat counting.
-DETAIL_FORMAT = 10
+#: 11 = 1-5 weights with per-voter score reasons and author attribution
+#: (``author_votes``: which lister authored the bullet, their rating and
+#: why); 10 = 1-3 weights, ratings only; stored format-9 runs are the
+#: same shapes minus the weight keys, with flat counting.
+DETAIL_FORMAT = 11
 
 _CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
@@ -323,9 +326,13 @@ _VOTE_RULES = """Vote rules (checked mechanically by code):
 - Every vote: "verdict" is "valid" or "invalid", plus a short plain
   "reason" — REQUIRED either way; a vote without a reason is rejected.
 - Every vote also carries "weight": your own importance rating of the
-  bullet for the trade decision — 1 (minor detail), 2 (normal
-  evidence), or 3 (thesis-changing). Rate it regardless of your
-  verdict; code takes the median of all voters' weights.
+  bullet for the trade decision, 1 to 5 — 1 (very minor), 2 (minor),
+  3 (normal evidence), 4 (important), 5 (very important — could change
+  the whole thesis alone). Rate it regardless of your verdict; code
+  takes the median of all voters' weights.
+- Every vote also carries "weight_reason": ONE short plain sentence
+  saying why you rated it that important. Plain words only — report
+  numbers belong in the vote reason with links, never here.
 - If your reason states a number from the reports, cite it with a link
   {{"ref": the leaf field, "value": the value copied EXACTLY as the
   report displays it}} and write that exact value in your reason.
@@ -347,24 +354,28 @@ _LIST_RULES = """Evidence-list rules:
   AND values, tagged "bullish" or "bearish". The direction tags ARE the
   score — code counts them; nobody writes a score.
 - Each bullet also carries "weight": your importance rating for the
-  trade decision — 1 (minor detail), 2 (normal evidence), or 3
-  (thesis-changing). Most bullets are a 2; reserve 3 for evidence that
+  trade decision, 1 to 5 — 1 (very minor), 2 (minor), 3 (normal
+  evidence), 4 (important), 5 (very important — could change the whole
+  thesis alone). Most bullets are a 3; reserve 5 for evidence that
   would change the whole thesis on its own, and 1 for footnotes. Code
   weighs the score by these ratings.
+- Each bullet also carries "weight_reason": ONE short plain sentence
+  saying why you rated it that important. Plain words only — report
+  numbers belong in the claim sentence with links, never here.
 - Bullet ids: T1, T2… for technicals, F1… for fundamentals, E1… for
   macro_econ, S1… for sentiment."""
 
 _ITEM_SHAPE = """{{"id": "T1", "dimension": "technicals", "direction": "bullish",
   "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
   "links": [{{"ref": "technicals.rsi_14", "value": "56.28"}}],
-  "weight": 2}}"""
+  "weight": 3, "weight_reason": "Momentum backs the trend but rarely drives it alone."}}"""
 
 _LISTER1_TEMPLATE = """{context}
 You are the FIRST analyst. Another analyst is building the same list
 separately; neither of you sees the other's work. Take no side: list ALL
 the evidence you can find in the reports above — bullish AND bearish.
 Walk each report from top to bottom, field by field, so nothing is
-skipped. You give no score; code computes the position score from your
+skipped. You give no score; code computes the outlook score from your
 direction tags.
 
 {list_rules}
@@ -381,7 +392,7 @@ separately; you have NOT seen it. Take no side: list ALL the evidence
 you can find in the reports above — bullish AND bearish. Work theme by
 theme — momentum, trend, profitability, valuation, balance sheet, macro
 pressures, news — then double-check you covered every report field. You
-give no score; code computes the position score from your direction
+give no score; code computes the outlook score from your direction
 tags.
 
 {list_rules}
@@ -469,7 +480,7 @@ Vote on the bullet in front of you, not on the stock.
 {vote_rules}
 
 Reply with JSON only:
-{{"votes": {{"T2": {{"verdict": "invalid", "reason": "why it is flawed", "links": [{{"ref": "technicals.close", "value": "100"}}], "weight": 2}}}}}}
+{{"votes": {{"T2": {{"verdict": "invalid", "reason": "why it is flawed", "links": [{{"ref": "technicals.close", "value": "100"}}], "weight": 3, "weight_reason": "why it matters this much"}}}}}}
 "votes" must cover exactly these bullet ids: {check_ids}."""
 
 _DECIDER_TEMPLATE = """{context}
@@ -487,7 +498,7 @@ see the claim and the objection; weigh both and rule:
 {vote_rules}
 
 Reply with JSON only:
-{{"votes": {{"T2": {{"verdict": "valid", "reason": "why the bullet stands", "links": [], "weight": 2}}}}}}
+{{"votes": {{"T2": {{"verdict": "valid", "reason": "why the bullet stands", "links": [], "weight": 3, "weight_reason": "why it matters this much"}}}}}}
 "votes" must cover exactly these bullet ids: {tied_ids}."""
 
 _SUMMARY_TEMPLATE = """{context}
@@ -497,7 +508,7 @@ The voted evidence list:
 Computed result (fixed formula, already decided by code — the score is
 10 × the total importance weight of the bullish bullets / the total
 weight of all bullets, over the pool the votes left standing; each
-bullet's weight is the median of its voters' 1-3 ratings):
+bullet's weight is the median of its voters' 1-5 ratings):
 - final score {final} ({final_bullish} bullish vs {final_bearish}
   bearish of {final_total} bullets; bullish weight {final_bullish_weight}
   of {final_total_weight} total)
@@ -665,7 +676,7 @@ class DebateEngine:
                 self._attach_votes(items, votes, "decider")
 
         # Outcomes — pure counting of the votes — then each surviving
-        # bullet's final weight: the median of every voter's 1-3 rating.
+        # bullet's final weight: the median of every voter's 1-5 rating.
         self._apply_outcomes(items, warnings)
         for item in items:
             if not item["struck"]:
@@ -796,14 +807,17 @@ class DebateEngine:
         where the second analyst independently listed the same evidence),
         the second list's uncovered bullets renumbered in, and both
         lists' struck bullets kept for the audit trail."""
+        lead_author = 1
         if first is None:
             first, second = second, None  # the surviving list leads
+            lead_author = 2
         first_items, first_broken = first
         first_healthy = [m for m in first_items if m.id not in first_broken]
 
-        # covered: first-list id → the SECOND author's weight rating of
-        # the same evidence (the match map is how their rating rides in).
-        covered: Dict[str, int] = {}
+        # covered: first-list id → the SECOND author's model of the same
+        # evidence (the match map is how their rating and its reason
+        # ride in).
+        covered: Dict[str, EvidenceItemModel] = {}
         extra_models: List[EvidenceItemModel] = []
         extra_broken: Dict[str, List[str]] = {}
         if second is not None:
@@ -816,7 +830,7 @@ class DebateEngine:
                 second_by_id = {m.id: m for m in second_healthy}
                 for entry in merge.match_map:
                     if entry.covered_by is not None:
-                        covered[entry.covered_by] = second_by_id[entry.own_id].weight
+                        covered[entry.covered_by] = second_by_id[entry.own_id]
                     else:
                         extra_models.append(second_by_id[entry.own_id])
                 for item_id, problems in second_broken.items():
@@ -833,13 +847,14 @@ class DebateEngine:
             )
         items: List[Dict[str, Any]] = []
         for model in first_items:
-            second_weight = covered.get(model.id)
+            second_model = covered.get(model.id)
             items.append(
                 self._base_item(
                     model,
                     first_broken.get(model.id),
-                    authors=2 if second_weight is not None else 1,
-                    second_weight=second_weight,
+                    authors=2 if second_model is not None else 1,
+                    author_no=lead_author,
+                    second_model=second_model,
                 )
             )
         for model in extra_models:
@@ -847,7 +862,9 @@ class DebateEngine:
             next_number[prefix] = next_number.get(prefix, 0) + 1
             renumbered = model.model_copy(update={"id": f"{prefix}{next_number[prefix]}"})
             items.append(
-                self._base_item(renumbered, extra_broken.get(model.id), authors=1)
+                self._base_item(
+                    renumbered, extra_broken.get(model.id), authors=1, author_no=2
+                )
             )
         return items
 
@@ -984,8 +1001,13 @@ class DebateEngine:
                     continue  # id and dimension are frozen
                 # The author's importance rating is frozen too — a fix
                 # round is about citations, and a reply that omits
-                # "weight" must not silently reset a 3 to the default.
-                candidate = candidate.model_copy(update={"weight": original.weight})
+                # "weight" must not silently reset a 5 to the default.
+                candidate = candidate.model_copy(
+                    update={
+                        "weight": original.weight,
+                        "weight_reason": original.weight_reason,
+                    }
+                )
                 fixed[index_by_id[candidate.id]] = candidate
                 errors = self._link_errors(candidate, dimensions)
                 if errors:
@@ -1041,7 +1063,10 @@ class DebateEngine:
                 # The voter's importance rating is frozen through fixes
                 # (same reason as bullet weights: no silent resets).
                 fixed[key] = candidate.model_copy(
-                    update={"weight": fixed[key].weight}
+                    update={
+                        "weight": fixed[key].weight,
+                        "weight_reason": fixed[key].weight_reason,
+                    }
                 )
                 errors = self._vote_errors(key, candidate, dimensions)
                 if errors:
@@ -1090,6 +1115,7 @@ class DebateEngine:
                     "verdict": vote.verdict,
                     "reason": reason or None,
                     "weight": vote.weight,
+                    "weight_reason": vote.weight_reason,
                     "links": [
                         _link_detail(link) for link in vote.links
                     ],
@@ -1211,17 +1237,32 @@ class DebateEngine:
         model: EvidenceItemModel,
         problems: Optional[List[str]],
         authors: int,
-        second_weight: Optional[int] = None,
+        author_no: int = 1,
+        second_model: Optional[EvidenceItemModel] = None,
     ) -> Dict[str, Any]:
         """One list bullet. ``problems`` non-empty → the bullet is struck:
         code could not fix its citations, so it renders crossed out and
         never enters a pool. ``authors`` = how many analysts listed it
-        independently (2 = confirmed at birth); ``second_weight`` is the
-        second author's importance rating when both listed it."""
+        independently (2 = confirmed at birth); ``author_no`` = which
+        lister wrote it (1 or 2); ``second_model`` is the second lister's
+        own bullet for the same evidence when both listed it."""
         struck = bool(problems)
-        author_weights = [model.weight]
-        if second_weight is not None:
-            author_weights.append(second_weight)
+        author_votes = [
+            {
+                "lister": author_no,
+                "weight": model.weight,
+                "weight_reason": model.weight_reason,
+            }
+        ]
+        if second_model is not None:
+            author_votes.append(
+                {
+                    "lister": 2,
+                    "weight": second_model.weight,
+                    "weight_reason": second_model.weight_reason,
+                }
+            )
+        author_weights = [vote["weight"] for vote in author_votes]
         return {
             "id": model.id,
             "dimension": model.dimension,
@@ -1231,6 +1272,9 @@ class DebateEngine:
             "struck": struck,
             "problems": list(problems or []),
             "authors": authors,
+            # Per-lister rating detail (v11) and the bare weight list the
+            # pools consume (kept alongside, same order).
+            "author_votes": author_votes,
             "author_weights": author_weights,
             # The final median of every voter's rating — filled once all
             # the votes are in (None while struck: no pool, no weight).
@@ -1247,7 +1291,7 @@ class DebateEngine:
 
 
 def _median_weight(weights: Sequence[float]) -> Optional[float]:
-    """The median of the voters' 1-3 ratings; an even count takes the
+    """The median of the voters' 1-5 ratings; an even count takes the
     mean of the middle two, so halves (2.5) happen. Whole results come
     back as ints so the stored JSON stays clean."""
     if not weights:

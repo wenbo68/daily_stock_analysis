@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the tier-2 evidence vote (v10 — weighted).
+"""Offline tests for the tier-2 evidence vote (v11 — weighted 1-5).
 
 Fake-LLM tests covering: the vote choreography (two blind analyst lists
 in parallel, each with a code citation check + fix loop → merge → check
 round on single-author bullets → deciding round on 1-1 ties → summary),
 the vote arithmetic (author = first valid vote; both-listed = confirmed
 2-0; majority of three decides), the deterministic weighted score
-(every voter rates a bullet's importance 1-3; a bullet's weight is the
+(every voter rates a bullet's importance 1-5; a bullet's weight is the
 median of its voters' ratings, mean when there are two; score =
 10 × Σweight(bullish) / Σweight(all); snapshots initial/final),
 the display-value citation contract (links are {ref, value} copied
@@ -119,7 +119,8 @@ def _slink(number):
     return {"ref": f"citation:{number}"}
 
 
-def _item(item_id, dimension, direction, claim, links, weight=2):
+def _item(item_id, dimension, direction, claim, links, weight=2,
+          weight_reason=None):
     return {
         "id": item_id,
         "dimension": dimension,
@@ -127,12 +128,14 @@ def _item(item_id, dimension, direction, claim, links, weight=2):
         "claim": claim,
         "links": links,
         "weight": weight,
+        "weight_reason": weight_reason,
     }
 
 
-def _vote(verdict="valid", reason=None, links=(), weight=2):
+def _vote(verdict="valid", reason=None, links=(), weight=2,
+          weight_reason=None):
     return {"verdict": verdict, "reason": reason, "links": list(links),
-            "weight": weight}
+            "weight": weight, "weight_reason": weight_reason}
 
 
 LIST_1 = [
@@ -608,28 +611,29 @@ class VoteOutcomeTest(unittest.TestCase):
 
 
 class WeightTest(unittest.TestCase):
-    """v10: every voter rates a bullet 1-3; the bullet's weight is the
+    """v11: every voter rates a bullet 1-5; the bullet's weight is the
     median of its voters' ratings (mean when there are two) and the
     score is 10 × Σweight(bullish) / Σweight(all)."""
 
     RSI_HEAVY = _item("T1", "technicals", "bullish",
                       "The 14-day RSI (71.20) is above 70, showing strong momentum.",
-                      [_vlink("technicals.rsi_14", "71.20")], weight=3)
+                      [_vlink("technicals.rsi_14", "71.20")], weight=5,
+                      weight_reason="Momentum this strong drives the thesis.")
 
     def test_a_heavy_bullet_moves_the_weighted_score(self):
-        # Both authors rate the bullish RSI a 3 → its weight is 3 while
-        # everything else stays 2. Bullish weight 3+2+2=7 of 13 total.
+        # Both authors rate the bullish RSI a 5 → its weight is 5 while
+        # everything else stays 2. Bullish weight 5+2+2=9 of 15 total.
         first = [self.RSI_HEAVY, LIST_1[1], LIST_1[2], LIST_1[3]]
         second = [self.RSI_HEAVY, LIST_2[1], LIST_2[2], LIST_2[3], LIST_2[4]]
         result, _ = _run(
             _replies(lister1=_list_reply(first), lister2=_list_reply(second))
         )
         t1 = _item_by_id(result, "T1")
-        self.assertEqual(t1["author_weights"], [3, 3])
-        self.assertEqual(t1["weight"], 3)
-        self.assertEqual(result.verdict.pools["final"]["bullish_weight"], 7)
-        self.assertEqual(result.verdict.pools["final"]["total_weight"], 13)
-        self.assertEqual(result.verdict.final_score, round(10 * 7 / 13, 2))
+        self.assertEqual(t1["author_weights"], [5, 5])
+        self.assertEqual(t1["weight"], 5)
+        self.assertEqual(result.verdict.pools["final"]["bullish_weight"], 9)
+        self.assertEqual(result.verdict.pools["final"]["total_weight"], 15)
+        self.assertEqual(result.verdict.final_score, round(10 * 9 / 15, 2))
 
     def test_three_voters_take_the_median(self):
         # T2: author 2, checker invalid 3, decider valid 3 → median 3.
@@ -662,7 +666,7 @@ class WeightTest(unittest.TestCase):
         self.assertEqual(result.verdict.pools["final"]["total_weight"], 12.5)
 
     def test_both_author_ratings_ride_in_on_the_match_map(self):
-        # First analyst rates the RSI a 1, the second a 3 → mean 2.
+        # First analyst rates the RSI a 1, the second a 5 → mean 3.
         light = dict(self.RSI_HEAVY, weight=1)
         first = [light, LIST_1[1], LIST_1[2], LIST_1[3]]
         second = [self.RSI_HEAVY, LIST_2[1], LIST_2[2], LIST_2[3], LIST_2[4]]
@@ -670,24 +674,41 @@ class WeightTest(unittest.TestCase):
             _replies(lister1=_list_reply(first), lister2=_list_reply(second))
         )
         t1 = _item_by_id(result, "T1")
-        self.assertEqual(t1["author_weights"], [1, 3])
-        self.assertEqual(t1["weight"], 2)
+        self.assertEqual(t1["author_weights"], [1, 5])
+        self.assertEqual(t1["weight"], 3)
 
-    def test_an_omitted_weight_defaults_to_normal_2(self):
-        # A reply without any "weight" keys reproduces flat counting.
-        stripped = [
-            {key: value for key, value in item.items() if key != "weight"}
-            for item in LIST_1
-        ]
-        result, _ = _run(_replies(lister1=_list_reply(stripped)))
+    def test_an_omitted_weight_defaults_to_the_neutral_3(self):
+        # Replies without any "weight" keys reproduce flat counting: every
+        # weight lands on the 1-5 middle, so the sums cancel out.
+        def stripped(items):
+            return [
+                {key: value for key, value in item.items()
+                 if key not in ("weight", "weight_reason")}
+                for item in items
+            ]
+
+        bare = {key: {"verdict": vote["verdict"], "reason": vote["reason"],
+                      "links": vote["links"]}
+                for key, vote in json.loads(_check())["votes"].items()}
+        bare_decider = {key: {"verdict": vote["verdict"],
+                              "reason": vote["reason"], "links": vote["links"]}
+                        for key, vote in json.loads(_decider())["votes"].items()}
+        result, _ = _run(
+            _replies(
+                lister1=_list_reply(stripped(LIST_1)),
+                lister2=_list_reply(stripped(LIST_2)),
+                check=_check(bare),
+                decider=_decider(bare_decider),
+            )
+        )
         self.assertIsNotNone(result.verdict)
-        self.assertEqual(_item_by_id(result, "T1")["author_weights"], [2, 2])
+        self.assertEqual(_item_by_id(result, "T1")["author_weights"], [3, 3])
         self.assertEqual(result.verdict.final_score, 5.0)
 
     def test_the_author_rating_survives_a_citation_fix(self):
-        # The fix reply comes back without the original 3 rating — code
-        # freezes the author's weight so it cannot silently reset to 2.
-        broken_heavy = dict(BROKEN_T2, weight=3)
+        # The fix reply comes back without the original rating or its
+        # reason — code freezes both so they cannot silently reset.
+        broken_heavy = dict(BROKEN_T2, weight=5, weight_reason="Key level.")
         result, _ = _run(
             _replies(
                 lister1=_list_reply([LIST_1[0], broken_heavy, LIST_1[2], LIST_1[3]]),
@@ -696,7 +717,47 @@ class WeightTest(unittest.TestCase):
         )
         t2 = _item_by_id(result, "T2")
         self.assertFalse(t2["struck"])
-        self.assertEqual(t2["author_weights"], [3])
+        self.assertEqual(t2["author_weights"], [5])
+        self.assertEqual(t2["author_votes"][0]["weight_reason"], "Key level.")
+
+    def test_author_votes_carry_the_lister_number_and_the_reason(self):
+        # v11 attribution: a both-listed bullet keeps each lister's own
+        # rating and reason; a second-list extra is lister 2's.
+        first_heavy = dict(self.RSI_HEAVY, weight=4,
+                           weight_reason="Strong but not decisive.")
+        first = [first_heavy, LIST_1[1], LIST_1[2], LIST_1[3]]
+        second = [self.RSI_HEAVY, LIST_2[1], LIST_2[2], LIST_2[3], LIST_2[4]]
+        result, _ = _run(
+            _replies(lister1=_list_reply(first), lister2=_list_reply(second))
+        )
+        t1 = _item_by_id(result, "T1")
+        self.assertEqual(
+            t1["author_votes"],
+            [
+                {"lister": 1, "weight": 4,
+                 "weight_reason": "Strong but not decisive."},
+                {"lister": 2, "weight": 5,
+                 "weight_reason": "Momentum this strong drives the thesis."},
+            ],
+        )
+        t2 = _item_by_id(result, "T2")  # single-author, from the first list
+        self.assertEqual([v["lister"] for v in t2["author_votes"]], [1])
+        t3 = _item_by_id(result, "T3")  # renumbered second-list extra
+        self.assertEqual([v["lister"] for v in t3["author_votes"]], [2])
+
+    def test_vote_score_reasons_are_stored_with_the_votes(self):
+        votes = {
+            "T2": _vote("invalid",
+                        "A single close below one level is not a trend.",
+                        weight=4, weight_reason="Levels drive the plan."),
+            "T3": _vote("valid", "The score reading is fair."),
+            "S3": _vote("valid", "Supported by the source.", [_slink(2)]),
+        }
+        result, _ = _run(_replies(check=_check(votes)))
+        t2 = _item_by_id(result, "T2")
+        checker = next(v for v in t2["votes"] if v["role"] == "checker")
+        self.assertEqual(checker["weight"], 4)
+        self.assertEqual(checker["weight_reason"], "Levels drive the plan.")
 
 
 class StruckBulletTest(unittest.TestCase):
@@ -1057,7 +1118,7 @@ class PromptContentTest(unittest.TestCase):
         self.assertIn("final score 5.00", summary)
         self.assertIn("3 bullish vs 3", summary)
         self.assertIn("bearish of 6", summary)
-        # All-default weights: bullish weight 6 of 12 total.
+        # The builders rate everything a 2: bullish weight 6 of 12 total.
         self.assertIn("bullish weight 6", summary)
         self.assertIn("of 12 total", summary)
         self.assertIn("verdict: hold", summary)
@@ -1065,19 +1126,21 @@ class PromptContentTest(unittest.TestCase):
     def test_list_and_vote_prompts_carry_the_weight_rubric(self):
         _, fake = _run()
         first = next(p for p in fake.prompts if "You are the FIRST analyst" in p)
-        self.assertIn("thesis-changing", first)
-        self.assertIn('"weight": 2', first)  # the item shape shows it
+        self.assertIn("5 (very important", first)
+        self.assertIn('"weight": 3', first)  # the item shape shows it
+        self.assertIn('"weight_reason"', first)
         check = next(p for p in fake.prompts if "cast the second vote" in p)
         self.assertIn("regardless of your", check)
         self.assertIn("median of all voters' weights", check)
+        self.assertIn('"weight_reason"', check)
 
 
 class DetailShapeTest(unittest.TestCase):
-    def test_to_detail_is_json_ready_with_the_v10_marker_and_legacy_keys(self):
+    def test_to_detail_is_json_ready_with_the_v11_marker_and_legacy_keys(self):
         result, _ = _run()
         detail = result.to_detail()
         json.dumps(detail)  # must not raise
-        self.assertEqual(detail["format"], 10)
+        self.assertEqual(detail["format"], 11)
         self.assertEqual(detail["turns"], [])
         self.assertEqual(len(detail["items"]), 6)
         verdict = detail["verdict"]
@@ -1144,7 +1207,7 @@ class TestTier2Stage(unittest.TestCase):
         self.assertAlmostEqual(report.levels.entry, 96.0)
         self.assertEqual(report.narrative, "ruling")
         self.assertIsNotNone(report.debate_detail)
-        self.assertEqual(report.debate_detail["format"], 10)
+        self.assertEqual(report.debate_detail["format"], 11)
 
     def test_no_verdict_is_unknown_never_tier1_fallback(self):
         # Outlook redesign: a failed vote fails honestly — no silently
