@@ -46,6 +46,14 @@ MIN_ITEMS_PER_DIMENSION = 2
 Dimension = Literal["technicals", "fundamentals", "macro_econ", "sentiment"]
 ItemDirection = Literal["bullish", "bearish"]
 
+#: Importance weight of one bullet, rated by each voter (owner spec
+#: 2026-07-20): 1 = minor detail, 2 = normal evidence, 3 = thesis-
+#: changing. Schema-validated — an out-of-range weight fails the form
+#: and triggers the normal retry; an OMITTED weight degrades to 2
+#: (normal), which reproduces the old flat counting exactly.
+Weight = Literal[1, 2, 3]
+DEFAULT_WEIGHT = 2
+
 _CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 
@@ -87,6 +95,8 @@ class EvidenceItemModel(_StageModel):
     direction: ItemDirection
     claim: str = Field(min_length=1)
     links: List[LinkModel] = Field(min_length=1)
+    #: The author's own importance rating of this bullet (1-3).
+    weight: Weight = DEFAULT_WEIGHT
 
 
 class ListModel(_StageModel):
@@ -128,6 +138,9 @@ class VoteModel(_StageModel):
     verdict: Literal["valid", "invalid"]
     reason: Optional[str] = None
     links: List[LinkModel] = Field(default_factory=list)
+    #: The voter's own importance rating of the bullet (1-3), cast
+    #: regardless of the verdict — it joins the bullet's weight median.
+    weight: Weight = DEFAULT_WEIGHT
 
     @model_validator(mode="after")
     def _needs_reason(self) -> "VoteModel":

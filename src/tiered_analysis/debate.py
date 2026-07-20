@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tier 2: the evidence vote (v8).
+"""Tier 2: the evidence vote (v10 — weighted).
 
 v8 revision (owner spec 2026-07-18, replacing the v5-v7
 defender/attacker/judge tree — see .claude/reviews/tier2-v5-design.md).
@@ -25,13 +25,20 @@ and sends failures back to the same AI in up to ``MAX_FIX_ROUNDS``
 focused fix calls; bullets that cannot be fixed are STRUCK (crossed
 out, never voted on, in no pool) and unfixable votes are discarded.
 
-NO AI authors any number. The position score is computed by code from
-the direction tags: ``10 × bullish / total`` over the whole pool (flat
-counting — v9 owner spec; per-dimension counts are stored for the
-section headers). Two snapshots: initial (the merged list, stored for
-the audit trail only) and final (the bullets the votes left standing —
-the displayed score). Verdict on the 2-decimal final: < 4 sell, 4-6
-hold, > 6 buy. Empty final pool → 5.00, hold, warning.
+NO AI authors any number, but every voter RATES each bullet's
+importance 1-3 (v10 owner spec, 2026-07-20: 1 = minor detail, 2 =
+normal evidence, 3 = thesis-changing). Listers rate their own bullets
+in the same call; check/decider votes carry a weight alongside the
+verdict. A bullet's final weight is the MEDIAN of its voters' weights
+(two voters → their mean, so halves happen). The position score is
+computed by code from the direction tags and the weights:
+``10 × Σweight(bullish) / Σweight(all)`` over the whole pool
+(per-dimension counts and weight sums are stored for the section
+headers). Two snapshots: initial (the merged list before voting,
+weighted by the authors' own ratings, stored for the audit trail only)
+and final (the bullets the votes left standing, weighted by the full
+voter median — the displayed score). Verdict on the 2-decimal final:
+< 4 sell, 4-6 hold, > 6 buy. Empty final pool → 5.00, hold, warning.
 
 5-6 base LLM calls (two lists parallel with their fix loops → merge →
 check round → deciding round only when there are ties → summary), all
@@ -88,9 +95,10 @@ HOLD_MAX = 6.0
 MAX_FIX_ROUNDS = 3
 
 #: Stored-detail version marker — the frontend picks its renderer by this.
-#: 9 = the flat-count score (10 × bullish / total over the whole pool);
-#: stored format-8 runs share the same shapes with a per-dimension mean.
-DETAIL_FORMAT = 9
+#: 10 = weighted votes (bullets and votes carry 1-3 importance weights;
+#: score = 10 × Σweight(bullish) / Σweight(all)); stored format-9 runs
+#: are the same shapes minus the weight keys, with flat counting.
+DETAIL_FORMAT = 10
 
 _CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
@@ -120,10 +128,11 @@ class AnchoredReason:
 @dataclass(frozen=True)
 class DebateVerdict:
     direction: Direction
-    #: The final pool's score (per-dimension 10×bullish/total, averaged).
+    #: The final pool's weighted score: 10 × Σweight(bullish) / Σweight(all).
     final_score: float
     summary: str
-    #: The same formula over the merged list before any voting.
+    #: The same formula over the merged list before any voting, weighted
+    #: by the authors' own ratings.
     initial_score: float
     #: Per-pool audit: {initial|final: {dimensions, bullish, bearish,
     #: total, score}}.
@@ -313,6 +322,10 @@ _LINK_RULES = """Link rules (all checked mechanically by code):
 _VOTE_RULES = """Vote rules (checked mechanically by code):
 - Every vote: "verdict" is "valid" or "invalid", plus a short plain
   "reason" — REQUIRED either way; a vote without a reason is rejected.
+- Every vote also carries "weight": your own importance rating of the
+  bullet for the trade decision — 1 (minor detail), 2 (normal
+  evidence), or 3 (thesis-changing). Rate it regardless of your
+  verdict; code takes the median of all voters' weights.
 - If your reason states a number from the reports, cite it with a link
   {{"ref": the leaf field, "value": the value copied EXACTLY as the
   report displays it}} and write that exact value in your reason.
@@ -333,12 +346,18 @@ _LIST_RULES = """Evidence-list rules:
 - Each bullet: one atomic claim (one sentence) containing the cited names
   AND values, tagged "bullish" or "bearish". The direction tags ARE the
   score — code counts them; nobody writes a score.
+- Each bullet also carries "weight": your importance rating for the
+  trade decision — 1 (minor detail), 2 (normal evidence), or 3
+  (thesis-changing). Most bullets are a 2; reserve 3 for evidence that
+  would change the whole thesis on its own, and 1 for footnotes. Code
+  weighs the score by these ratings.
 - Bullet ids: T1, T2… for technicals, F1… for fundamentals, E1… for
   macro_econ, S1… for sentiment."""
 
 _ITEM_SHAPE = """{{"id": "T1", "dimension": "technicals", "direction": "bullish",
   "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
-  "links": [{{"ref": "technicals.rsi_14", "value": "56.28"}}]}}"""
+  "links": [{{"ref": "technicals.rsi_14", "value": "56.28"}}],
+  "weight": 2}}"""
 
 _LISTER1_TEMPLATE = """{context}
 You are the FIRST analyst. Another analyst is building the same list
@@ -450,7 +469,7 @@ Vote on the bullet in front of you, not on the stock.
 {vote_rules}
 
 Reply with JSON only:
-{{"votes": {{"T2": {{"verdict": "invalid", "reason": "why it is flawed", "links": [{{"ref": "technicals.close", "value": "100"}}]}}}}}}
+{{"votes": {{"T2": {{"verdict": "invalid", "reason": "why it is flawed", "links": [{{"ref": "technicals.close", "value": "100"}}], "weight": 2}}}}}}
 "votes" must cover exactly these bullet ids: {check_ids}."""
 
 _DECIDER_TEMPLATE = """{context}
@@ -468,7 +487,7 @@ see the claim and the objection; weigh both and rule:
 {vote_rules}
 
 Reply with JSON only:
-{{"votes": {{"T2": {{"verdict": "valid", "reason": "why the bullet stands", "links": []}}}}}}
+{{"votes": {{"T2": {{"verdict": "valid", "reason": "why the bullet stands", "links": [], "weight": 2}}}}}}
 "votes" must cover exactly these bullet ids: {tied_ids}."""
 
 _SUMMARY_TEMPLATE = """{context}
@@ -476,10 +495,12 @@ The voted evidence list:
 {tree}
 
 Computed result (fixed formula, already decided by code — the score is
-10 × bullish bullets / total bullets over the pool the votes left
-standing):
+10 × the total importance weight of the bullish bullets / the total
+weight of all bullets, over the pool the votes left standing; each
+bullet's weight is the median of its voters' 1-3 ratings):
 - final score {final} ({final_bullish} bullish vs {final_bearish}
-  bearish of {final_total})
+  bearish of {final_total} bullets; bullish weight {final_bullish_weight}
+  of {final_total_weight} total)
 - verdict: {direction} (below 4 sell, 4-6 hold, above 6 buy)
 
 Write the user-facing report. Reply with JSON only:
@@ -643,12 +664,27 @@ class DebateEngine:
             else:
                 self._attach_votes(items, votes, "decider")
 
-        # Outcomes — pure counting of the votes.
+        # Outcomes — pure counting of the votes — then each surviving
+        # bullet's final weight: the median of every voter's 1-3 rating.
         self._apply_outcomes(items, warnings)
+        for item in items:
+            if not item["struck"]:
+                item["weight"] = _median_weight(
+                    item["author_weights"]
+                    + [vote["weight"] for vote in item["votes"]]
+                )
 
         pools = {
-            "initial": _pool_detail(i for i in items if not i["struck"]),
-            "final": _pool_detail(i for i in items if i["final_status"] == "counted"),
+            # The initial pool is the merged list BEFORE voting, so it is
+            # weighted by the authors' own ratings alone.
+            "initial": _pool_detail(
+                (i for i in items if not i["struck"]),
+                lambda item: _median_weight(item["author_weights"]),
+            ),
+            "final": _pool_detail(
+                (i for i in items if i["final_status"] == "counted"),
+                lambda item: item["weight"],
+            ),
         }
         initial_score = pools["initial"]["score"] if pools["initial"]["total"] else 5.0
         if pools["final"]["total"]:
@@ -765,7 +801,9 @@ class DebateEngine:
         first_items, first_broken = first
         first_healthy = [m for m in first_items if m.id not in first_broken]
 
-        covered: Dict[str, bool] = {}
+        # covered: first-list id → the SECOND author's weight rating of
+        # the same evidence (the match map is how their rating rides in).
+        covered: Dict[str, int] = {}
         extra_models: List[EvidenceItemModel] = []
         extra_broken: Dict[str, List[str]] = {}
         if second is not None:
@@ -778,7 +816,7 @@ class DebateEngine:
                 second_by_id = {m.id: m for m in second_healthy}
                 for entry in merge.match_map:
                     if entry.covered_by is not None:
-                        covered[entry.covered_by] = True
+                        covered[entry.covered_by] = second_by_id[entry.own_id].weight
                     else:
                         extra_models.append(second_by_id[entry.own_id])
                 for item_id, problems in second_broken.items():
@@ -795,11 +833,13 @@ class DebateEngine:
             )
         items: List[Dict[str, Any]] = []
         for model in first_items:
+            second_weight = covered.get(model.id)
             items.append(
                 self._base_item(
                     model,
                     first_broken.get(model.id),
-                    authors=2 if covered.get(model.id) else 1,
+                    authors=2 if second_weight is not None else 1,
+                    second_weight=second_weight,
                 )
             )
         for model in extra_models:
@@ -939,8 +979,13 @@ class DebateEngine:
             for candidate in reply.items:
                 if candidate.id not in broken:
                     continue  # untouched bullets must not be churned
-                if candidate.dimension != fixed[index_by_id[candidate.id]].dimension:
+                original = fixed[index_by_id[candidate.id]]
+                if candidate.dimension != original.dimension:
                     continue  # id and dimension are frozen
+                # The author's importance rating is frozen too — a fix
+                # round is about citations, and a reply that omits
+                # "weight" must not silently reset a 3 to the default.
+                candidate = candidate.model_copy(update={"weight": original.weight})
                 fixed[index_by_id[candidate.id]] = candidate
                 errors = self._link_errors(candidate, dimensions)
                 if errors:
@@ -993,7 +1038,11 @@ class DebateEngine:
             for key, candidate in reply.votes.items():
                 if key not in broken:
                     continue
-                fixed[key] = candidate
+                # The voter's importance rating is frozen through fixes
+                # (same reason as bullet weights: no silent resets).
+                fixed[key] = candidate.model_copy(
+                    update={"weight": fixed[key].weight}
+                )
                 errors = self._vote_errors(key, candidate, dimensions)
                 if errors:
                     broken[key] = errors
@@ -1040,6 +1089,7 @@ class DebateEngine:
                     "role": role,
                     "verdict": vote.verdict,
                     "reason": reason or None,
+                    "weight": vote.weight,
                     "links": [
                         _link_detail(link) for link in vote.links
                     ],
@@ -1104,6 +1154,8 @@ class DebateEngine:
             final_bullish=pools["final"]["bullish"],
             final_bearish=pools["final"]["bearish"],
             final_total=pools["final"]["total"],
+            final_bullish_weight=pools["final"]["bullish_weight"],
+            final_total_weight=pools["final"]["total_weight"],
             direction=direction.value,
         )
         try:
@@ -1156,13 +1208,20 @@ class DebateEngine:
 
     @staticmethod
     def _base_item(
-        model: EvidenceItemModel, problems: Optional[List[str]], authors: int
+        model: EvidenceItemModel,
+        problems: Optional[List[str]],
+        authors: int,
+        second_weight: Optional[int] = None,
     ) -> Dict[str, Any]:
         """One list bullet. ``problems`` non-empty → the bullet is struck:
         code could not fix its citations, so it renders crossed out and
         never enters a pool. ``authors`` = how many analysts listed it
-        independently (2 = confirmed at birth)."""
+        independently (2 = confirmed at birth); ``second_weight`` is the
+        second author's importance rating when both listed it."""
         struck = bool(problems)
+        author_weights = [model.weight]
+        if second_weight is not None:
+            author_weights.append(second_weight)
         return {
             "id": model.id,
             "dimension": model.dimension,
@@ -1172,6 +1231,10 @@ class DebateEngine:
             "struck": struck,
             "problems": list(problems or []),
             "authors": authors,
+            "author_weights": author_weights,
+            # The final median of every voter's rating — filled once all
+            # the votes are in (None while struck: no pool, no weight).
+            "weight": None,
             "votes": [],
             "final_status": "excluded" if struck else None,
             "exclusion_reason": "citation_failed" if struck else None,
@@ -1183,31 +1246,69 @@ class DebateEngine:
 # ---------------------------------------------------------------------------
 
 
-def _pool_detail(items) -> Dict[str, Any]:
-    """Flat counting: 10 × bullish / total over the whole pool. The
-    per-dimension counts feed the section headers (`Technicals: ↑3 ↓4`)."""
+def _median_weight(weights: Sequence[float]) -> Optional[float]:
+    """The median of the voters' 1-3 ratings; an even count takes the
+    mean of the middle two, so halves (2.5) happen. Whole results come
+    back as ints so the stored JSON stays clean."""
+    if not weights:
+        return None
+    ordered = sorted(weights)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        value = float(ordered[middle])
+    else:
+        value = (ordered[middle - 1] + ordered[middle]) / 2.0
+    return int(value) if value.is_integer() else value
+
+
+def _pool_detail(items, weight_of) -> Dict[str, Any]:
+    """Weighted counting: 10 × Σweight(bullish) / Σweight(all) over the
+    whole pool, ``weight_of`` supplying each bullet's weight. The
+    per-dimension counts and weight sums feed the section headers
+    (`Technicals: ↑3 ↓4`)."""
     per_dimension: Dict[str, Dict[str, Any]] = {}
     for item in items:
         stats = per_dimension.setdefault(
-            item["dimension"], {"bullish": 0, "bearish": 0, "total": 0}
+            item["dimension"],
+            {"bullish": 0, "bearish": 0, "total": 0,
+             "bullish_weight": 0, "bearish_weight": 0, "total_weight": 0},
         )
+        side = "bullish" if item["direction"] == "bullish" else "bearish"
+        weight = weight_of(item)
         stats["total"] += 1
-        stats["bullish" if item["direction"] == "bullish" else "bearish"] += 1
+        stats[side] += 1
+        stats["total_weight"] += weight
+        stats[f"{side}_weight"] += weight
     bullish = bearish = total = 0
+    bullish_weight = bearish_weight = total_weight = 0
     for dimension in DIMENSIONS:
         stats = per_dimension.get(dimension)
         if not stats:
             continue
+        for key in ("total_weight", "bullish_weight", "bearish_weight"):
+            stats[key] = _int_when_whole(stats[key])
         bullish += stats["bullish"]
         bearish += stats["bearish"]
         total += stats["total"]
+        bullish_weight += stats["bullish_weight"]
+        bearish_weight += stats["bearish_weight"]
+        total_weight += stats["total_weight"]
     return {
         "dimensions": per_dimension,
         "bullish": bullish,
         "bearish": bearish,
         "total": total,
-        "score": round(10 * bullish / total, 2) if total else None,
+        "bullish_weight": _int_when_whole(bullish_weight),
+        "bearish_weight": _int_when_whole(bearish_weight),
+        "total_weight": _int_when_whole(total_weight),
+        "score": round(10 * bullish_weight / total_weight, 2)
+        if total_weight
+        else None,
     }
+
+
+def _int_when_whole(value: float) -> float:
+    return int(value) if float(value).is_integer() else value
 
 
 # ---------------------------------------------------------------------------
