@@ -14,7 +14,15 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, jumpToMetric } from '../tiered/termHelpers';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT, TAG_BASE } from './altStyles';
-import { AltFold, AltModal, AltSectionLabel, FVar } from './AltUi';
+import {
+  AltFold,
+  AltModal,
+  AltModalDivider,
+  AltSectionLabel,
+  FVar,
+  MODAL_BODY,
+  MODAL_STRONG,
+} from './AltUi';
 
 // The v5/v6/v7 debate tree: one tree, four steps. Step 1 shows the
 // defender's evidence list; step 2 adds the attacker's checks and
@@ -562,8 +570,8 @@ const VoteItem = ({
         vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid',
       )}`,
       body: (
-        <div className="flex flex-col gap-2">
-          <p className="text-sm text-gray-300">
+        <div className={MODAL_BODY}>
+          <p>
             {vote.reason ? (
               <LinkedTextV8 text={vote.reason} links={vote.links ?? []} />
             ) : (
@@ -572,9 +580,7 @@ const VoteItem = ({
           </p>
           {vote.weight != null ? (
             // v10: the voter's own 1-3 importance rating of the bullet.
-            <p className="text-xs text-gray-500">
-              {t('tiered.tree.voteWeight', { value: vote.weight })}
-            </p>
+            <p>{t('tiered.tree.voteWeight', { value: vote.weight })}</p>
           ) : null}
         </div>
       ),
@@ -583,9 +589,9 @@ const VoteItem = ({
     onShow({
       title: t('tiered.tree.weightTitle'),
       body: (
-        <div className="flex flex-col gap-1 text-sm text-gray-300">
+        <div className={MODAL_BODY}>
           <p>{t('tiered.tree.weightExplain')}</p>
-          <p className="text-xs text-gray-500">
+          <p>
             {t('tiered.tree.authorWeights', {
               value: (item.author_weights ?? []).join(', ') || '—',
             })}
@@ -600,13 +606,11 @@ const VoteItem = ({
     weight: number | null | undefined,
     weightReason?: string | null,
   ) => (
-    <div className="flex flex-col gap-2">
-      <p className="text-sm text-gray-300">{reasonNode}</p>
-      <hr className="border-gray-700/60" />
-      <p className="text-sm font-semibold text-gray-200">
-        {t('tiered.tree.scoreLine', { value: weight ?? '—' })}
-      </p>
-      {weightReason ? <p className="text-sm text-gray-400">{weightReason}</p> : null}
+    <div className={MODAL_BODY}>
+      <p>{reasonNode}</p>
+      <AltModalDivider />
+      <p className={MODAL_STRONG}>{t('tiered.tree.scoreLine', { value: weight ?? '—' })}</p>
+      {weightReason ? <p>{weightReason}</p> : null}
     </div>
   );
   // A lister's own check: listing the bullet IS their valid vote, so the
@@ -639,9 +643,9 @@ const VoteItem = ({
     onShow({
       title: t('tiered.tree.medianTitle'),
       body: (
-        <div className="flex flex-col gap-1 text-sm text-gray-300">
+        <div className={MODAL_BODY}>
           <p>{t('tiered.tree.scoresList', { value: scores.join(', ') || '—' })}</p>
-          <p className="font-semibold text-gray-200">
+          <p className={MODAL_STRONG}>
             {t('tiered.tree.medianLine', { value: item.weight ?? '—' })}
           </p>
         </div>
@@ -687,7 +691,7 @@ const VoteItem = ({
               onShow({
                 title: `${t('tiered.tree.codeCheck')}: ${t('tiered.tree.invalid')}`,
                 body: (
-                  <ul className="flex list-disc flex-col gap-1 pl-4 text-sm text-gray-300">
+                  <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>
                     {(item.problems ?? []).map((problem, index) => (
                       <li key={index}>{problem}</li>
                     ))}
@@ -786,13 +790,11 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
                     ? t(DIMENSION_LABEL_KEYS[group.dimension])
                     : group.dimension}
                   {': '}
-                  <span className="text-emerald-300">
-                    {up} {t('tiered.tree.bullish')}
-                  </span>
-                  {', '}
-                  <span className="text-red-300">
-                    {down} {t('tiered.tree.bearish')}
-                  </span>
+                  {/* Only the counts wear color — the words stay plain. */}
+                  <span className="text-emerald-300">{up}</span>
+                  {` ${t('tiered.tree.bullish')}, `}
+                  <span className="text-red-300">{down}</span>
+                  {` ${t('tiered.tree.bearish')}`}
                 </AltSectionLabel>
                 <ul className="flex flex-col gap-1.5">
                   {group.items.map((item) => (

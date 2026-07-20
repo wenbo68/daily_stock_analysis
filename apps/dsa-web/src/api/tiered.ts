@@ -385,6 +385,8 @@ export type TieredSizing = {
     risk_fraction: number | null;
     max_position_fraction: number | null;
     fee_fraction: number | null;
+    // Absent on runs stored before the reward filter existed.
+    reward_risk?: number | null;
     entry: number | null;
     stop_loss: number | null;
   };
@@ -467,7 +469,10 @@ export type TieredDepth = 1 | 2 | 3;
 export type TieredSizingRequest = {
   capital?: number;
   risk_fraction?: number;
+  // Kept for API compatibility; the alt form no longer collects it.
   ownership?: number;
+  // Reward-to-risk ratio the plan aims for (target = entry + R × risk).
+  reward_risk?: number;
 };
 
 export const tieredApi = {
@@ -499,10 +504,16 @@ export const tieredApi = {
 
   // Saved sizing settings (.env-backed) — what a run uses when the form
   // sends nothing. Both null when no defaults are configured.
-  sizingDefaults: async (): Promise<{ capital: number | null; risk_fraction: number | null }> => {
-    const response = await apiClient.get<{ capital: number | null; risk_fraction: number | null }>(
-      '/api/v1/tiered/sizing-defaults',
-    );
+  sizingDefaults: async (): Promise<{
+    capital: number | null;
+    risk_fraction: number | null;
+    reward_risk?: number | null;
+  }> => {
+    const response = await apiClient.get<{
+      capital: number | null;
+      risk_fraction: number | null;
+      reward_risk?: number | null;
+    }>('/api/v1/tiered/sizing-defaults');
     return response.data;
   },
 };

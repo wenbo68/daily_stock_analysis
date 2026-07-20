@@ -64,6 +64,38 @@ const en: Record<string, MetricEntry> = {
     short: 'Bias 20',
     full: 'How far the price sits above or below its own 20-day average, in %.\nStretched values tend to snap back.',
   },
+  swing_high_20: {
+    short: 'Swing high 20',
+    full: 'The highest price actually traded during the last 20 trading days — a ceiling the market has already rejected once.\nUsed as a resistance anchor for the target.',
+  },
+  swing_low_60: {
+    short: 'Swing low 60',
+    full: 'The lowest price traded during the last 60 trading days — a deeper, older floor than the 20-day low.\nJoins the support candidates for the entry.',
+  },
+  swing_high_60: {
+    short: 'Swing high 60',
+    full: 'The highest price traded during the last 60 trading days — a wider resistance ceiling than the 20-day high.',
+  },
+  high_52w: {
+    short: '52w high',
+    full: 'The highest price of the loaded history (about a year) — the strongest resistance reference.',
+  },
+  low_52w: {
+    short: '52w low',
+    full: 'The lowest price of the loaded history (about a year).',
+  },
+  avg_volume_20: {
+    short: 'Avg volume 20',
+    full: 'Average daily trading volume over the last 20 trading days.\nUsed to judge whether a position could be exited in one day without moving the price.',
+  },
+  worst_day_1y: {
+    short: 'Worst day 1y',
+    full: 'The worst single-day price drop in the loaded history (about a year), as a fraction.\nThe gap-risk check stresses the plan with this drop landing overnight.',
+  },
+  worst_day_5pct: {
+    short: 'Worst 5% day',
+    full: 'Retired statistic old runs still carry: the daily drop only the worst 5% of days exceeded.',
+  },
   score: {
     short: 'Tech score',
     full: 'Overall technical score computed from the indicators above.',
@@ -259,6 +291,32 @@ const zh: Record<string, MetricEntry> = {
     full: '最近20个交易日的最低成交价——市场已经防守过一次的价格底部，用作买入价位的支撑锚点。',
   },
   bias_20: { short: '乖离率 20', full: '价格偏离自身20日均线的百分比。\n偏离过大往往会回归。' },
+  swing_high_20: {
+    short: '20日高点',
+    full: '最近20个交易日的最高成交价——市场已经拒绝过一次的价格顶部，用作目标价的阻力锚点。',
+  },
+  swing_low_60: {
+    short: '60日低点',
+    full: '最近60个交易日的最低成交价——比20日低点更深、更早的底部，参与买入价的支撑候选。',
+  },
+  swing_high_60: {
+    short: '60日高点',
+    full: '最近60个交易日的最高成交价——比20日高点更宽的阻力位。',
+  },
+  high_52w: { short: '52周高点', full: '已加载历史（约一年）中的最高价——最强的阻力参考。' },
+  low_52w: { short: '52周低点', full: '已加载历史（约一年）中的最低价。' },
+  avg_volume_20: {
+    short: '20日均量',
+    full: '最近20个交易日的平均成交量。\n用于判断仓位能否在一天内退出而不砸盘。',
+  },
+  worst_day_1y: {
+    short: '年内最差单日',
+    full: '已加载历史（约一年）中最差的单日跌幅（比例）。\n跳空风险检查用它模拟隔夜落地的情形。',
+  },
+  worst_day_5pct: {
+    short: '最差5%单日',
+    full: '旧运行保留的已退役统计：仅最差 5% 的交易日才会超过的单日跌幅。',
+  },
   score: { short: '技术评分', full: '由上述指标综合计算出的技术面总分。' },
 
   growth: { short: '成长性', full: '取自最新年报的同比增长数据。' },

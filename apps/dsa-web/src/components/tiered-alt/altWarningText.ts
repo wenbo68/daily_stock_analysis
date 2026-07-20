@@ -39,6 +39,11 @@ interface NoteRule {
 
 const NOTE_RULES: NoteRule[] = [
   {
+    pattern: /^reward below goal: .*reward-to-risk at ([\d.]+), below your ([\d.]+)/,
+    toText: (m, t) =>
+      t('tiered.alt.rewardBelowGoal', { ratio: m[1], goal: m[2] }),
+  },
+  {
     pattern: /^unparseable sniper level (\w+)='?(.*?)'?$/,
     toText: (m, t) =>
       t('tiered.note.textLevel', {

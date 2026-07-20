@@ -18,24 +18,16 @@ const LEVELS = { entry: 96, secondary_entry: 94, stop_loss: 90, take_profit: 108
 const LEVELS_DETAIL: TieredLevelsDetail = {
   levels: {
     entry: {
+      // The stored prose phrase — the UI must expand it into the actual
+      // support values, never show the words.
       base: 95,
-      formula: 'min(close, max(sma_20, swing_low_20))',
+      formula: 'min(close, max(support candidates))',
       inputs: { close: 100, sma_20: 95, swing_low_20: 92 },
       adjusted: 96,
       reason: 'Momentum supports paying up a little.',
       evidence: ['technicals.sma_20'],
       rejection: null,
       final: 96,
-    },
-    secondary_entry: {
-      base: 94,
-      formula: 'max(support strictly below ideal entry: sma_60, swing_low_20)',
-      inputs: { ideal_entry: 95, sma_60: 94, swing_low_20: 92 },
-      adjusted: null,
-      reason: null,
-      evidence: [],
-      rejection: null,
-      final: 94,
     },
     stop_loss: {
       base: 90,
@@ -48,9 +40,14 @@ const LEVELS_DETAIL: TieredLevelsDetail = {
       final: 90,
     },
     take_profit: {
+      // Resistance-capped shape: the prose tail must expand into the
+      // actual resistance values.
       base: 105,
-      formula: 'ideal_entry + 2 × (ideal_entry − stop_loss)',
-      inputs: { ideal_entry: 95, stop_loss: 90, reward_risk_multiple: 2 },
+      formula: 'min(ideal_entry + 2 × (ideal_entry − stop_loss), nearest overhead resistance)',
+      inputs: {
+        ideal_entry: 95, stop_loss: 90, geometric_target: 105,
+        swing_high_20: 105, high_52w: 110,
+      },
       adjusted: 108,
       reason: 'Growth supports a higher target.',
       evidence: [],
@@ -798,23 +795,25 @@ describe('AltResult', () => {
       'alt-shares-computation',
     ]);
     expect(screen.getByText(/四维数据报告|Four-dimension reports/)).toBeInTheDocument();
-    expect(screen.getByText(/层级 1：初步分析|Tier 1: preliminary analysis/)).toBeInTheDocument();
-    expect(screen.getByText(/层级 2：深度分析|Tier 2: deep analysis/)).toBeInTheDocument();
+    // Card titles carry no tier prefix (owner decision 2026-07-21).
+    expect(screen.getByText(/^(初步分析|Preliminary analysis)$/)).toBeInTheDocument();
+    expect(screen.getByText(/^(深度分析|Deep analysis)$/)).toBeInTheDocument();
     expect(screen.getByText(/层级 3：风险辩论|Tier 3: risk debate/)).toBeInTheDocument();
     expect(screen.getByText(/股数计算|Shares computation/)).toBeInTheDocument();
   });
 
   it('shows the tier-1 levels as a computed/adjusted table', () => {
     renderResult(makeDeepResult());
-    // computed row on top, one clickable base per level
+    // computed row on top, one clickable base per level — no backup
+    // entry column anywhere (retired)
     expect(screen.getByTestId('alt-level-computed-entry')).toHaveTextContent('95');
-    expect(screen.getByTestId('alt-level-computed-secondary_entry')).toHaveTextContent('94');
+    expect(screen.queryByTestId('alt-level-computed-secondary_entry')).not.toBeInTheDocument();
     expect(screen.getByTestId('alt-level-computed-stop_loss')).toHaveTextContent('90');
     expect(screen.getByTestId('alt-level-computed-take_profit')).toHaveTextContent('105');
     // adjusted row: moved levels show the new number, untouched ones "keep"
     expect(screen.getByTestId('alt-level-adjusted-entry')).toHaveTextContent('96');
     expect(screen.getByTestId('alt-level-adjusted-take_profit')).toHaveTextContent('108');
-    expect(screen.getAllByTestId(/alt-level-keep-/)).toHaveLength(2);
+    expect(screen.getAllByTestId(/alt-level-keep-/)).toHaveLength(1);
     // the old explainer texts around the levels are gone
     expect(screen.queryByText(/价格参考位|Price levels/)).not.toBeInTheDocument();
     expect(screen.queryByText(/资金管理|money-management/)).not.toBeInTheDocument();
@@ -836,20 +835,34 @@ describe('AltResult', () => {
     expect(within(dialog).getByText('= 90')).toBeInTheDocument();
   });
 
-  it('renders the backup entry formula as a max over the supports below the ideal entry', () => {
+  it('expands "support candidates" in the entry formula into the actual values', () => {
     renderResult(makeDeepResult());
-    fireEvent.click(screen.getByTestId('alt-level-computed-secondary_entry'));
+    fireEvent.click(screen.getByTestId('alt-level-computed-entry'));
     const dialog = screen.getByRole('dialog');
-    // a clean max(...) — never the stored prose string
+    // the prose phrase is expanded into the run's support inputs
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
-      'max(sma 60, swing low 20)',
+      'min(close, max(sma 20, swing low 20))',
     );
-    expect(within(dialog).queryByText(/strictly below/)).not.toBeInTheDocument();
-    // the filter condition carries the ideal entry as a link
-    expect(within(dialog).getByRole('button', { name: 'ideal entry' })).toHaveTextContent('95');
-    // both candidates sit below 95, so both are plugged in
-    expect(within(dialog).getByTestId('alt-formula-plugged').textContent).toBe('= max(94, 92)');
-    expect(within(dialog).getByText('= 94')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/support candidates/)).not.toBeInTheDocument();
+    // every plugged number is a link to its source row
+    expect(within(dialog).getByRole('button', { name: 'close' })).toHaveTextContent('100');
+    expect(within(dialog).getByRole('button', { name: 'sma 20' })).toHaveTextContent('95');
+    expect(within(dialog).getByRole('button', { name: 'swing low 20' })).toHaveTextContent('92');
+    expect(within(dialog).getByText('= 95')).toBeInTheDocument();
+  });
+
+  it('expands "nearest overhead resistance" in the target formula into the actual values', () => {
+    renderResult(makeDeepResult());
+    fireEvent.click(screen.getByTestId('alt-level-computed-take_profit'));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
+      'min(ideal entry + 2 × (ideal entry − stop loss), nearest of (swing high 20, 52w high))',
+    );
+    expect(within(dialog).queryByText(/overhead resistance/)).not.toBeInTheDocument();
+    // resistance values link to their technicals rows
+    expect(within(dialog).getByRole('button', { name: 'swing high 20' })).toHaveTextContent('105');
+    expect(within(dialog).getByRole('button', { name: '52w high' })).toHaveTextContent('110');
+    expect(within(dialog).getByText('= 105')).toBeInTheDocument();
   });
 
   it('clicking an adjusted level opens the AI reason with its references, nothing else', () => {

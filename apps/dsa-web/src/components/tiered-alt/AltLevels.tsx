@@ -12,32 +12,42 @@ import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { adjustedCellId, computedCellId } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
-import { AltEvidenceRefs, AltModal, FVar } from './AltUi';
+import {
+  AltEvidenceRefs,
+  AltModal,
+  AltSectionLabel,
+  FVar,
+  MODAL_BODY,
+} from './AltUi';
 
 // Alt skin rule: help popups everywhere, dotted underlines nowhere.
 const HelpTerm = (props: Parameters<typeof BaseHelpTerm>[0]) => (
   <BaseHelpTerm underline={false} {...props} />
 );
 
-const LEVEL_ORDER = ['entry', 'secondary_entry', 'stop_loss', 'take_profit'] as const;
+// Backup entry retired (owner decision, 2026-07-21): the plan is one
+// order at the ideal entry, so the table shows three levels — old stored
+// runs simply no longer render their backup column.
+const LEVEL_ORDER = ['entry', 'stop_loss', 'take_profit'] as const;
 type LevelKey = (typeof LEVEL_ORDER)[number];
 
 const LEVEL_LABEL_KEYS: Record<LevelKey, UiTextKey> = {
   entry: 'tiered.levels.entry',
-  secondary_entry: 'tiered.levels.secondaryEntry',
   stop_loss: 'tiered.levels.stopLoss',
   take_profit: 'tiered.levels.takeProfit',
 };
 
 const LEVEL_HELP_KEYS: Record<LevelKey, UiTextKey> = {
   entry: 'tiered.help.entry',
-  secondary_entry: 'tiered.help.secondaryEntry',
   stop_loss: 'tiered.help.stopLoss',
   take_profit: 'tiered.help.takeProfit',
 };
 
 // Formula inputs with a source row on the technicals card.
-const TECHNICALS_INPUT_KEYS = new Set(['close', 'sma_20', 'sma_60', 'swing_low_20', 'atr_14']);
+const TECHNICALS_INPUT_KEYS = new Set([
+  'close', 'sma_20', 'sma_60', 'swing_low_20', 'swing_low_60',
+  'swing_high_20', 'swing_high_60', 'high_52w', 'atr_14',
+]);
 
 // Formula inputs that ARE another computed level of this same table (the
 // stop uses the computed entry, the target uses the computed stop) — their
@@ -54,9 +64,36 @@ const VAR_LABEL: Record<string, string> = {
   sma_20: 'sma 20',
   sma_60: 'sma 60',
   swing_low_20: 'swing low 20',
+  swing_low_60: 'swing low 60',
+  swing_high_20: 'swing high 20',
+  swing_high_60: 'swing high 60',
+  high_52w: '52w high',
+  round_level: 'round level',
   atr_14: 'atr 14',
   ideal_entry: 'ideal entry',
   stop_loss: 'stop loss',
+};
+
+// The stored formulas name two input GROUPS in prose. Expanding the
+// phrases into the run's actual input keys lets the split-and-link
+// machinery below turn every one of them into a real, clickable number.
+const SUPPORT_KEYS = ['sma_20', 'sma_60', 'swing_low_20', 'swing_low_60', 'round_level'];
+const RESISTANCE_KEYS = ['swing_high_20', 'swing_high_60', 'high_52w'];
+
+const expandProse = (formula: string, inputs: Record<string, number>): string => {
+  let expanded = formula;
+  const supports = SUPPORT_KEYS.filter((key) => inputs[key] !== undefined);
+  if (supports.length > 0) {
+    expanded = expanded.replace('support candidates', supports.join(', '));
+  }
+  const resistances = RESISTANCE_KEYS.filter((key) => inputs[key] !== undefined);
+  if (resistances.length > 0) {
+    expanded = expanded.replace(
+      'nearest overhead resistance',
+      `nearest of (${resistances.join(', ')})`,
+    );
+  }
+  return expanded;
 };
 
 const splitOnInputs = (formula: string, inputs: Record<string, number>): string[] => {
@@ -64,7 +101,37 @@ const splitOnInputs = (formula: string, inputs: Record<string, number>): string[
   if (keys.length === 0) {
     return [formula];
   }
-  return formula.split(new RegExp(`(${keys.join('|')})`, 'g'));
+  return expandProse(formula, inputs).split(new RegExp(`(${keys.join('|')})`, 'g'));
+};
+
+// The round level is computed on the spot (the largest round price below
+// the close), so it has no source row to link to — clicking it opens a
+// small how-computed note instead.
+const RoundLevelNumber = ({ value }: { value: number }) => {
+  const { t } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={VAR_LABEL.round_level}
+        data-testid="alt-round-level"
+        className={cn('cursor-pointer tabular-nums', ALT_LINK)}
+        onClick={() => setIsOpen(true)}
+      >
+        {formatPrice(value)}
+      </button>
+      <AltModal
+        isOpen={isOpen}
+        title={t('tiered.alt.roundLevelTitle')}
+        onClose={() => setIsOpen(false)}
+      >
+        <p className={MODAL_BODY}>
+          {t('tiered.alt.roundLevelBody', { value: formatPrice(value) })}
+        </p>
+      </AltModal>
+    </>
+  );
 };
 
 // One plugged-in number, linking to where it already appears — a
@@ -78,6 +145,9 @@ const InputNumberLink = ({
   value: number;
   onNavigate: () => void;
 }) => {
+  if (inputKey === 'round_level') {
+    return <RoundLevelNumber value={value} />;
+  }
   const computedTarget = COMPUTED_CELL_INPUTS[inputKey];
   const jump = TECHNICALS_INPUT_KEYS.has(inputKey)
     ? () => jumpToMetric(`technicals.${inputKey}`)
@@ -139,62 +209,6 @@ const AltFormula = ({ formula, inputs, onNavigate }: AltFormulaProps) => {
   );
 };
 
-// The backup entry is the only level whose formula filters its inputs:
-// take the supports sitting below the ideal entry, keep the highest. The
-// stored audit string spells that filter out in prose, so this renders it
-// as a clean max(...) plus a one-line condition instead.
-const AltFilteredMaxFormula = ({
-  inputs,
-  base,
-  onNavigate,
-}: {
-  inputs: Record<string, number>;
-  base: number;
-  onNavigate: () => void;
-}) => {
-  const { t } = useUiLanguage();
-  const ideal = inputs.ideal_entry;
-  const candidates = Object.entries(inputs).filter(([key]) => key !== 'ideal_entry');
-  const qualifying =
-    ideal === undefined ? candidates : candidates.filter(([, value]) => value < ideal);
-  // The condition line carries the ideal-entry number (a link) — split the
-  // translated sentence around its {value} slot.
-  const [notePrefix, noteSuffix] = t('tiered.alt.f.belowNote').split('{value}');
-
-  return (
-    <div className="flex flex-col gap-2 overflow-x-auto text-sm" data-testid="alt-formula-modal">
-      <p className={FORMULA_LINE} data-testid="alt-formula-words">
-        {'max('}
-        {candidates.map(([key], index) => (
-          <span key={key}>
-            {index > 0 ? ', ' : ''}
-            <FVar>{VAR_LABEL[key] ?? key}</FVar>
-          </span>
-        ))}
-        {')'}
-      </p>
-      {ideal !== undefined ? (
-        <p className="whitespace-nowrap text-xs text-gray-500">
-          {notePrefix}
-          <InputNumberLink inputKey="ideal_entry" value={ideal} onNavigate={onNavigate} />
-          {noteSuffix}
-        </p>
-      ) : null}
-      <p className={FORMULA_LINE} data-testid="alt-formula-plugged">
-        {'= max('}
-        {qualifying.map(([key, value], index) => (
-          <span key={key}>
-            {index > 0 ? ', ' : ''}
-            <InputNumberLink inputKey={key} value={value} onNavigate={onNavigate} />
-          </span>
-        ))}
-        {')'}
-      </p>
-      <p className={FORMULA_RESULT}>= {formatPrice(base)}</p>
-    </div>
-  );
-};
-
 interface AltLevelCellProps {
   levelKey: LevelKey;
   detail: TieredLevelDetail | null;
@@ -234,12 +248,6 @@ const AltComputedCell = ({ levelKey, detail, label }: Omit<AltLevelCellProps, 'c
       >
         {!detail.formula ? (
           <p>{t('tiered.levelModal.noBase')}</p>
-        ) : detail.formula.includes('strictly below') ? (
-          <AltFilteredMaxFormula
-            inputs={detail.inputs ?? {}}
-            base={detail.base}
-            onNavigate={close}
-          />
         ) : (
           <div className="flex flex-col gap-2 overflow-x-auto text-sm" data-testid="alt-formula-modal">
             <p className={FORMULA_LINE} data-testid="alt-formula-words">
@@ -291,23 +299,19 @@ const AltAdjustedCell = ({ levelKey, detail, label, citations }: AltLevelCellPro
         title={t('tiered.levelModal.adjustTitle', { level: label })}
         onClose={close}
       >
-        <div className="flex flex-col gap-4">
-          <div className="text-sm tabular-nums text-gray-300">
+        <div className={MODAL_BODY}>
+          <div className="tabular-nums">
             {formatPrice(detail.base)} → {formatPrice(detail.adjusted)}
           </div>
           {detail.reason ? (
             <div>
-              <div className="mb-1 text-xs font-semibold text-gray-500">
-                {t('tiered.levelModal.reason')}
-              </div>
-              <p className="leading-relaxed">{detail.reason}</p>
+              <AltSectionLabel>{t('tiered.levelModal.reason')}</AltSectionLabel>
+              <p>{detail.reason}</p>
             </div>
           ) : null}
           {detail.evidence.length > 0 ? (
             <div>
-              <div className="mb-1 text-xs font-semibold text-gray-500">
-                {t('tiered.levelModal.references')}
-              </div>
+              <AltSectionLabel>{t('tiered.levelModal.references')}</AltSectionLabel>
               <ul className="flex flex-col gap-1">
                 {detail.evidence.map((refPath, index) => (
                   <li key={index} className="flex gap-2 text-xs">

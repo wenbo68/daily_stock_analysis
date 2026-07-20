@@ -4,7 +4,7 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import { LinkedTextV8, MarkButton, type MarkModal } from './AltDebateTree';
-import { AltFold, AltModal, AltSectionLabel } from './AltUi';
+import { AltFold, AltModal, AltSectionLabel, MODAL_BODY } from './AltUi';
 
 // The tier-3 risk vote (risk_detail format 2), rendered like the tier-2
 // vote transcript: a collapsed Transcript foldable holding a numbered
@@ -59,7 +59,7 @@ const RiskItem = ({
               onShow({
                 title: `${t('tiered.tree.codeCheck')}: ${t('tiered.tree.invalid')}`,
                 body: (
-                  <ul className="flex list-disc flex-col gap-1 pl-4 text-sm text-gray-300">
+                  <ul className={`${MODAL_BODY} list-disc pl-4`}>
                     {(item.problems ?? []).map((problem, index) => (
                       <li key={index}>{problem}</li>
                     ))}
@@ -79,7 +79,7 @@ const RiskItem = ({
                   index === 0 ? 'tiered.tree.firstCheck' : 'tiered.tree.secondCheck',
                 )}: ${t(vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid')}`,
                 body: (
-                  <p className="text-sm text-gray-300">
+                  <p className={MODAL_BODY}>
                     {vote.reason ? (
                       <LinkedTextV8 text={vote.reason} links={vote.links ?? []} />
                     ) : (

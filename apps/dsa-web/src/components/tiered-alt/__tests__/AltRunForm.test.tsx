@@ -12,14 +12,14 @@ function renderForm(overrides: Partial<AltRunFormProps> = {}) {
     tier: null,
     capital: null,
     riskPct: null,
-    ownership: null,
+    reward: null,
     submitting: false,
     error: null,
     onTicker: vi.fn(),
     onTier: vi.fn(),
     onCapital: vi.fn(),
     onRiskPct: vi.fn(),
-    onOwnership: vi.fn(),
+    onReward: vi.fn(),
     onStart: vi.fn(),
     ...overrides,
   };
@@ -63,7 +63,7 @@ describe('AltRunForm', () => {
 
   it('shows selections as Label: value pills; clicking a pill removes it', () => {
     const props = renderForm({
-      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: '10',
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '2',
     });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
@@ -103,9 +103,9 @@ describe('AltRunForm', () => {
     ).toBeInTheDocument();
   });
 
-  it('requires ownership like every other field', () => {
+  it('requires the reward ratio like every other field', () => {
     const props = renderForm({
-      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: null,
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: null,
     });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
@@ -114,29 +114,29 @@ describe('AltRunForm', () => {
     expect(screen.getByText(/五项都需要填写|All five fields are required/)).toBeInTheDocument();
   });
 
-  it('shows the ownership pill and clicking it removes it', () => {
+  it('shows the reward pill and clicking it removes it', () => {
     const props = renderForm({
-      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', ownership: '300',
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '3',
     });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
     expect(props.onStart).toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /(Ownership|持仓): 300/ }));
-    expect(props.onOwnership).toHaveBeenCalledWith(null);
+    fireEvent.click(screen.getByRole('button', { name: /(Reward|盈亏比): 3×/ }));
+    expect(props.onReward).toHaveBeenCalledWith(null);
   });
 
-  it('accepts 0 shares ("I hold none") but rejects a fractional entry', () => {
+  it('accepts a fractional ratio above 1 but rejects 1 or less', () => {
     const props = renderForm({ ticker: 'AAPL' });
-    const box = screen.getByPlaceholderText(/已持有股数|Shares held/);
+    const box = screen.getByPlaceholderText(/输入盈亏比|Enter ratio/);
 
-    fireEvent.change(box, { target: { value: '10.5' } });
+    fireEvent.change(box, { target: { value: '1' } });
     fireEvent.keyDown(box, { key: 'Enter' });
-    expect(props.onOwnership).not.toHaveBeenCalled();
+    expect(props.onReward).not.toHaveBeenCalled();
 
-    fireEvent.change(box, { target: { value: '0' } });
+    fireEvent.change(box, { target: { value: '2.5' } });
     fireEvent.keyDown(box, { key: 'Enter' });
-    expect(props.onOwnership).toHaveBeenCalledWith('0');
+    expect(props.onReward).toHaveBeenCalledWith('2.5');
   });
 
   it('names the tier options after their analyses and clears on re-pick', () => {

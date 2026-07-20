@@ -35,6 +35,13 @@ interface AltModalProps {
 // (plain or linked) read as values — no underscores, no parentheses.
 export const FVar = ({ children }: { children: ReactNode }) => <i>{children}</i>;
 
+// One typography contract for EVERY popup body on the alt page (owner
+// decision 2026-07-21): same font size, spacing, colors and divider in
+// every modal — body text gray-300, emphasized lines gray-200 semibold.
+export const MODAL_BODY = 'flex flex-col gap-2 text-sm leading-relaxed text-gray-300';
+export const MODAL_STRONG = 'font-semibold text-gray-200';
+export const AltModalDivider = () => <hr className="border-gray-700/60" />;
+
 export const AltSectionLabel = ({ children }: { children: ReactNode }) => (
   <div className="mb-1 text-xs font-semibold text-gray-500">{children}</div>
 );

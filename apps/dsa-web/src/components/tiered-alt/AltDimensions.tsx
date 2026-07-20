@@ -15,8 +15,10 @@ const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
 };
 
 // Named sections for payloads the backend sends (partly) flat, so every
-// number sits under a heading. A payload key not listed here still shows —
-// it lands in a trailing "Other" section, never disappears.
+// number sits under a heading. Every current technicals key is mapped
+// (owner decision 2026-07-21: no "Other" group on real data) — the
+// trailing Other section survives only as a crash-guard for future keys
+// the backend adds before this map learns them.
 const DIMENSION_SECTIONS: Record<string, { titleKey: UiTextKey; keys: string[] }[]> = {
   technicals: [
     {
@@ -24,7 +26,19 @@ const DIMENSION_SECTIONS: Record<string, { titleKey: UiTextKey; keys: string[] }
       keys: ['close', 'sma_20', 'sma_60', 'ema_12', 'ema_26', 'bias_20'],
     },
     { titleKey: 'tiered.group.momentum', keys: ['rsi_14', 'macd'] },
-    { titleKey: 'tiered.group.volatility', keys: ['atr_14', 'swing_low_20'] },
+    {
+      titleKey: 'tiered.group.volatility',
+      // worst_day_5pct: the retired statistic old stored runs still carry.
+      keys: ['atr_14', 'worst_day_1y', 'worst_day_5pct'],
+    },
+    {
+      titleKey: 'tiered.group.structure',
+      keys: [
+        'swing_low_20', 'swing_high_20', 'swing_low_60', 'swing_high_60',
+        'high_52w', 'low_52w',
+      ],
+    },
+    { titleKey: 'tiered.group.volume', keys: ['avg_volume_20'] },
     { titleKey: 'tiered.group.meta', keys: ['bars_count', 'score'] },
   ],
   macro_econ: [{ titleKey: 'tiered.group.reportInfo', keys: ['region', 'as_of'] }],

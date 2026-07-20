@@ -373,6 +373,12 @@ interface AltTierOneProps {
   action?: TieredAction;
 }
 
+// A resistance-capped target that misses the user's chosen reward-to-risk
+// ratio arrives as a backend warning; surface it ON the plan, not only in
+// the notes popup.
+const REWARD_BELOW_GOAL =
+  /^reward below goal: .*reward-to-risk at ([\d.]+), below your ([\d.]+)/;
+
 // The conditional plan display (owner decision): which levels show
 // depends on the action. Old runs (no action) keep the full table.
 const PlanBody = ({ result, citations, action }: AltTierOneProps) => {
@@ -382,12 +388,25 @@ const PlanBody = ({ result, citations, action }: AltTierOneProps) => {
       ? 'full'
       : action;
   if (plan === 'full') {
+    const rewardMiss = (result.warnings ?? [])
+      .map((warning) => REWARD_BELOW_GOAL.exec(warning))
+      .find((match) => match !== null);
     return (
-      <AltLevels
-        levels={result.levels}
-        levelsDetail={result.levels_detail}
-        citations={citations}
-      />
+      <div className="flex flex-col gap-2">
+        {rewardMiss ? (
+          <p className="text-xs text-amber-300" data-testid="alt-reward-warning">
+            {t('tiered.alt.rewardBelowGoal', {
+              ratio: rewardMiss[1],
+              goal: rewardMiss[2],
+            })}
+          </p>
+        ) : null}
+        <AltLevels
+          levels={result.levels}
+          levelsDetail={result.levels_detail}
+          citations={citations}
+        />
+      </div>
     );
   }
   if (plan === 'keep_holding') {

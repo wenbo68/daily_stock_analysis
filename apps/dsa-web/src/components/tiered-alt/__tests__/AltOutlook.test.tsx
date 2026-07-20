@@ -363,7 +363,98 @@ describe('AltResult outlook conclusion', () => {
   });
 });
 
-describe('AltResult risk card', () => {
+// The current 6-check card (2026-07-21 trim): gap check with both
+// overnight scenarios, reward-to-risk vs the user's chosen goal.
+function makeTrimmedRiskCard(): TieredRiskCardEntry[] {
+  return [
+    {
+      id: 'liquidity',
+      status: 'ok',
+      values: { shares: 40, avg_volume_20: 1000000, fraction_of_adv: 0.00004, flag_fraction: 0.05 },
+    },
+    {
+      id: 'gap_stress',
+      status: 'flag',
+      values: {
+        entry: 96, stop_loss: 90, shares: 100, loss_at_stop: 600,
+        atr_14: 3, gap_atr_multiple: 1, atr_open: 87, atr_loss: 900, atr_extra: 300,
+        worst_day_1y: -0.1, worst_open: 86.4, worst_gaps_stop: true,
+        worst_loss: 960, worst_extra: 360,
+      },
+    },
+    {
+      id: 'volatility',
+      status: 'ok',
+      values: { atr_14: 3, close: 100, atr_fraction: 0.03, flag_fraction: 0.04 },
+    },
+    {
+      id: 'reward_risk',
+      status: 'flag',
+      values: { entry: 96, stop_loss: 90, take_profit: 106, ratio: 1.67, goal: 2 },
+    },
+    {
+      id: 'stop_atr',
+      status: 'ok',
+      values: { entry: 96, stop_loss: 90, atr_14: 3, atr_multiple: 2 },
+    },
+    {
+      id: 'stop_vs_swing_low',
+      status: 'ok',
+      values: { stop_loss: 90, swing_low_20: 94, stop_at_or_above_swing_low: false },
+    },
+  ];
+}
+
+describe('AltResult trimmed risk card (current runs)', () => {
+  it('renders the 6 checks with the two-scenario gap sentence', () => {
+    renderResult(makeOutlookResult({ risk_card: makeTrimmedRiskCard() }));
+    const card = screen.getByTestId('alt-risk-card');
+    expect(within(card).getAllByRole('listitem')).toHaveLength(6);
+    const gap = within(card).getByTestId('alt-risk-card-gap_stress');
+    // worst-day scenario and ATR scenario, each with open price + extra loss
+    expect(gap).toHaveTextContent('86.4');
+    expect(gap).toHaveTextContent('360');
+    expect(gap).toHaveTextContent('87');
+    expect(gap).toHaveTextContent('300');
+  });
+
+  it('clicking a gap number opens the two-scenario receipt', () => {
+    renderResult(makeOutlookResult({ risk_card: makeTrimmedRiskCard() }));
+    const gap = screen.getByTestId('alt-risk-card-gap_stress');
+    fireEvent.click(within(gap).getAllByRole('button')[0]);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/情形一|Scenario 1/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/情形二|Scenario 2/)).toBeInTheDocument();
+    // the worst-day open formula, plugged with this run's numbers
+    expect(within(dialog).getByRole('button', { name: /worst day 1y/ })).toHaveTextContent('-0.1');
+  });
+
+  it('flags a reward-to-risk below the chosen goal and names the goal', () => {
+    renderResult(makeOutlookResult({ risk_card: makeTrimmedRiskCard() }));
+    const entry = screen.getByTestId('alt-risk-card-reward_risk');
+    expect(entry).toHaveTextContent(/注意|check this/);
+    expect(entry).toHaveTextContent('1.67');
+    expect(entry).toHaveTextContent('2');
+  });
+});
+
+describe('AltResult reward warning on the plan', () => {
+  it('surfaces the below-goal warning above the levels table', () => {
+    renderResult(
+      makeOutlookResult({
+        warnings: [
+          "reward below goal: overhead resistance at 106 caps the plan's " +
+            'reward-to-risk at 1.67, below your 2× goal',
+        ],
+      }),
+    );
+    const warning = screen.getByTestId('alt-reward-warning');
+    expect(warning).toHaveTextContent('1.67');
+    expect(warning).toHaveTextContent('2');
+  });
+});
+
+describe('AltResult risk card (legacy 13-entry runs)', () => {
   it('renders all 13 numbered entries in order', () => {
     renderResult(makeOutlookResult());
     const card = screen.getByTestId('alt-risk-card');

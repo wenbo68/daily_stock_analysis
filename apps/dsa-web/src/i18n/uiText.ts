@@ -832,6 +832,8 @@ const zh = {
   'tiered.group.trend': '价格与趋势',
   'tiered.group.momentum': '动量',
   'tiered.group.volatility': '波动与区间',
+  'tiered.group.structure': '价格结构',
+  'tiered.group.volume': '成交量',
   'tiered.group.meta': '数据与评分',
   'tiered.group.reportInfo': '报告信息',
   'tiered.group.other': '其他',
@@ -1125,22 +1127,22 @@ const zh = {
   'tiered.altForm.start': '开始',
   'tiered.altForm.noticeTitle': '提示',
   'tiered.altForm.needTickerFirst': '请先选择股票代码——本金使用该股票所在市场的货币。',
-  'tiered.altForm.allRequired': '代码、层级、本金、单笔风险、持仓五项都需要填写。',
+  'tiered.altForm.allRequired': '代码、层级、本金、单笔风险、盈亏比五项都需要填写。',
   'tiered.altForm.tierOption1': '1：初步分析',
   'tiered.altForm.tierOption2': '2：深度分析',
   'tiered.altForm.tickerPh': '输入代码…',
   'tiered.altForm.tierPh': '选择层级…',
   'tiered.altForm.capitalPh': '输入本金…',
   'tiered.altForm.riskPh': '输入风险…',
-  'tiered.altForm.ownership': '持仓: 股数',
-  'tiered.altForm.ownershipPh': '已持有股数…',
-  'tiered.help.ownership':
-    '这只股票你已持有的股数。必填，默认 10；填 0 表示未持有。\n它决定「操作」：只有看多且持仓为 0 才会给出建仓计划；看空且已持有会给出清仓股数。',
+  'tiered.altForm.reward': '盈亏比: 倍数',
+  'tiered.altForm.rewardPh': '输入盈亏比…',
+  'tiered.help.reward':
+    '你要求这份计划的盈亏比（潜在盈利是风险的几倍）。必填，默认 2。\n目标价 = 入场价 + 盈亏比 × 风险；若上方阻力把目标压到低于你要求的倍数，计划会附警告（低于 1.5 的硬下限则直接不给计划）。',
   'tiered.pill.ticker': '代码: {value}',
   'tiered.pill.tier': '层级: {value}',
   'tiered.pill.capital': '本金: {value} {currency}',
   'tiered.pill.risk': '单笔风险: {value}%',
-  'tiered.pill.ownership': '持仓: {value} 股',
+  'tiered.pill.reward': '盈亏比: {value}×',
   'tiered.pill.verdict': '结论: {value}',
   'tiered.pill.capitalMin': '本金下限: {value}',
   'tiered.pill.capitalMax': '本金上限: {value}',
@@ -1170,8 +1172,13 @@ const zh = {
   'tiered.altHistory.none': '没有符合筛选的运行',
   'tiered.altHistory.loading': '加载报告…',
   'tiered.alt.dimensionsTitle': '四维数据报告',
-  'tiered.alt.tier1Title': '层级 1：初步分析',
-  'tiered.alt.tier2Title': '层级 2：深度分析',
+  'tiered.alt.tier1Title': '初步分析',
+  'tiered.alt.tier2Title': '深度分析',
+  'tiered.alt.rewardBelowGoal':
+    '本计划的盈亏比为 {ratio}，低于你要求的 {goal}×——上方阻力压低了目标价。',
+  'tiered.alt.roundLevelTitle': '整数关口',
+  'tiered.alt.roundLevelBody':
+    '{value} 是当前价下方最近的整数价位。它不来自任何数据行——由代码当场算出：挂单常聚集在整数价位，形成较弱的支撑。',
   'tiered.alt.tier3Title': '层级 3：风险辩论',
   'tiered.alt.sharesTitle': '股数计算',
   'tiered.alt.f.capital': '本金',
@@ -1253,9 +1260,9 @@ const zh = {
   // ---- 风险检查卡（仅展示，13 项）----
   'tiered.alt.riskCardTitle': '风险检查（仅展示）',
   'tiered.help.riskCard':
-    '13 项专业风控台会做的开仓前检查，全部由本次运行已有的数字算出，不调用 AI。\n它们不影响任何结果——展望、操作、价位和股数都不读取它们。\n请你自己过目，之后再决定哪些要纳入决策。',
+    '专业风控台会做的开仓前检查，全部由本次运行已有的数字算出，不调用 AI。\n它们不影响任何结果——展望、操作、价位和股数都不读取它们。\n点击任何数字可查看它的计算过程。',
   'tiered.riskCard.intro':
-    '以下 13 项检查仅供参考——不会改变展望、操作、价位或股数。',
+    '以下检查仅供参考——不会改变展望、操作、价位或股数。点击数字可查看计算过程。',
   'tiered.riskCard.ok': '正常',
   'tiered.riskCard.flag': '注意',
   'tiered.riskCard.na': '不适用',
@@ -1293,13 +1300,19 @@ const zh = {
     '若被标注，说明一个大跌日的亏损可能超过你计划的止损金额——入场前要有数。',
   'tiered.riskCard.var.reason':
     '止损挡不住隔夜跳空；这项告诉你一个「典型的坏日子」会对仓位做什么。',
-  'tiered.riskCard.gap_stress': '跳空压力',
+  'tiered.riskCard.gap_stress': '隔夜跳空越过止损',
   'tiered.riskCard.gap_stress.value':
     '若开盘直接跳到 {gapPrice}（比止损再低一个典型日波动），亏损为 {loss}',
+  'tiered.riskCard.gap_stress.value2':
+    '按去年最差单日跌幅，开盘约 {worstOpen}，比计划多亏约 {worstExtra}；按一个典型日波动（ATR），开盘约 {atrOpen}，多亏约 {atrExtra}',
+  'tiered.riskCard.gap_stress.valueNoGap':
+    '去年最差的单日跌幅（开盘约 {worstOpen}）也到不了你的止损，计划亏损不变；若跳空一个典型日波动（ATR），开盘约 {atrOpen}，比计划多亏约 {atrExtra}',
+  'tiered.riskCard.gap_stress.valueNoWorst':
+    '若跳空一个典型日波动（ATR），开盘约 {atrOpen}，比计划多亏约 {atrExtra}（缺少单日最差跌幅数据）',
   'tiered.riskCard.gap_stress.action':
-    '记住这个数字——真正的坏情形是价格跳空越过止损，而不是止损价本身。',
+    '记住这两个数字——坏消息隔夜落地时，止损单按开盘价成交，真正的坏情形是价格跳空越过止损。',
   'tiered.riskCard.gap_stress.reason':
-    '价格隔夜跳空时，止损单按开盘价成交，不是按你设的价位成交。',
+    '止损只在盘中有效；隔夜跳空会直接跳过你设的价位。',
   'tiered.riskCard.volatility': '波动性',
   'tiered.riskCard.volatility.value':
     '这只股票的典型日波动为价格的 {fraction}%（超过 {flag}% 标注）',
@@ -1309,8 +1322,10 @@ const zh = {
     '一天动 5% 的股票，纯噪音就能打掉过紧的止损。',
   'tiered.riskCard.reward_risk': '盈亏比',
   'tiered.riskCard.reward_risk.value': '这份计划的潜在盈利是风险的 {ratio} 倍',
+  'tiered.riskCard.reward_risk.value2':
+    '这份计划的潜在盈利是风险的 {ratio} 倍（你的目标：{goal} 倍）',
   'tiered.riskCard.reward_risk.action':
-    '低于 1.5 时引擎会直接拒绝出计划；接近 1.5 时自己权衡值不值得做。',
+    '低于 1.5 时引擎会直接拒绝出计划；低于你选的倍数时会标注——自己权衡缩水后的回报还值不值得做。',
   'tiered.riskCard.reward_risk.reason':
     '赢的单要能补亏的单；盈亏比太低，胜率再高也亏钱。',
   'tiered.riskCard.stop_atr': '止损距离',
@@ -1343,6 +1358,16 @@ const zh = {
     '若被标注，合计仓位超过了单股 25% 上限——仓位引擎只限制新买的部分，不管合计。',
   'tiered.riskCard.ownership_context.reason':
     '风险取决于总仓位，不只是这一笔新单。',
+  'tiered.riskCard.scenarioWorst': '情形一：去年最差单日',
+  'tiered.riskCard.scenarioAtr': '情形二：一个典型日波动（ATR）',
+  'tiered.riskCard.noWorstDay': '缺少单日最差跌幅数据，无法计算此情形。',
+  'tiered.riskCard.extraVsPlan': '比计划亏损 {planned} 多 {extra}',
+  'tiered.riskCard.worstHolds': '该开盘价仍高于止损 {stop}——止损正常成交，计划亏损不变。',
+  'tiered.riskCard.goalLine': '你要求的盈亏比：{goal} 倍。',
+  'tiered.riskCard.stopLine': '止损价：',
+  'tiered.riskCard.swingLowLine': '近 20 日最低价：',
+  'tiered.riskCard.stopAboveLow': '止损在近期低点之上——对该低点的一次常规回踩就会触发止损。',
+  'tiered.riskCard.stopBelowLow': '止损在近期低点之下——常规回踩不会触发止损。',
 } as const;
 
 export type UiTextKey = keyof typeof zh;
@@ -2181,6 +2206,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.group.trend': 'Price & trend',
   'tiered.group.momentum': 'Momentum',
   'tiered.group.volatility': 'Volatility & range',
+  'tiered.group.structure': 'Price structure',
+  'tiered.group.volume': 'Volume',
   'tiered.group.meta': 'Data & score',
   'tiered.group.reportInfo': 'Report info',
   'tiered.group.other': 'Other',
@@ -2555,22 +2582,22 @@ const en: Record<UiTextKey, string> = {
   'tiered.altForm.needTickerFirst':
     'Pick a ticker first — capital is in the currency of the ticker’s market.',
   'tiered.altForm.allRequired':
-    'All five fields are required: ticker, tier, capital, risk and ownership.',
+    'All five fields are required: ticker, tier, capital, risk and reward.',
   'tiered.altForm.tierOption1': '1: preliminary analysis',
   'tiered.altForm.tierOption2': '2: deep analysis',
   'tiered.altForm.tickerPh': 'Enter ticker...',
   'tiered.altForm.tierPh': 'Select tier...',
   'tiered.altForm.capitalPh': 'Enter capital...',
   'tiered.altForm.riskPh': 'Enter risk...',
-  'tiered.altForm.ownership': 'Ownership: shares',
-  'tiered.altForm.ownershipPh': 'Shares held...',
-  'tiered.help.ownership':
-    'Shares of this stock you already hold. Required; the default is 10, and 0 means you hold none.\nIt drives the Action: only bullish with 0 shares produces an entry plan, and bearish with a holding prints the share count to sell.',
+  'tiered.altForm.reward': 'Reward: ratio',
+  'tiered.altForm.rewardPh': 'Enter ratio...',
+  'tiered.help.reward':
+    'The reward-to-risk ratio you ask the plan for (how many times the accepted risk the potential profit should be). Required; the default is 2.\nTarget = entry + ratio × risk. If overhead resistance caps the target below your ratio, the plan carries a warning (below the 1.5 hard floor, no plan is issued at all).',
   'tiered.pill.ticker': 'Ticker: {value}',
   'tiered.pill.tier': 'Tier: {value}',
   'tiered.pill.capital': 'Capital: {value} {currency}',
   'tiered.pill.risk': 'Risk: {value}%',
-  'tiered.pill.ownership': 'Ownership: {value} shares',
+  'tiered.pill.reward': 'Reward: {value}×',
   'tiered.pill.verdict': 'Verdict: {value}',
   'tiered.pill.capitalMin': 'Capital Min: {value}',
   'tiered.pill.capitalMax': 'Capital Max: {value}',
@@ -2600,8 +2627,13 @@ const en: Record<UiTextKey, string> = {
   'tiered.altHistory.none': 'No runs match these filters',
   'tiered.altHistory.loading': 'Loading report…',
   'tiered.alt.dimensionsTitle': 'Four-dimension reports',
-  'tiered.alt.tier1Title': 'Tier 1: preliminary analysis',
-  'tiered.alt.tier2Title': 'Tier 2: deep analysis',
+  'tiered.alt.tier1Title': 'Preliminary analysis',
+  'tiered.alt.tier2Title': 'Deep analysis',
+  'tiered.alt.rewardBelowGoal':
+    'This plan’s reward-to-risk is {ratio}, below your {goal}× goal — overhead resistance caps the target.',
+  'tiered.alt.roundLevelTitle': 'Round level',
+  'tiered.alt.roundLevelBody':
+    '{value} is the nearest round price below the current price. It comes from no data row — the code computes it on the spot: crowd orders cluster at round numbers, forming a weak support.',
   'tiered.alt.tier3Title': 'Tier 3: risk debate',
   'tiered.alt.sharesTitle': 'Shares computation',
   'tiered.alt.f.capital': 'capital',
@@ -2687,9 +2719,9 @@ const en: Record<UiTextKey, string> = {
   // ---- Risk checks card (display only, 13 entries) ----
   'tiered.alt.riskCardTitle': 'Risk checks (display only)',
   'tiered.help.riskCard':
-    'Thirteen pre-trade checks a professional risk desk would run, computed from this run’s own numbers with no AI involved.\nThey change NOTHING — the outlook, action, levels and share count never read them.\nReview them yourself and decide later which to act on.',
+    'Pre-trade checks a professional risk desk would run, computed from this run’s own numbers with no AI involved.\nThey change NOTHING — the outlook, action, levels and share count never read them.\nClick any number to see how it was computed.',
   'tiered.riskCard.intro':
-    'These 13 checks are informational only — they do not change the outlook, the action, the levels, or the share count.',
+    'These checks are informational only — they do not change the outlook, the action, the levels, or the share count. Click any number for its computation.',
   'tiered.riskCard.ok': 'ok',
   'tiered.riskCard.flag': 'check this',
   'tiered.riskCard.na': 'n/a',
@@ -2731,13 +2763,19 @@ const en: Record<UiTextKey, string> = {
     'If flagged, one bad day can lose more than your planned stop-loss amount — know that before entering.',
   'tiered.riskCard.var.reason':
     'Stops don’t cap overnight moves; this shows what a typically-bad day does to the position.',
-  'tiered.riskCard.gap_stress': 'Gap stress',
+  'tiered.riskCard.gap_stress': 'Overnight gap past the stop',
   'tiered.riskCard.gap_stress.value':
     'if the open gaps to {gapPrice} (one typical daily move past the stop), the loss is {loss}',
+  'tiered.riskCard.gap_stress.value2':
+    'last year’s worst day → open near {worstOpen}, about {worstExtra} more than planned; a one-typical-swing (ATR) gap → open {atrOpen}, about {atrExtra} more',
+  'tiered.riskCard.gap_stress.valueNoGap':
+    'even last year’s worst day (open near {worstOpen}) stays above your stop — the planned loss holds; a one-typical-swing (ATR) gap → open {atrOpen}, about {atrExtra} more than planned',
+  'tiered.riskCard.gap_stress.valueNoWorst':
+    'a one-typical-swing (ATR) gap → open {atrOpen}, about {atrExtra} more than planned (no worst-day history)',
   'tiered.riskCard.gap_stress.action':
-    'Know this number — the realistic bad case is the price jumping past your stop, not the stop price itself.',
+    'Know these numbers — when bad news lands overnight, your stop order sells at the open, and the realistic bad case is the price jumping past your stop.',
   'tiered.riskCard.gap_stress.reason':
-    'When the price jumps overnight, stop orders execute at the opening price, not at your chosen level.',
+    'A stop only works while the market trades; an overnight gap skips right past your chosen level.',
   'tiered.riskCard.volatility': 'Volatility',
   'tiered.riskCard.volatility.value':
     'this stock typically moves {fraction}% a day (flagged above {flag}%)',
@@ -2747,8 +2785,10 @@ const en: Record<UiTextKey, string> = {
     'A stock that moves 5% a day hits tight stops on pure noise.',
   'tiered.riskCard.reward_risk': 'Reward-to-risk',
   'tiered.riskCard.reward_risk.value': 'the plan stands to make {ratio}× what it risks',
+  'tiered.riskCard.reward_risk.value2':
+    'the plan stands to make {ratio}× what it risks (your goal: {goal}×)',
   'tiered.riskCard.reward_risk.action':
-    'Below 1.5 the engine refuses to print a plan at all; near 1.5, weigh whether the trade is worth taking.',
+    'Below 1.5 the engine refuses to print a plan at all; below your chosen ratio it flags — weigh whether the reduced payoff is still worth taking.',
   'tiered.riskCard.reward_risk.reason':
     'Winners must pay for losers; with a low ratio even a good hit rate loses money.',
   'tiered.riskCard.stop_atr': 'Stop distance',
@@ -2786,6 +2826,19 @@ const en: Record<UiTextKey, string> = {
     'If flagged, the combined position crosses the 25% single-stock cap — the sizing engine only caps the NEW purchase, not the total.',
   'tiered.riskCard.ownership_context.reason':
     'Risk lives in the total position, not just the new order.',
+  'tiered.riskCard.scenarioWorst': 'Scenario 1: last year’s worst day',
+  'tiered.riskCard.scenarioAtr': 'Scenario 2: one typical swing (ATR)',
+  'tiered.riskCard.noWorstDay': 'No worst-day history — this scenario cannot be computed.',
+  'tiered.riskCard.extraVsPlan': '{extra} more than the planned {planned}',
+  'tiered.riskCard.worstHolds':
+    'That open stays above the stop {stop} — the stop fills normally and the planned loss holds.',
+  'tiered.riskCard.goalLine': 'The ratio you asked for: {goal}×.',
+  'tiered.riskCard.stopLine': 'Stop loss:',
+  'tiered.riskCard.swingLowLine': 'Lowest price of the last 20 days:',
+  'tiered.riskCard.stopAboveLow':
+    'The stop sits at or above the recent low — a routine retest of that low triggers it.',
+  'tiered.riskCard.stopBelowLow':
+    'The stop sits below the recent low — a routine retest does not trigger it.',
 };
 
 export const UI_TEXT: Record<UiLanguage, Record<UiTextKey, string>> = {

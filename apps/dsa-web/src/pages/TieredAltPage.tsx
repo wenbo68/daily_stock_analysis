@@ -17,13 +17,15 @@ const DEFAULT_TIER: TieredDepth = 1;
 // sees and can remove/replace the pill before starting.
 const DEFAULT_CAPITAL = '100000';
 const DEFAULT_RISK_PCT = '1';
-// Ownership is required like every other field (owner decision,
-// 2026-07-20); the page opens with 10 shares and 0 means "I hold none".
-const DEFAULT_OWNERSHIP = '10';
+// Reward-to-risk ratio the plan aims for (owner decision, 2026-07-21):
+// required like every other field, default 2. The ownership input is
+// gone — deferred to the future portfolio feature.
+const DEFAULT_REWARD = '2';
 
 // Shared with the main tiered page so the values carry across both skins.
 const SIZING_CAPITAL_STORAGE_KEY = 'tiered.sizing.capital';
 const SIZING_RISK_PCT_STORAGE_KEY = 'tiered.sizing.riskPct';
+const SIZING_REWARD_STORAGE_KEY = 'tiered.sizing.reward';
 
 function readStoredNumber(key: string): string | null {
   try {
@@ -62,9 +64,9 @@ const TieredAltPage = () => {
   const [riskPct, setRiskPct] = useState<string | null>(
     () => readStoredNumber(SIZING_RISK_PCT_STORAGE_KEY) ?? DEFAULT_RISK_PCT,
   );
-  // Held shares are stock-specific, so they are per-run: reset to the
-  // default after every start, never remembered across sessions.
-  const [ownership, setOwnership] = useState<string | null>(DEFAULT_OWNERSHIP);
+  const [reward, setReward] = useState<string | null>(
+    () => readStoredNumber(SIZING_REWARD_STORAGE_KEY) ?? DEFAULT_REWARD,
+  );
   const [runs, setRuns] = useState<TieredRunSummary[]>([]);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, TieredResult>>({});
@@ -107,6 +109,13 @@ const TieredAltPage = () => {
         if (storedRisk == null && defaultRisk != null) {
           setRiskPct((prev) =>
             prev === null || prev === DEFAULT_RISK_PCT ? riskPctText(defaultRisk) : prev,
+          );
+        }
+        const storedReward = readStoredNumber(SIZING_REWARD_STORAGE_KEY);
+        const defaultReward = defaults.reward_risk;
+        if (storedReward == null && defaultReward != null) {
+          setReward((prev) =>
+            prev === null || prev === DEFAULT_REWARD ? String(defaultReward) : prev,
           );
         }
       } catch {
@@ -193,7 +202,7 @@ const TieredAltPage = () => {
 
   const handleStart = useCallback(async () => {
     // The form popup enforces every field; this is the last-line guard.
-    if (!ticker || tier === null || !capital || !riskPct || ownership === null || submitting) {
+    if (!ticker || tier === null || !capital || !riskPct || !reward || submitting) {
       return;
     }
     setSubmitError(null);
@@ -208,9 +217,9 @@ const TieredAltPage = () => {
       if (riskPct && Number.isFinite(pctValue) && pctValue > 0 && pctValue < 100) {
         sizing.risk_fraction = pctValue / 100;
       }
-      const ownershipValue = Number(ownership);
-      if (ownership && Number.isInteger(ownershipValue) && ownershipValue > 0) {
-        sizing.ownership = ownershipValue;
+      const rewardValue = Number(reward);
+      if (reward && Number.isFinite(rewardValue) && rewardValue > 1 && rewardValue <= 10) {
+        sizing.reward_risk = rewardValue;
       }
       const tierUsed = tier ?? DEFAULT_TIER;
       const started = await tieredApi.start(
@@ -220,10 +229,10 @@ const TieredAltPage = () => {
       );
       storeNumber(SIZING_CAPITAL_STORAGE_KEY, capital);
       storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPct);
+      storeNumber(SIZING_REWARD_STORAGE_KEY, reward);
       setCapitalDefault(capital);
       setTicker(null);
       setCapital(null);
-      setOwnership(DEFAULT_OWNERSHIP);
       setPendingTiers((prev) => ({ ...prev, [started.task_id]: tierUsed }));
       // The new run is already in the backend list as Running; show it at
       // the top of the history, expanded, until polling flips it to done.
@@ -235,7 +244,7 @@ const TieredAltPage = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [ticker, submitting, tier, capital, riskPct, ownership, refreshRuns]);
+  }, [ticker, submitting, tier, capital, riskPct, reward, refreshRuns]);
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 px-4 pb-8 pt-4 md:px-6 lg:px-8">
@@ -249,14 +258,14 @@ const TieredAltPage = () => {
             tier={tier}
             capital={capital}
             riskPct={riskPct}
-            ownership={ownership}
+            reward={reward}
             submitting={submitting}
             error={submitError}
             onTicker={handleTicker}
             onTier={setTier}
             onCapital={setCapital}
             onRiskPct={setRiskPct}
-            onOwnership={setOwnership}
+            onReward={setReward}
             onStart={() => void handleStart()}
           />
         </div>

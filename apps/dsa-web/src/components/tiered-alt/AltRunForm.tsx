@@ -6,7 +6,8 @@ import type { UiTextKey } from '../../i18n/uiText';
 import { HelpTerm } from '../tiered/terms';
 import { tickerCurrency } from './altCurrency';
 import { AltPill, AltPillRow, AltSelect } from './AltFields';
-import { AltModal } from './AltUi';
+import { ALT_COLOR } from './altStyles';
+import { AltModal, MODAL_BODY } from './AltUi';
 
 // Tier 3 retired (outlook redesign) — the picker offers 1 and 2 only.
 const TIERS: TieredDepth[] = [1, 2];
@@ -15,25 +16,21 @@ const TIERS: TieredDepth[] = [1, 2];
 const TICKER_IDEAS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA', '600519', 'hk00700'];
 const CAPITAL_IDEAS = ['10000', '50000', '100000', '200000', '500000', '1000000'];
 const RISK_IDEAS = ['0.5', '1', '2'];
-// '0' = I hold none (the only way to get an "enter the position" action);
-// '10' is the default the page opens with.
-const OWNERSHIP_IDEAS = ['0', '10', '100', '200', '500', '1000', '2000'];
+// Reward-to-risk ratio the plan aims for; '2' is the default.
+const REWARD_IDEAS = ['1.5', '2', '3'];
 
-// Field colors follow the ai-hedge-fund convention — by meaning, not by
-// position: cyan = the ticker's identity, plain gray = money values,
-// red = the loss you accept, green = a long holding, yellow = neutral
-// settings.
+// Field colors are positional in the showplayer palette (ALT_COLOR order,
+// starting at red): pill N wears color N, and Start wears the next slot.
 const TONE = {
-  ticker: 'bg-cyan-500/20 text-cyan-300 ring-cyan-500/30',
-  capital: 'bg-gray-500/20 text-gray-300 ring-gray-500/30',
-  risk: 'bg-red-500/20 text-red-300 ring-red-500/30',
-  ownership: 'bg-emerald-500/20 text-emerald-300 ring-emerald-500/30',
-  tier: 'bg-amber-500/20 text-amber-300 ring-amber-500/30',
+  ticker: ALT_COLOR[1],
+  capital: ALT_COLOR[2],
+  risk: ALT_COLOR[3],
+  reward: ALT_COLOR[4],
+  tier: ALT_COLOR[5],
 };
 
 // The Start control is a pill like its neighbors, in the next palette slot.
-const START_PILL =
-  'inline-flex cursor-pointer items-center gap-1.5 rounded px-[9px] py-0.5 text-xs font-semibold ring-1 ring-inset transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 bg-indigo-500/20 text-indigo-300 ring-indigo-500/30';
+const START_PILL = `inline-flex cursor-pointer items-center gap-1.5 rounded px-[9px] py-0.5 text-xs font-semibold ring-1 ring-inset transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 ${ALT_COLOR[6]}`;
 
 const isPositiveNumber = (raw: string): boolean => {
   const value = Number(raw);
@@ -45,11 +42,11 @@ const isRiskPct = (raw: string): boolean => {
   return Number.isFinite(value) && value > 0 && value < 100;
 };
 
-// Whole share counts only; 0 is a real answer ("I hold none"), since the
-// field is required like every other.
-const isShareCount = (raw: string): boolean => {
+// Reward-to-risk ratio: above 1 (or the trade can't pay for its risk),
+// capped at 10 to keep typos out.
+const isRewardRatio = (raw: string): boolean => {
   const value = Number(raw);
-  return Number.isInteger(value) && value >= 0;
+  return Number.isFinite(value) && value > 1 && value <= 10;
 };
 
 export interface AltRunFormProps {
@@ -57,21 +54,21 @@ export interface AltRunFormProps {
   tier: TieredDepth | null;
   capital: string | null;
   riskPct: string | null;
-  ownership: string | null;
+  reward: string | null;
   submitting: boolean;
   error: string | null;
   onTicker: (value: string | null) => void;
   onTier: (value: TieredDepth | null) => void;
   onCapital: (value: string | null) => void;
   onRiskPct: (value: string | null) => void;
-  onOwnership: (value: string | null) => void;
+  onReward: (value: string | null) => void;
   onStart: () => void;
 }
 
 // Section 1: the new-run form. Fields are write-only — every choice lands
 // as a removable pill below; the Start pill launches the run only when
 // every field is picked (a popup explains otherwise). All five fields are
-// required; ownership defaults to 10 shares and 0 means "I hold none".
+// required; reward (the reward-to-risk ratio) defaults to 2.
 // Capital is in the ticker's own trading currency, so it can't be picked
 // before the ticker. Picking an already-picked dropdown option clears it,
 // same as clicking its pill.
@@ -80,14 +77,14 @@ export const AltRunForm = ({
   tier,
   capital,
   riskPct,
-  ownership,
+  reward,
   submitting,
   error,
   onTicker,
   onTier,
   onCapital,
   onRiskPct,
-  onOwnership,
+  onReward,
   onStart,
 }: AltRunFormProps) => {
   const { t } = useUiLanguage();
@@ -104,7 +101,7 @@ export const AltRunForm = ({
   };
 
   const handleStart = () => {
-    if (!ticker || tier === null || !capital || !riskPct || ownership === null) {
+    if (!ticker || tier === null || !capital || !riskPct || !reward) {
       setNotice(t('tiered.altForm.allRequired'));
       return;
     }
@@ -161,18 +158,18 @@ export const AltRunForm = ({
         <AltSelect
           label={
             <HelpTerm
-              label={t('tiered.altForm.ownership')}
-              helpKey="tiered.help.ownership"
+              label={t('tiered.altForm.reward')}
+              helpKey="tiered.help.reward"
               underline={false}
             />
           }
-          options={OWNERSHIP_IDEAS.map((value) => ({ value, label: value }))}
-          selected={ownership ? [ownership] : undefined}
-          placeholder={t('tiered.altForm.ownershipPh')}
-          inputMode="numeric"
+          options={REWARD_IDEAS.map((value) => ({ value, label: value }))}
+          selected={reward ? [reward] : undefined}
+          placeholder={t('tiered.altForm.rewardPh')}
+          inputMode="decimal"
           freeText
-          validate={isShareCount}
-          onCommit={(value) => onOwnership(value === ownership ? null : value)}
+          validate={isRewardRatio}
+          onCommit={(value) => onReward(value === reward ? null : value)}
         />
         <AltSelect
           label={
@@ -206,9 +203,9 @@ export const AltRunForm = ({
             {t('tiered.pill.risk', { value: riskPct })}
           </AltPill>
         ) : null}
-        {ownership ? (
-          <AltPill tone={TONE.ownership} onRemove={() => onOwnership(null)}>
-            {t('tiered.pill.ownership', { value: ownership })}
+        {reward ? (
+          <AltPill tone={TONE.reward} onRemove={() => onReward(null)}>
+            {t('tiered.pill.reward', { value: reward })}
           </AltPill>
         ) : null}
         {tier !== null ? (
@@ -229,7 +226,7 @@ export const AltRunForm = ({
         title={t('tiered.altForm.noticeTitle')}
         onClose={() => setNotice(null)}
       >
-        <p className="text-sm leading-relaxed">{notice}</p>
+        <p className={MODAL_BODY}>{notice}</p>
       </AltModal>
     </div>
   );

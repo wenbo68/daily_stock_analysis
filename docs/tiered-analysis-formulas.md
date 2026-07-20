@@ -89,14 +89,16 @@ Swing lows are floors the market has already defended; swing highs are ceilings
 where sellers appeared before. The outlook redesign (2026-07) extended the price
 history to ~250 bars so the 52-week range and the 60-day swings exist.
 
-### Average daily volume (20-day) and worst-5% day
+### Average daily volume (20-day) and worst single day
 
 ```
 avg_volume_20 = mean(volume of the last 20 trading days)        (None if no volume data)
-worst_day_5pct = the 5th-percentile daily return of the last ~250 bars
+worst_day_1y  = the single worst daily return of the last ~250 bars
 ```
 
-Both feed the display-only risk card (§7) only — they never move levels or sizing.
+Both feed the display-only risk card (§7) only — they never move levels or
+sizing. (`worst_day_1y` replaced the softer `worst_day_5pct` percentile,
+2026-07-21; old stored runs still carry the retired key.)
 
 ## 2. Price levels — formula-only (outlook redesign, `levels.py`)
 
@@ -127,15 +129,12 @@ price (10s above 100, 5s above 20, …) — round numbers act as psychological f
 because many resting orders sit exactly there. The `min(close, …)` cap makes sure
 we never suggest paying more than the current price.
 
-### Backup entry
+### Backup entry — retired (owner decision, 2026-07-21)
 
-```
-backup_entry = highest support candidate strictly below ideal_entry
-```
-
-The "if it falls further" level: the next genuine floor beneath the ideal entry.
-If no candidate sits below the ideal entry, there is no backup — the report says so
-instead of inventing one.
+The plan is one order at the ideal entry; a resting limit order fills when the
+price reaches it, so a second lower entry added confusion without value. Old
+stored runs may still carry a `secondary_entry`; new runs never compute one and
+the UI shows no backup column.
 
 ### Stop-loss
 
@@ -147,17 +146,20 @@ Two typical days of adverse movement below the planned entry. Far enough that
 ordinary daily noise doesn't eject you; close enough that a real breakdown gets you
 out. Volatile stocks automatically get wider stops.
 
-### Target / take-profit — resistance-aware
+### Target / take-profit — resistance-aware, user-chosen ratio
 
 ```
-geometric   = ideal_entry + 2 × (ideal_entry − stop_loss)
+R           = the user's reward-to-risk ratio (run form "Reward" field, default 2)
+geometric   = ideal_entry + R × (ideal_entry − stop_loss)
 resistances = {swing_high_20, swing_high_60, high_52w} strictly above close
 target      = min(geometric, nearest resistance above close)
 ```
 
-Demand twice the upside of the accepted downside — but never pretend the price can
-sail through a ceiling where sellers already showed up once. If overhead resistance
-caps the target, the target honestly stops there.
+Demand R times the upside of the accepted downside — but never pretend the price
+can sail through a ceiling where sellers already showed up once. If overhead
+resistance caps the target, the target honestly stops there; if the capped ratio
+falls below the user's chosen R (but clears the 1.5 floor), the plan carries a
+visible "reward below goal" warning instead of bending any level.
 
 ### Room gate
 
@@ -167,10 +169,11 @@ if (target − ideal_entry) / (ideal_entry − stop_loss) < 1.5:  no plan (warni
 
 If the nearest ceiling is so close that the capped trade cannot pay at least
 1.5-to-1, the whole plan is withheld — a trade without room is not worth printing.
+The 1.5 floor is absolute; the user's chosen R only warns (above), never voids.
 
 ### Dependency chain
 
-`trend gate → supports → ideal entry → backup → stop → target → room gate`. A
+`trend gate → supports → ideal entry → stop → target → room gate`. A
 missing upstream input makes the downstream levels explicitly unavailable (with a
 warning) — never silently guessed.
 
@@ -179,7 +182,9 @@ warning) — never silently guessed.
 The run's judgment splits into two things: the **outlook** on the stock itself
 (bullish / neutral / bearish — the tier-2 vote's direction, or tier 1's at depth 1)
 and the **action** for this user, derived by a pure code table from outlook ×
-ownership (the share count the user typed):
+ownership (the share count the user holds; the API still accepts it, but the
+alt form no longer collects it — the input is deferred to the future portfolio
+feature, so runs from that page always use ownership = 0):
 
 ```
 outlook   ownership = 0    ownership > 0
@@ -226,7 +231,7 @@ scaled by any AI-derived factor.
 | Swing lookbacks | 20 / 60 days | levels | one trading month / one quarter |
 | Year of bars | 250 trading days | technicals | 52-week range and worst-day history |
 | Stop distance | 2 × ATR | stops | classic noise-vs-breakdown balance point |
-| Reward-to-risk (geometric target) | 2.0 | levels | common minimum for a trade to be worth it |
+| Reward-to-risk (geometric target) | user-chosen, default 2.0 | levels | the run form's "Reward" field; below it → warning |
 | Reward-to-risk (room gate) | 1.5 | levels | a resistance-capped plan below this is withheld |
 | Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
@@ -334,28 +339,31 @@ deleted).
 
 ## 7. Display-only risk card (outlook redesign, `risk_card.py`)
 
-Thirteen deterministic pre-trade checks — the numbers a firm's risk
-desk and a disciplined trader would look at — computed from data the
-run already has. ZERO LLM calls, and by explicit owner decision the
-card affects NOTHING: outlook, action, levels and sizing never read
-it. Each entry is `{id, status, values}` with status `ok`, `flag`
-(a threshold crossed) or `na` (inputs missing on this run); all
-wording lives in the frontend i18n layer.
+Six deterministic pre-trade checks — computed from data the run
+already has. ZERO LLM calls, and by explicit owner decision the card
+affects NOTHING: outlook, action, levels and sizing never read it.
+Each entry is `{id, status, values}` with status `ok`, `flag` (a
+threshold crossed) or `na` (inputs missing on this run); all wording
+lives in the frontend i18n layer, and every number in the UI opens a
+receipt modal showing its computation.
 
-The 13 entries, in frozen order (`RISK_CARD_IDS`):
+The 6 entries, in frozen order (`RISK_CARD_IDS`):
 
 ```
- 1 concentration      position cost / capital, vs the 25% cap
- 2 cash               capital − position cost
- 3 max_loss           stop-hit loss; flags lot-rounding drift > requested risk
- 4 liquidity          shares / avg_volume_20; flags > 5% of a day's volume
- 5 var                |worst_day_5pct| × position value; flags > planned risk
- 6 gap_stress         loss if the open lands 1 ATR below the stop
- 7 volatility         ATR / close; flags > 4%
- 8 reward_risk        (target − entry) / (entry − stop)
- 9 stop_atr           (entry − stop) / ATR
-10 stop_vs_swing_low  flags a stop at/above the 20-day low
-11 staleness          run-time price vs the plan (fresh by construction)
-12 both_entries       double-fill risk vs the risk budget
-13 ownership_context  held + new position vs the 25% cap
+ 1 liquidity          shares / avg_volume_20; flags > 5% of a day's volume
+ 2 gap_stress         two overnight scenarios: (a) worst_day_1y drop from the
+                      entry — if the open lands below the stop, the sale price,
+                      total loss and extra loss vs plan (flags when it gaps);
+                      (b) open = stop − 1 ATR, same outputs
+ 3 volatility         ATR / close; flags > 4%
+ 4 reward_risk        (target − entry) / (entry − stop); flags below the
+                      user's chosen ratio (run form "Reward" field)
+ 5 stop_atr           (entry − stop) / ATR
+ 6 stop_vs_swing_low  flags a stop at/above the 20-day low
 ```
+
+Trimmed from 13 (owner decision, 2026-07-21): concentration, cash,
+max-planned-loss, one-day VaR (folded into the gap check's worst-day
+scenario), staleness, both-entries (gone with the backup entry) and
+ownership-context (returns with the future portfolio feature). Old
+stored runs keep rendering their 13-entry cards.
