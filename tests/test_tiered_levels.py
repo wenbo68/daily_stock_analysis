@@ -4,11 +4,11 @@
 Formulas under test are documented in docs/tiered-analysis-formulas.md:
 ideal entry = min(close, max(support candidates)); stop = ideal - 2*ATR;
 target = min(ideal + R*(ideal - stop), nearest overhead resistance) with
-R the user's chosen reward-to-risk ratio (default 2). Trend gate (close
-must sit above sma_60) and room gate (capped reward-to-risk >= 1.5) void
-the plan; a capped ratio above the floor but below R only warns. The
-backup entry is retired.
-AI adjustments must stay within +/-1 ATR, keep ordering and reward-to-risk.
+R the user's chosen reward-to-risk ratio (default 2). The trend gate
+(close must sit above sma_60) voids the plan; a resistance-capped ratio
+below R only warns — the old 1.5 room gate no longer voids anything
+(owner decision 2026-07-22: always give a plan). The backup entry is
+retired. AI adjustments must stay within +/-1 ATR and keep ordering.
 """
 from __future__ import annotations
 
@@ -120,12 +120,14 @@ class TestTrendAndRoomGates(unittest.TestCase):
         self.assertIn("resistance", bases.take_profit.formula)
         self.assertAlmostEqual(bases.take_profit.inputs["geometric_target"], 108.0)
 
-    def test_room_gate_voids_plan_when_resistance_too_close(self):
-        # Resistance at 104: capped R:R = (104-96)/6 = 1.33 < 1.5 -> no plan.
+    def test_thin_reward_still_gets_a_plan_with_warning(self):
+        # Resistance at 104: capped R:R = (104-96)/6 = 1.33, below the
+        # user's 2x goal — the plan stands and a warning says so (the old
+        # 1.5 room gate no longer voids the plan).
         bases = _bases(swing_high_20=104.0)
-        self.assertIsNone(bases.entry)
-        self.assertIsNone(bases.take_profit)
-        self.assertTrue(any("room gate" in w for w in bases.warnings))
+        self.assertIsNotNone(bases.entry)
+        self.assertAlmostEqual(bases.take_profit.value, 104.0)
+        self.assertTrue(any("reward below goal" in w for w in bases.warnings))
 
     def test_resistance_below_close_is_ignored(self):
         # A "resistance" the price already broke through is not overhead.
@@ -197,16 +199,18 @@ class TestApplyAdjustments(unittest.TestCase):
         self.assertIsNone(decisions["stop_loss"].adjusted)
         self.assertTrue(any("order" in w.lower() for w in warnings))
 
-    def test_reward_risk_degradation_rejected(self):
+    def test_reward_risk_degradation_no_longer_rejected(self):
         self.assertEqual(MIN_REWARD_RISK, 1.5)
-        # Raise the entry to 97.5 (in band, ordering fine): with stop 90 and
-        # target 108 fixed, R:R becomes 10.5/7.5 = 1.4 < 1.5 -> reject.
+        # Raise the entry to 97.5 (in band, ordering fine): with stop 90
+        # and target 108 fixed, R:R becomes 10.5/7.5 = 1.4 — below the
+        # old floor, but a thin ratio is a plan warning now, never a
+        # reason to revert a level.
         proposals = [
             AdjustmentProposal(level="entry", value=97.5, reason="x", evidence=("e",))
         ]
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
-        self.assertIsNone(decisions["entry"].adjusted)
-        self.assertTrue(any("reward" in w.lower() for w in warnings))
+        self.assertAlmostEqual(decisions["entry"].adjusted, 97.5)
+        self.assertEqual(warnings, [])
 
     def test_adjustment_without_base_rejected(self):
         # No close -> no bases at all; a proposal for the entry has no

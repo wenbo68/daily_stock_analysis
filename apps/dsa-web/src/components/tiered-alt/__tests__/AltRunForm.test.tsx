@@ -142,7 +142,7 @@ describe('AltRunForm', () => {
   it('names the tier options after their analyses and clears on re-pick', () => {
     const props = renderForm({ tier: 2 });
 
-    fireEvent.focus(screen.getByPlaceholderText(/选择层级|Select tier/));
+    fireEvent.focus(screen.getByPlaceholderText(/输入层级|Enter tier/));
     fireEvent.click(
       screen.getByRole('button', { name: /2: deep analysis|2：深度分析/ }),
     );

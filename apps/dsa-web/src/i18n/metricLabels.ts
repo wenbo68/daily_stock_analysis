@@ -56,6 +56,10 @@ const en: Record<string, MetricEntry> = {
     short: 'ATR 14',
     full: 'Average True Range over 14 days — the typical daily price swing in dollars.\nA volatility measure often used to place stop-loss levels.',
   },
+  volatility_pct: {
+    short: 'Volatility %',
+    full: 'The typical daily swing (ATR 14) as a percent of the price.\nAbove ~4% counts as a high-volatility stock — the plan review may trim size or widen the stop.',
+  },
   swing_low_20: {
     short: 'Swing low 20',
     full: 'The lowest price actually traded during the last 20 trading days — a floor the market has already defended once.\nUsed as a support anchor for the entry levels.',
@@ -196,6 +200,14 @@ const en: Record<string, MetricEntry> = {
   },
 
   // ---- macro economy ----
+  next_earnings_date: {
+    short: 'Next earnings',
+    full: 'The date of the next scheduled earnings report.\nA report inside a week is event risk: one announcement can gap the price past any stop.',
+  },
+  days_until_earnings: {
+    short: 'Days to earnings',
+    full: 'Calendar days until the next scheduled earnings report.',
+  },
   region: {
     short: 'Region',
     full: 'Which economy these numbers describe.',
@@ -286,6 +298,10 @@ const zh: Record<string, MetricEntry> = {
     short: 'ATR 14',
     full: '14日平均真实波幅——日常价格波动的典型幅度（以货币计），常用来设置止损距离。',
   },
+  volatility_pct: {
+    short: '波动率 %',
+    full: '典型单日波幅（ATR 14）占价格的百分比。\n超过约 4% 视为高波动——计划审查可能因此减仓或放宽止损。',
+  },
   swing_low_20: {
     short: '20日低点',
     full: '最近20个交易日的最低成交价——市场已经防守过一次的价格底部，用作买入价位的支撑锚点。',
@@ -349,6 +365,11 @@ const zh: Record<string, MetricEntry> = {
   pb: { short: '市净率', full: '股价÷每股账面净资产。' },
   market_cap: { short: '总市值', full: '公司全部股份的市场总价值（美元）。' },
 
+  next_earnings_date: {
+    short: '下次财报',
+    full: '下一次财报的预定日期。\n一周内的财报属于事件风险：一次公告就可能让价格跳空越过任何止损。',
+  },
+  days_until_earnings: { short: '距财报天数', full: '距下一次财报的日历天数。' },
   region: { short: '地区', full: '这些数据描述的是哪个经济体。' },
   as_of: { short: '采集日期', full: '本组宏观数据的采集日期。' },
   rates: { short: '利率', full: '由央行和债券市场决定的利率水平。' },

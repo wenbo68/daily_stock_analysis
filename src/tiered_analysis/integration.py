@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .earnings import EarningsInfo, earnings_warning, next_earnings_info
+from .earnings import EarningsInfo
 from .levels import (
     apply_adjustments,
     bases_from_dimensions,
@@ -36,6 +36,7 @@ from .levels import (
     decisions_to_sniper,
 )
 from .llm_support import LlmUsageTracker
+from .plan_review import review_plan, sizing_detail_dict
 from .providers.base import (
     Coverage,
     DimensionProvider,
@@ -44,7 +45,6 @@ from .providers.base import (
 )
 from .providers.registry import detect_market, get_providers
 from .providers.technicals import Bar
-from .risk_card import build_risk_card
 from .schema import (
     Action,
     Direction,
@@ -142,10 +142,16 @@ class TieredRunOutcome:
     #: (outlook × ownership code table).
     outlook: Outlook = Outlook.UNKNOWN
     action: Action = Action.UNKNOWN
-    #: Warning-only next-earnings-date lookup.
+    #: Next earnings date, read from the fundamentals payload (display
+    #: lives on the fundamentals card; the debate weighs the event risk).
     earnings: Optional[EarningsInfo] = None
-    #: Display-only 6-entry risk card — affects nothing by design.
+    #: Retired display-only risk card (2026-07-22) — always None on new
+    #: runs; the field survives so old consumers keep a stable shape.
     risk_card: Optional[list] = None
+    #: Plan review (2026-07-22): structured per-column warnings for the
+    #: trade-plan card — {"entry"|"stop_loss"|"take_profit"|"shares":
+    #: [{"id", "values"}]}. None when the run produced no buy plan.
+    plan_warnings: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         if self.final_report is None:
@@ -189,6 +195,23 @@ def _technicals_atr(dimensions: Sequence[DimensionResult]) -> Optional[float]:
     return None
 
 
+def _earnings_from_dimensions(
+    dimensions: Sequence[DimensionResult],
+) -> EarningsInfo:
+    """The next earnings date the fundamentals provider fetched, as the
+    run-detail block (no second network call)."""
+    for dim in dimensions:
+        if dim.dimension == "fundamentals" and dim.payload:
+            date = dim.payload.get("next_earnings_date")
+            days = dim.payload.get("days_until_earnings")
+            if isinstance(date, str) and date:
+                return EarningsInfo(
+                    next_date=date,
+                    days_until=days if isinstance(days, int) else None,
+                )
+    return EarningsInfo(note="no upcoming earnings date found")
+
+
 def _sizing_block(
     final: TierReport,
     market: Market,
@@ -214,11 +237,6 @@ def _sizing_block(
     )
     result = size_position(inputs)
 
-    notes = list(result.notes) + list(settings.warnings)
-    shares = result.shares
-    position_value = result.position_value
-    risk_amount = result.risk_amount
-
     # A bearish outlook on a stock the user holds gets a concrete exit
     # size: the full holding. This needs no capital/risk settings — the
     # count IS the holding.
@@ -227,36 +245,16 @@ def _sizing_block(
     if final.direction is Direction.SELL and ownership > 0:
         sell_shares = ownership
 
-    detail: Dict[str, Any] = {
-        "enabled": settings.is_enabled,
-        "shares": shares,
-        "ownership": ownership,
-        "sell_shares": sell_shares,
-        "position_value": position_value,
-        "risk_amount": risk_amount,
-        "loss_per_share": result.loss_per_share,
-        "lot_size": result.lot_size,
-        "cap_applied": result.cap_applied,
-        "reason_code": result.reason_code.value if result.reason_code else None,
-        "refusal_reason": result.refusal_reason,
-        "notes": notes,
-        "inputs": {
-            "capital": settings.capital,
-            "risk_fraction": settings.risk_fraction,
-            "max_position_fraction": settings.max_position_fraction,
-            "fee_fraction": settings.fee_fraction,
-            "reward_risk": settings.reward_risk,
-            "entry": final.levels.entry,
-            "stop_loss": final.levels.stop_loss,
-        },
-    }
+    detail = sizing_detail_dict(
+        settings, result, final.levels, ownership, sell_shares
+    )
 
     if not result.is_sized:
         return detail, SizingSlots()
     return detail, SizingSlots(
         capital=settings.capital,
         risk_fraction=settings.risk_fraction,
-        shares=float(shares),
+        shares=float(result.shares),
     )
 
 
@@ -273,21 +271,24 @@ def run_tiered_analysis(
     sizing_overrides: Optional[Mapping[str, Any]] = None,
     tier2_stage: Optional[Tier2Stage] = None,
     earnings_lookup: Optional[Callable[[str, Market], EarningsInfo]] = None,
+    plan_summarizer: Optional[Callable[[str], str]] = None,
 ) -> TieredRunOutcome:
     """Run one symbol at ``depth`` with full production wiring.
 
-    Outlook redesign (2026-07-20) pipeline: data layer (four dimensions)
-    → formula-only levels (no AI nudge at any tier — plan decision) →
-    the chosen judge (depth 1 = the DSA one-blob synthesis; depth 2 =
-    the evidence vote, WITHOUT running the blob) → outlook + action
-    (code table over ownership) → sizing (bearish + held shares = exit
-    the full holding) → display-only risk card + warning-only earnings
-    date. Unless ``log_signal`` is False, the deepest tier's
-    recommendation lands in the existing decision-signal system.
+    Pipeline (plan-review redesign, 2026-07-22): data layer (four
+    dimensions; fundamentals carries the next earnings date) → formula
+    levels → the chosen judge (depth 1 = the DSA one-blob synthesis;
+    depth 2 = the evidence vote, WITHOUT running the blob) → on a BUY
+    verdict, the AI plan review (deterministic checks may trim shares /
+    move stop / move target, with cited reasons, and produce the
+    trade-plan card's structured warnings) → outlook + action (code
+    table over ownership) → sizing. Unless ``log_signal`` is False, the
+    deepest tier's recommendation lands in the decision-signal system.
 
     ``sizing_overrides`` may carry per-run ``capital`` / ``risk_fraction``
     / ``ownership`` values (the API's per-run override) on top of the
-    saved settings.
+    saved settings. ``earnings_lookup`` is a test seam; production reads
+    the date the fundamentals provider already fetched.
     """
     if depth not in SUPPORTED_DEPTHS:
         raise ValueError(f"depth must be one of {SUPPORTED_DEPTHS}, got {depth}")
@@ -307,9 +308,6 @@ def run_tiered_analysis(
             ownership=sizing_overrides.get("ownership"),
             reward_risk=sizing_overrides.get("reward_risk"),
         )
-    if earnings_lookup is None:
-        earnings_lookup = next_earnings_info
-
     tracker = LlmUsageTracker()
     with tracker.activate():
         dimensions = _collect_dimensions(providers, symbol)
@@ -327,9 +325,14 @@ def run_tiered_analysis(
         levels = decisions_to_sniper(decisions)
         levels_detail = decisions_to_detail(decisions, level_warnings)
 
-        earnings = earnings_lookup(symbol, market)
-        e_warning = earnings_warning(earnings)
-        extra_warnings = level_warnings + ([e_warning] if e_warning else [])
+        # The next earnings date rides in the fundamentals payload (the
+        # provider fetched it); the injectable lookup is a test seam.
+        earnings = (
+            earnings_lookup(symbol, market)
+            if earnings_lookup is not None
+            else _earnings_from_dimensions(dimensions)
+        )
+        extra_warnings = level_warnings
 
         state = TierState(symbol=symbol, market=market)
         if depth == 1:
@@ -368,7 +371,37 @@ def run_tiered_analysis(
                 final = (tier2_stage or Tier2Stage()).run(state)
             state.reports[2] = final
 
-    sizing_detail, sizing_slots = _sizing_block(final, market, sizing_settings)
+        # AI plan review (BUY verdicts only): the deterministic checks
+        # may trim the share count or move stop/target with cited
+        # reasons, and produce the plan card's structured warnings.
+        review = None
+        if final.direction is Direction.BUY and bases.get("entry") is not None:
+            with tracker.stage("plan_adjust"):
+                review = review_plan(
+                    symbol, dimensions, bases, final.direction, market,
+                    sizing_settings, ownership=sizing_settings.ownership,
+                    summarizer=plan_summarizer,
+                )
+
+    plan_warnings: Optional[Dict[str, Any]] = None
+    if review is not None:
+        depth1_same = final is report
+        # Review warnings land on the foundation report only (the plan
+        # card's notes); the tier-2 card keeps its own warnings.
+        report = replace(
+            report,
+            levels=review.levels,
+            levels_detail=review.levels_detail,
+            warnings=list(report.warnings) + list(review.warnings),
+        )
+        final = report if depth1_same else replace(
+            final, levels=review.levels, levels_detail=review.levels_detail
+        )
+        state.reports[1] = report
+        sizing_detail, sizing_slots = review.sizing_detail, review.sizing_slots
+        plan_warnings = review.plan_warnings
+    else:
+        sizing_detail, sizing_slots = _sizing_block(final, market, sizing_settings)
     final = replace(final, sizing=sizing_slots)
     if not final.dimensions:
         # Tier-2 reports are built lean; the deepest report carries the
@@ -380,12 +413,6 @@ def run_tiered_analysis(
 
     outlook = Outlook.from_direction(final.direction)
     action = derive_action(outlook, sizing_settings.ownership)
-    risk_card = build_risk_card(
-        dimensions=dimensions,
-        levels=final.levels,
-        sizing=sizing_detail,
-        settings=sizing_settings,
-    )
 
     signal: Optional[SignalLogResult] = None
     if log_signal:
@@ -402,5 +429,5 @@ def run_tiered_analysis(
         outlook=outlook,
         action=action,
         earnings=earnings,
-        risk_card=risk_card,
+        plan_warnings=plan_warnings,
     )

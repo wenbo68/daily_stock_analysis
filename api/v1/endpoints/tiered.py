@@ -156,12 +156,17 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
         "sizing": outcome.sizing,
         "llm_usage": outcome.llm_usage,
         # Outlook redesign (additive): the impersonal judgment, the
-        # personal action, the warning-only earnings date, and the
-        # display-only 6-entry risk card.
+        # personal action, and the earnings date (displayed on the
+        # fundamentals card; kept here for old consumers).
         "outlook": outcome.outlook.value,
         "action": outcome.action.value,
         "earnings": outcome.earnings.to_detail() if outcome.earnings else None,
+        # Retired 2026-07-22 — always None on new runs; old stored runs
+        # still carry their card.
         "risk_card": outcome.risk_card,
+        # Plan review (additive): structured per-column trade-plan
+        # warnings — numbers only, the frontend words them.
+        "plan_warnings": outcome.plan_warnings,
     }
 
 

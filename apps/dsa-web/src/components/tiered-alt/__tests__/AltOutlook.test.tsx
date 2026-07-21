@@ -6,12 +6,13 @@ import type {
   TieredResult,
   TieredRiskCardEntry,
 } from '../../../api/tiered';
+import type { TieredPlanWarnings } from '../../../api/tiered';
 import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { AltResult } from '../AltResult';
 
 // Outlook-redesign rendering: the conclusion block, the conditional plan
-// display, the earnings/staleness notes, the 13-entry risk card, and the
-// v10 weighted vote tree. Old stored runs (no outlook field) keep their
+// display, the staleness note, the plan-review warnings row, and the
+// v10/v11 vote trees. Old stored runs (no outlook field) keep their
 // legacy layout — covered by AltResult.test.tsx.
 
 const LEVELS = { entry: 96, secondary_entry: 94, stop_loss: 90, take_profit: 108 };
@@ -306,14 +307,13 @@ describe('AltResult outlook conclusion', () => {
       }),
     );
     expect(screen.getByTestId('alt-no-plan')).toBeInTheDocument();
-    // The sell formula prints the full holding with no multiplier term.
-    const formula = screen.getByTestId('alt-sell-formula');
-    expect(formula).toHaveTextContent('= 300');
-    expect(formula).not.toHaveTextContent('×');
-    expect(screen.getByText(/(卖出|Sell) 300|300 (股|shares)/)).toBeInTheDocument();
+    // The shares-computation card is retired (2026-07-22) — the action
+    // line already says the whole holding goes.
+    expect(screen.queryByTestId('alt-sell-formula')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('alt-shares-computation')).not.toBeInTheDocument();
   });
 
-  it('shows the earnings warning only when the date is near', () => {
+  it('never shows an earnings warning in the conclusion (moved to fundamentals)', () => {
     renderResult(
       makeOutlookResult({
         earnings: {
@@ -321,23 +321,6 @@ describe('AltResult outlook conclusion', () => {
           days_until: 4,
           warning_days: 7,
           is_near: true,
-          note: null,
-        },
-      }),
-    );
-    const warning = screen.getByTestId('alt-earnings-warning');
-    expect(warning).toHaveTextContent('4');
-    expect(warning).toHaveTextContent('2026-07-24');
-  });
-
-  it('hides the earnings warning when earnings are far or unknown', () => {
-    renderResult(
-      makeOutlookResult({
-        earnings: {
-          next_date: '2026-09-20',
-          days_until: 62,
-          warning_days: 7,
-          is_near: false,
           note: null,
         },
       }),
@@ -405,36 +388,10 @@ function makeTrimmedRiskCard(): TieredRiskCardEntry[] {
   ];
 }
 
-describe('AltResult trimmed risk card (current runs)', () => {
-  it('renders the 6 checks with the two-scenario gap sentence', () => {
+describe('AltResult risk checks (retired card)', () => {
+  it('never renders the risk-checks card, even on runs that stored one', () => {
     renderResult(makeOutlookResult({ risk_card: makeTrimmedRiskCard() }));
-    const card = screen.getByTestId('alt-risk-card');
-    expect(within(card).getAllByRole('listitem')).toHaveLength(6);
-    const gap = within(card).getByTestId('alt-risk-card-gap_stress');
-    // worst-day scenario and ATR scenario, each with open price + extra loss
-    expect(gap).toHaveTextContent('86.4');
-    expect(gap).toHaveTextContent('360');
-    expect(gap).toHaveTextContent('87');
-    expect(gap).toHaveTextContent('300');
-  });
-
-  it('clicking a gap number opens the two-scenario receipt', () => {
-    renderResult(makeOutlookResult({ risk_card: makeTrimmedRiskCard() }));
-    const gap = screen.getByTestId('alt-risk-card-gap_stress');
-    fireEvent.click(within(gap).getAllByRole('button')[0]);
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText(/情形一|Scenario 1/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/情形二|Scenario 2/)).toBeInTheDocument();
-    // the worst-day open formula, plugged with this run's numbers
-    expect(within(dialog).getByRole('button', { name: /worst day 1y/ })).toHaveTextContent('-0.1');
-  });
-
-  it('flags a reward-to-risk below the chosen goal and names the goal', () => {
-    renderResult(makeOutlookResult({ risk_card: makeTrimmedRiskCard() }));
-    const entry = screen.getByTestId('alt-risk-card-reward_risk');
-    expect(entry).toHaveTextContent(/注意|check this/);
-    expect(entry).toHaveTextContent('1.67');
-    expect(entry).toHaveTextContent('2');
+    expect(screen.queryByTestId('alt-risk-card')).not.toBeInTheDocument();
   });
 });
 
@@ -451,37 +408,6 @@ describe('AltResult reward warning on the plan', () => {
     const warning = screen.getByTestId('alt-reward-warning');
     expect(warning).toHaveTextContent('1.67');
     expect(warning).toHaveTextContent('2');
-  });
-});
-
-describe('AltResult risk card (legacy 13-entry runs)', () => {
-  it('renders all 13 numbered entries in order', () => {
-    renderResult(makeOutlookResult());
-    const card = screen.getByTestId('alt-risk-card');
-    expect(within(card).getAllByRole('listitem')).toHaveLength(13);
-    expect(within(card).getByTestId('alt-risk-card-concentration')).toHaveTextContent(/^1\./);
-    expect(within(card).getByTestId('alt-risk-card-ownership_context')).toHaveTextContent(/^13\./);
-  });
-
-  it('an ok entry shows value, action and reason; percentages are readable', () => {
-    renderResult(makeOutlookResult());
-    const entry = screen.getByTestId('alt-risk-card-concentration');
-    expect(entry).toHaveTextContent('15.9');
-    expect(entry).toHaveTextContent('25');
-    expect(entry).toHaveTextContent(/(建议：|Action:)/);
-    expect(entry).toHaveTextContent(/(原因：|Why:)/);
-  });
-
-  it('a flagged entry is tagged check-this', () => {
-    renderResult(makeOutlookResult());
-    expect(screen.getByTestId('alt-risk-card-liquidity')).toHaveTextContent(/注意|check this/);
-  });
-
-  it('an n/a entry explains why and drops the action/reason lines', () => {
-    renderResult(makeOutlookResult());
-    const entry = screen.getByTestId('alt-risk-card-ownership_context');
-    expect(entry).toHaveTextContent(/未持有|hold no shares/);
-    expect(entry).not.toHaveTextContent(/(建议：|Action:)/);
   });
 });
 
@@ -522,8 +448,11 @@ describe('AltResult v10 weighted vote tree', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent(/重要性评分：2|importance rating: 2/);
   });
 
-  it('the scores block uses the weighted formula with the weight sums', () => {
+  it('the header score opens the weighted formula in a modal', () => {
     renderWeighted();
+    // The arithmetic no longer sits inside the transcript fold.
+    expect(screen.queryByTestId('alt-tree-scores')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('alt-debate-score'));
     const scores = screen.getByTestId('alt-tree-scores');
     expect(scores).toHaveTextContent(/看多权重和|bullish weight/);
     expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent('= 10 × 3 / 5.5');
@@ -560,7 +489,8 @@ describe('AltResult v11 detail tree', () => {
     expect(badge).toHaveTextContent(/^4\.5$/);
     fireEvent.click(badge);
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent(/各方评分：4, 5|Scores: 4, 5/);
+    expect(dialog).toHaveTextContent(/显著性评分|Significance Score/);
+    expect(dialog).toHaveTextContent(/各方评分：4 \| 5|Scores: 4 \| 5/);
     expect(dialog).toHaveTextContent(/中位数：4\.5|Median: 4\.5/);
   });
 
@@ -573,9 +503,9 @@ describe('AltResult v11 detail tree', () => {
     fireEvent.click(marks[0]);
     const dialog = screen.getByRole('dialog');
     expect(dialog).toHaveTextContent(/列出者 1|Lister 1/);
-    expect(dialog).toHaveTextContent(/有效|valid/i);
+    expect(dialog).toHaveTextContent(/判定：有效|verdict: valid/);
     expect(dialog).toHaveTextContent('The 14-day RSI (71.20) is above 70.');
-    expect(dialog).toHaveTextContent(/评分：4|Score: 4/);
+    expect(dialog).toHaveTextContent(/评分：4|score: 4/);
     expect(dialog).toHaveTextContent('Strong but not decisive.');
   });
 
@@ -585,14 +515,126 @@ describe('AltResult v11 detail tree', () => {
       within(screen.getByTestId('alt-tree-item-S1')).getByRole('button', { name: '✗' }),
     );
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent(/核查员|Checker/);
+    expect(dialog).toHaveTextContent(/核查员 1|Checker 1/);
+    expect(dialog).toHaveTextContent(/判定：无效|verdict: invalid/);
     expect(dialog).toHaveTextContent('The deal risk is already priced in.');
-    expect(dialog).toHaveTextContent(/评分：2|Score: 2/);
+    expect(dialog).toHaveTextContent(/评分：2|score: 2/);
     expect(dialog).toHaveTextContent('A minor point either way.');
+  });
+
+  it('the second vote is Checker 2 — never a decider word', () => {
+    renderRich();
+    const marks = within(screen.getByTestId('alt-tree-item-S1')).getAllByRole('button', {
+      name: '✓',
+    });
+    // author mark first, then the deciding vote's ✓.
+    fireEvent.click(marks[marks.length - 1]);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent(/核查员 2|Checker 2/);
+    expect(dialog).not.toHaveTextContent(/裁决者|Decider/);
   });
 
   it('the how-it-works list explains the 1-5 scale', () => {
     renderRich();
     expect(screen.getByTestId('alt-tree-explain')).toHaveTextContent(/1-5/);
+  });
+});
+
+describe('AltResult trade-plan warnings row and shares column', () => {
+  const sharesDetail = {
+    base: 166,
+    formula: 'capital × risk_fraction ÷ (entry − stop_loss)',
+    inputs: { capital: 100000, risk_fraction: 0.01, entry: 96, stop_loss: 90 },
+    adjusted: 50,
+    reason: 'The planned order is far above the 5% liquidity limit.',
+    evidence: [],
+    links: [],
+    rejection: null,
+    final: 50,
+  };
+  const levelDetail = (base: number) => ({
+    base,
+    formula: 'f',
+    inputs: {},
+    adjusted: null,
+    reason: null,
+    evidence: [],
+    rejection: null,
+    final: base,
+  });
+  const planWarnings: TieredPlanWarnings = {
+    entry: [],
+    stop_loss: [
+      {
+        id: 'gap_atr',
+        values: { atr_open: 87, atr_loss: 450, atr_extra: 150, loss_at_stop: 300 },
+      },
+      {
+        id: 'gap_worst',
+        values: {
+          worst_day_1y: -0.1, worst_open: 86.4, worst_loss: 480,
+          worst_extra: 180, loss_at_stop: 300,
+        },
+      },
+    ],
+    take_profit: [{ id: 'reward_below_goal', values: { ratio: 1.67, goal: 2 } }],
+    shares: [],
+  };
+
+  function renderPlan() {
+    renderResult(
+      makeOutlookResult({
+        risk_card: null,
+        plan_warnings: planWarnings,
+        levels_detail: {
+          levels: {
+            entry: levelDetail(96),
+            stop_loss: levelDetail(90),
+            take_profit: levelDetail(108),
+            shares: sharesDetail,
+          },
+          warnings: [],
+        },
+      }),
+    );
+  }
+
+  it('renders none / counts per column; the count lists the warnings', () => {
+    renderPlan();
+    expect(screen.getByTestId('alt-plan-warnings-entry')).toHaveTextContent(/无|none/);
+    const stop = screen.getByTestId('alt-plan-warnings-stop_loss');
+    expect(stop).toHaveTextContent('2');
+    fireEvent.click(stop);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveTextContent('87'); // forced-sell price
+    expect(dialog).toHaveTextContent('450'); // total loss
+    expect(dialog).toHaveTextContent('150'); // extra vs planned
+    expect(dialog).toHaveTextContent('86.4'); // worst-day open
+  });
+
+  it('the target column carries the reward-below-goal warning', () => {
+    renderPlan();
+    const target = screen.getByTestId('alt-plan-warnings-take_profit');
+    expect(target).toHaveTextContent('1');
+    fireEvent.click(target);
+    expect(screen.getByRole('dialog')).toHaveTextContent('1.67');
+  });
+
+  it('the shares column shows computed and AI-adjusted counts', () => {
+    renderPlan();
+    expect(screen.getByTestId('alt-level-computed-shares')).toHaveTextContent('166');
+    const adjusted = screen.getByTestId('alt-level-adjusted-shares');
+    expect(adjusted).toHaveTextContent('50');
+    fireEvent.click(adjusted);
+    expect(screen.getByRole('dialog')).toHaveTextContent(/liquidity limit/);
+  });
+
+  it('the computed shares modal shows the arithmetic receipt', () => {
+    renderPlan();
+    fireEvent.click(screen.getByTestId('alt-level-computed-shares'));
+    const receipt = screen.getByTestId('alt-shares-receipt');
+    expect(receipt).toHaveTextContent('100000');
+    expect(receipt).toHaveTextContent('1%');
+    expect(receipt).toHaveTextContent('166');
   });
 });

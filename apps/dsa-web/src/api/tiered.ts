@@ -28,6 +28,10 @@ export type TieredLevels = {
 };
 
 // v2 slice 3 audit trail: per-level formula base + validated AI adjustment.
+// The plan-review redesign (2026-07-22) adds a "shares" entry in the same
+// shape (base = count from the computed levels; adjusted_inputs = the
+// final levels a mechanical recompute used) and `links` — inline
+// citations for the adjustment reason, in the debate-link shape.
 export type TieredLevelDetail = {
   base: number | null;
   formula: string | null;
@@ -35,6 +39,8 @@ export type TieredLevelDetail = {
   adjusted: number | null;
   reason: string | null;
   evidence: string[];
+  links?: TieredDebateLink[];
+  adjusted_inputs?: Record<string, number> | null;
   rejection: string | null;
   final: number | null;
 };
@@ -43,6 +49,15 @@ export type TieredLevelsDetail = {
   levels: Record<string, TieredLevelDetail>;
   warnings: string[];
 };
+
+// One structured trade-plan warning: numbers only, the frontend words it.
+export type TieredPlanWarning = {
+  id: string;
+  values: Record<string, unknown>;
+};
+
+// Per-column warning lists for the plan table's Warnings row.
+export type TieredPlanWarnings = Record<string, TieredPlanWarning[]>;
 
 export type TieredAnchoredReason = {
   claim: string;
@@ -428,7 +443,10 @@ export type TieredResult = {
   outlook?: TieredOutlook;
   action?: TieredAction;
   earnings?: TieredEarnings | null;
+  // Retired 2026-07-22 (kept so old stored runs still type-check).
   risk_card?: TieredRiskCardEntry[] | null;
+  // Plan review (2026-07-22): per-column trade-plan warnings.
+  plan_warnings?: TieredPlanWarnings | null;
 };
 
 export type TieredRunStatus = 'running' | 'done' | 'failed';

@@ -10,6 +10,7 @@ signal logger); what's under test is the glue:
 """
 from __future__ import annotations
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -21,7 +22,6 @@ from src.tiered_analysis.integration import (
     dsa_analysis_runner,
     run_tiered_analysis,
 )
-from src.tiered_analysis.risk_card import RISK_CARD_IDS
 from src.tiered_analysis.schema import Action, Outlook
 from src.tiered_analysis.providers.base import (
     Coverage,
@@ -393,15 +393,30 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
         self.assertEqual(outcome.sizing["ownership"], 0)
         self.assertIsNone(outcome.sizing["sell_shares"])
 
-    def test_risk_card_always_present_with_all_entries(self):
+    def test_plan_review_emits_structured_warnings_and_shares_detail(self):
         outcome, _, _, _ = self._run(
             sizing_overrides={"capital": 100000.0, "risk_fraction": 0.01})
-        self.assertEqual([e["id"] for e in outcome.risk_card],
-                         list(RISK_CARD_IDS))
-        by_id = {e["id"]: e for e in outcome.risk_card}
-        self.assertEqual(by_id["reward_risk"]["status"], "ok")
-        self.assertEqual(by_id["reward_risk"]["values"]["ratio"], 2.0)
-        self.assertEqual(by_id["reward_risk"]["values"]["goal"], 2.0)
+        self.assertIsNone(outcome.risk_card)  # retired 2026-07-22
+        pw = outcome.plan_warnings
+        self.assertEqual(sorted(pw), ["entry", "shares", "stop_loss", "take_profit"])
+        gap = pw["stop_loss"][0]
+        self.assertEqual(gap["id"], "gap_atr")
+        # open = stop 90 − 1×ATR 3 = 87; loss = 166 × (96 − 87) = 1494
+        self.assertAlmostEqual(gap["values"]["atr_open"], 87.0)
+        self.assertAlmostEqual(gap["values"]["atr_loss"], 1494.0)
+        self.assertEqual(pw["take_profit"], [])  # R:R exactly the 2× goal
+        shares_detail = outcome.report.levels_detail["levels"]["shares"]
+        self.assertEqual(shares_detail["base"], 166)
+        self.assertEqual(shares_detail["final"], 166)
+        self.assertIsNone(shares_detail["adjusted"])
+
+    def test_plan_review_absent_on_non_buy(self):
+        result = _fake_analysis_result()
+        result["decision_type"] = "hold"
+        outcome, _, _, _ = self._run(analysis_result=result)
+        self.assertIsNone(outcome.plan_warnings)
+        self.assertNotIn("shares",
+                         (outcome.report.levels_detail or {}).get("levels", {}))
 
     def test_earnings_detail_rides_along(self):
         outcome, _, _, _ = self._run()
@@ -412,6 +427,83 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
         outcome, _, _, _ = self._run(depth=2, debate_verdict=None)
         self.assertEqual(outcome.llm_usage["total"]["calls"], 0)  # all fakes
         self.assertIn("tier-1", outcome.llm_usage["scope"])
+
+
+class TestPlanReviewAdjustments(unittest.TestCase):
+    """The AI plan review through the full orchestrator, LLM faked."""
+
+    def _run_with_reply(self, reply: str):
+        from src.tiered_analysis.settings import SizingSettings
+
+        payload = {"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
+                   "swing_low_20": 94.0, "atr_14": 3.0,
+                   "avg_volume_20": 1000.0}
+        dim = DimensionResult(
+            dimension="technicals", kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL, payload=payload,
+        )
+        prompts = []
+
+        def summarizer(prompt):
+            prompts.append(prompt)
+            return reply
+
+        outcome = run_tiered_analysis(
+            "AAPL", market=Market.US,
+            providers=[_StubProvider("technicals", dim)],
+            analysis_runner=lambda symbol: _fake_analysis_result(),
+            signal_logger=lambda report, trace_id=None: None,
+            log_signal=False,
+            sizing_settings=SizingSettings(capital=100000.0,
+                                           risk_fraction=0.01),
+            earnings_lookup=_no_earnings,
+            plan_summarizer=summarizer,
+        )
+        return outcome, prompts
+
+    def test_ai_share_trim_with_cited_reason(self):
+        # 166 shares are 16.6% of the 1000-share ADV → liquidity flags →
+        # the fake AI trims to 50 with a verified link.
+        reply = json.dumps({"adjustments": [{
+            "target": "shares", "value": 50,
+            "reason": ("The planned order is far above the 5% liquidity "
+                       "limit against an average daily volume of 1000."),
+            "links": [{"ref": "technicals.avg_volume_20", "value": "1000"}],
+        }]})
+        outcome, prompts = self._run_with_reply(reply)
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("liquidity", prompts[0])
+        self.assertEqual(outcome.sizing["shares"], 50)
+        detail = outcome.report.levels_detail["levels"]["shares"]
+        self.assertEqual(detail["base"], 166)
+        self.assertEqual(detail["adjusted"], 50)
+        self.assertIn("liquidity limit", detail["reason"])
+        self.assertEqual(detail["links"][0]["ref"], "technicals.avg_volume_20")
+        # gap warning recomputes off the trimmed count: 50 × (96−87) = 450
+        gap = outcome.plan_warnings["stop_loss"][0]
+        self.assertAlmostEqual(gap["values"]["atr_loss"], 450.0)
+        self.assertEqual(outcome.llm_usage["stages"].get("plan_adjust", {})
+                         .get("calls", 0), 0)  # fake summarizer records none
+
+    def test_share_increase_rejected(self):
+        reply = json.dumps({"adjustments": [{
+            "target": "shares", "value": 500,
+            "reason": "More is better.", "links": [],
+        }]})
+        outcome, _ = self._run_with_reply(reply)
+        self.assertEqual(outcome.sizing["shares"], 166)
+        detail = outcome.report.levels_detail["levels"]["shares"]
+        self.assertIsNone(detail["adjusted"])
+        self.assertTrue(detail["rejection"])
+        self.assertTrue(any("shares rejected" in w
+                            for w in outcome.report.warnings))
+
+    def test_unparseable_reply_keeps_computed_plan(self):
+        outcome, prompts = self._run_with_reply("not json at all")
+        self.assertEqual(len(prompts), 2)  # one call + one fix round
+        self.assertEqual(outcome.sizing["shares"], 166)
+        self.assertTrue(any("plan-review reply problem" in w
+                            for w in outcome.report.warnings))
 
 
 class TestRegistryBarsLoaderWiring(unittest.TestCase):

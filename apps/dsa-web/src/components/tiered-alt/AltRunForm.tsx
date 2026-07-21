@@ -169,7 +169,14 @@ export const AltRunForm = ({
           inputMode="decimal"
           freeText
           validate={isRewardRatio}
-          onCommit={(value) => onReward(value === reward ? null : value)}
+          onCommit={(value) => {
+            // Below 1.5× the trade barely pays for its risk — warn (a
+            // popup), but honor the choice: the run still goes ahead.
+            if (value !== reward && Number(value) < 1.5) {
+              setNotice(t('tiered.altForm.lowRewardWarn', { value }));
+            }
+            onReward(value === reward ? null : value);
+          }}
         />
         <AltSelect
           label={

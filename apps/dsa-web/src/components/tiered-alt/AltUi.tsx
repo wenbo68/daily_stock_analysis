@@ -87,7 +87,10 @@ export const AltModal = ({ isOpen, title, onClose, children, panelClassName }: A
         )}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        {/* mb-2 matches MODAL_BODY's gap-2, so the title-to-body gap
+            equals every other gap in the popup (owner report 2026-07-21:
+            the space above the divider read wider than below it). */}
+        <div className="mb-2 flex items-start justify-between gap-3">
           <h3 className="font-semibold text-gray-300">{title}</h3>
           <button
             type="button"

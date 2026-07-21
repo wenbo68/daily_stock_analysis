@@ -784,7 +784,7 @@ describe('AltResult', () => {
       .map((el) => el.getAttribute('data-testid') ?? '')
       .filter(
         (id) =>
-          ['alt-tier1', 'alt-tier2', 'alt-tier3', 'alt-shares-computation'].includes(id) ||
+          ['alt-tier1', 'alt-tier2', 'alt-tier3'].includes(id) ||
           id === 'alt-dimension-technicals',
       );
     expect(ids).toEqual([
@@ -792,14 +792,14 @@ describe('AltResult', () => {
       'alt-tier1',
       'alt-tier2',
       'alt-tier3',
-      'alt-shares-computation',
     ]);
     expect(screen.getByText(/四维数据报告|Four-dimension reports/)).toBeInTheDocument();
     // Card titles carry no tier prefix (owner decision 2026-07-21).
     expect(screen.getByText(/^(初步分析|Preliminary analysis)$/)).toBeInTheDocument();
     expect(screen.getByText(/^(深度分析|Deep analysis)$/)).toBeInTheDocument();
     expect(screen.getByText(/层级 3：风险辩论|Tier 3: risk debate/)).toBeInTheDocument();
-    expect(screen.getByText(/股数计算|Shares computation/)).toBeInTheDocument();
+    // The shares-computation card is retired (2026-07-22).
+    expect(screen.queryByText(/股数计算|Shares computation/)).not.toBeInTheDocument();
   });
 
   it('shows the tier-1 levels as a computed/adjusted table', () => {
@@ -827,10 +827,10 @@ describe('AltResult', () => {
     expect(within(dialog).getByRole('heading')).toHaveTextContent(/(止损：公式|Stop loss: formula)/);
     // the formula in words (variables without underscores), plugged in, result
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
-      'ideal entry − 2 × atr 14',
+      'entry − 2 × atr 14',
     );
-    // ideal entry came from the computed entry cell, atr 14 from technicals
-    expect(within(dialog).getByRole('button', { name: 'ideal entry' })).toHaveTextContent('95');
+    // the entry came from the computed entry cell, atr 14 from technicals
+    expect(within(dialog).getByRole('button', { name: 'entry' })).toHaveTextContent('95');
     expect(within(dialog).getByRole('button', { name: 'atr 14' })).toHaveTextContent('2.50');
     expect(within(dialog).getByText('= 90')).toBeInTheDocument();
   });
@@ -856,7 +856,7 @@ describe('AltResult', () => {
     fireEvent.click(screen.getByTestId('alt-level-computed-take_profit'));
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
-      'min(ideal entry + 2 × (ideal entry − stop loss), nearest of (swing high 20, 52w high))',
+      'min(entry + 2 × (entry − stop loss), nearest of (swing high 20, 52w high))',
     );
     expect(within(dialog).queryByText(/overhead resistance/)).not.toBeInTheDocument();
     // resistance values link to their technicals rows
@@ -875,53 +875,10 @@ describe('AltResult', () => {
     expect(within(dialog).queryByText(/^(输入项|Inputs)$/)).not.toBeInTheDocument();
   });
 
-  it('expands the shares computation to numbers that all exist in the report', () => {
+  it('renders no shares-computation card (retired 2026-07-22)', () => {
     renderResult(makeDeepResult());
-    const formula = screen.getByTestId('alt-shares-formula');
-    expect(formula.textContent).toBe('= 100000 × 1% × 0.5 / (96 − 90)');
-    // each number links back to where it appears within this run entry
-    expect(within(formula).getByRole('button', { name: '100000' })).toBeInTheDocument();
-    expect(within(formula).getByRole('button', { name: '1%' })).toBeInTheDocument();
-    expect(within(formula).getByRole('button', { name: '0.5' })).toBeInTheDocument();
-    expect(within(formula).getByRole('button', { name: '96' })).toBeInTheDocument();
-    expect(within(formula).getByRole('button', { name: '90' })).toBeInTheDocument();
-    expect(screen.getByText(/= 83/)).toBeInTheDocument();
-  });
-
-  it('shows the refusal reason instead of a formula when nothing was computed', () => {
-    const deep = makeDeepResult();
-    renderResult({
-      ...deep,
-      sizing: {
-        ...deep.sizing!,
-        shares: null,
-        shares_before_multiplier: null,
-        risk_multiplier: null,
-        reason_code: 'not_a_buy',
-        refusal_reason: "Sizing only applies when opening a position (direction is 'hold', not 'buy').",
-      },
-    });
+    expect(screen.queryByTestId('alt-shares-computation')).not.toBeInTheDocument();
     expect(screen.queryByTestId('alt-shares-formula')).not.toBeInTheDocument();
-    expect(screen.getByTestId('alt-shares-computation').textContent).not.toBe('');
-  });
-
-  it('sizing-off message names only the missing input, not both', () => {
-    const deep = makeDeepResult();
-    renderResult({
-      ...deep,
-      sizing: {
-        ...deep.sizing!,
-        shares: null,
-        shares_before_multiplier: null,
-        risk_multiplier: null,
-        reason_code: 'sizing_off',
-        refusal_reason: 'Sizing is off: risk per trade was not provided.',
-        inputs: { ...deep.sizing!.inputs, risk_fraction: null },
-      },
-    });
-    const card = screen.getByTestId('alt-shares-computation');
-    expect(card).toHaveTextContent(/(未提供单笔风险比例|risk per trade was not provided)/);
-    expect(card).not.toHaveTextContent(/capital|本金/);
   });
 
   it('renders a scored (v3) debate: corrected cases, scored turns, header 6/10', () => {
@@ -1387,8 +1344,11 @@ describe('AltResult v9 evidence vote', () => {
     expect(screen.queryByText(/^counted$|^excluded$/)).not.toBeInTheDocument();
   });
 
-  it('shows the flat formula with a colon and no verdict-bands block', () => {
+  it('opens the flat formula from the header score; no verdict-bands block', () => {
     renderTreeV9();
+    // The arithmetic no longer sits inside the transcript fold.
+    expect(screen.queryByTestId('alt-tree-scores')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('alt-debate-score'));
     const scores = screen.getByTestId('alt-tree-scores');
     expect(scores).toHaveTextContent(/final outlook score: |最终展望分: /);
     expect(screen.getByTestId('alt-tree-final-formula')).toHaveTextContent('= 10 × 1 / 2');
@@ -1594,58 +1554,21 @@ describe('AltResult format-2 risk vote', () => {
 });
 
 describe('AltResult sell sizing from ownership', () => {
-  function makeSellResult(withMultiplier: boolean): TieredResult {
+  it('renders no shares card on sell runs either (retired 2026-07-22)', () => {
     const deep = makeDeepResult();
-    return {
+    renderResult({
       ...deep,
       direction: 'sell',
       sizing: {
         ...deep.sizing!,
         shares: null,
-        shares_before_multiplier: null,
-        risk_multiplier: withMultiplier ? 0.5 : null,
         reason_code: 'not_a_buy',
         refusal_reason: 'not a buy',
         ownership: 300,
-        sell_shares: withMultiplier ? 150 : 300,
-        sell_shares_before_multiplier: withMultiplier ? 300 : null,
-      },
-    };
-  }
-
-  it('a sell verdict on held shares shows the exit arithmetic instead of a refusal', () => {
-    renderResult(makeSellResult(true));
-    const card = screen.getByTestId('alt-shares-computation');
-    expect(card).toHaveTextContent(/held shares|持有股数/);
-    expect(screen.getByTestId('alt-sell-formula')).toHaveTextContent('= 300 × 0.5');
-    expect(card).toHaveTextContent(/= (sell 150 shares|卖出 150 股)/);
-    expect(card).not.toHaveTextContent(/not a buy/);
-  });
-
-  it('without a tier-3 multiplier the full holding is the exit size', () => {
-    renderResult(makeSellResult(false));
-    expect(screen.getByTestId('alt-sell-formula')).toHaveTextContent('= 300');
-    expect(screen.getByTestId('alt-shares-computation')).toHaveTextContent(
-      /= (sell 300 shares|卖出 300 股)/,
-    );
-  });
-
-  it('a sell with no ownership keeps the plain refusal message', () => {
-    const deep = makeDeepResult();
-    renderResult({
-      ...deep,
-      sizing: {
-        ...deep.sizing!,
-        shares: null,
-        reason_code: 'not_a_buy',
-        refusal_reason: 'not a buy',
-        ownership: 0,
-        sell_shares: null,
-        sell_shares_before_multiplier: null,
+        sell_shares: 300,
       },
     });
-    expect(screen.getByTestId('alt-shares-computation')).toHaveTextContent(
-      /不是「买入」|not a buy|not 'buy'|没有要开的仓位|no position to open/i,
-    );
+    expect(screen.queryByTestId('alt-shares-computation')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('alt-sell-formula')).not.toBeInTheDocument();
   });
 });

@@ -1,38 +1,29 @@
-import { type ComponentProps, type ReactNode } from 'react';
+import { useState, type ComponentProps, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   TieredAction,
   TieredAnchoredReason,
   TieredCitation,
-  TieredEarnings,
   TieredResult,
-  TieredSizing,
   TieredTierSection,
 } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
-import { flashElement, formatPrice, sentimentCitations } from '../tiered/termHelpers';
+import { formatPrice, sentimentCitations } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
-import {
-  adjustedCellId,
-  computedCellId,
-  directionOutlook,
-  plainNumber,
-  riskPctText,
-} from './altFormat';
+import { directionOutlook } from './altFormat';
 import { ALT_LINK, OUTLOOK_TEXT } from './altStyles';
-import { AltRiskCard } from './AltRiskCard';
 import {
   AltCard,
   AltEvidenceRefs,
   AltFold,
+  AltModal,
   AltNotesButton,
   AltSectionLabel,
-  FVar,
 } from './AltUi';
 import { AltDebateScoring } from './AltDebateScoring';
-import { AltDebateTree } from './AltDebateTree';
+import { AltDebateTree, DebateScores } from './AltDebateTree';
 import { AltRiskTree } from './AltRiskTree';
 import { AltDimensions } from './AltDimensions';
 import { AltLevels } from './AltLevels';
@@ -61,188 +52,6 @@ const AltBlock = ({
     {children}
   </section>
 );
-
-// ---------- shares computation ----------
-
-const REASON_KEYS: Record<string, UiTextKey> = {
-  sizing_off: 'tiered.sizing.reason.sizing_off',
-  not_a_buy: 'tiered.sizing.reason.not_a_buy',
-  no_entry: 'tiered.sizing.reason.no_entry',
-  no_stop: 'tiered.sizing.reason.no_stop',
-  stop_not_below_entry: 'tiered.sizing.reason.stop_not_below_entry',
-  invalid_input: 'tiered.sizing.reason.invalid_input',
-  too_small: 'tiered.sizing.reason.too_small',
-};
-
-// A formula number that scroll-flashes the element it came from; plain
-// text when the source isn't on screen (no task row to point at).
-const FormulaLink = ({ targetId, children }: { targetId: string | null; children: ReactNode }) =>
-  targetId ? (
-    <button
-      type="button"
-      className={cn('cursor-pointer tabular-nums', ALT_LINK)}
-      onClick={() => flashElement(targetId)}
-    >
-      {children}
-    </button>
-  ) : (
-    <span className="tabular-nums text-gray-300">{children}</span>
-  );
-
-interface AltSharesComputationProps {
-  sizing: TieredSizing;
-  taskId?: string;
-  /** Where the entry / stop-loss numbers already appear in this report. */
-  entryTargetId: string | null;
-  stopTargetId: string | null;
-}
-
-// Just the arithmetic, three lines: the formula in words, the same formula
-// with this run's numbers (each number links to where it came from), and
-// the share count it produces. The denominator is spelled out as
-// (entry) − (stop loss) so every number in it already exists somewhere in
-// this report. Runs where no count could be computed show the refusal
-// reason instead.
-const AltSharesComputation = ({
-  sizing,
-  taskId,
-  entryTargetId,
-  stopTargetId,
-}: AltSharesComputationProps) => {
-  const { t } = useUiLanguage();
-
-  const capital = sizing.inputs.capital;
-  const riskFraction = sizing.inputs.risk_fraction;
-  const entry = sizing.inputs.entry;
-  const stopLoss = sizing.inputs.stop_loss;
-  // Multiplier died with tier 3 — new runs don't store the key at all.
-  const multiplier = sizing.risk_multiplier ?? null;
-  const feeFraction = sizing.inputs.fee_fraction ?? 0;
-
-  // A sell verdict on a held position prints the exit size instead of a
-  // buy refusal: held shares × the tier-3 multiplier (no multiplier —
-  // depth < 3 — means the full holding goes).
-  if (sizing.sell_shares != null && sizing.ownership) {
-    return (
-      <AltCard testId="alt-shares-computation">
-        <div className="flex flex-col gap-2 text-sm">
-          <p className="text-gray-400">
-            <FVar>{t('tiered.alt.f.owned')}</FVar>
-            {multiplier !== null ? (
-              <>
-                {' × '}
-                <FVar>{t('tiered.alt.f.multiplier')}</FVar>
-              </>
-            ) : null}
-          </p>
-          <p className="text-gray-400" data-testid="alt-sell-formula">
-            {'= '}
-            <span className="tabular-nums text-gray-300">{sizing.ownership}</span>
-            {multiplier !== null ? (
-              <>
-                {' × '}
-                <FormulaLink targetId="alt-risk-multiplier">{multiplier}</FormulaLink>
-              </>
-            ) : null}
-          </p>
-          <p className="font-semibold text-gray-300">
-            = {t('tiered.sizing.sellShares', { value: sizing.sell_shares })}
-          </p>
-        </div>
-      </AltCard>
-    );
-  }
-
-  if (
-    sizing.shares === null ||
-    capital === null ||
-    riskFraction === null ||
-    entry === null ||
-    stopLoss === null
-  ) {
-    // "Sizing is off" must name only the input that is actually missing —
-    // a run can carry capital but no risk per trade (or the reverse).
-    const reasonKey =
-      sizing.reason_code === 'sizing_off' && capital !== null
-        ? 'tiered.sizing.reason.sizing_off_risk'
-        : sizing.reason_code === 'sizing_off' && riskFraction !== null
-          ? 'tiered.sizing.reason.sizing_off_capital'
-          : sizing.reason_code
-            ? REASON_KEYS[sizing.reason_code]
-            : undefined;
-    return (
-      <AltCard testId="alt-shares-computation">
-        <p className="text-sm text-amber-300">
-          {reasonKey ? t(reasonKey) : (sizing.refusal_reason ?? t('tiered.sizing.notComputed'))}
-        </p>
-      </AltCard>
-    );
-  }
-
-  // Round-trip fee rate; 0 for this user's runs, but when set it is part
-  // of the loss per share, so the formula must show it.
-  const feeTerm =
-    feeFraction > 0 ? (
-      <>
-        {' + '}
-        <FormulaLink targetId={entryTargetId}>{formatPrice(entry)}</FormulaLink>
-        {' × '}
-        <span className="tabular-nums text-gray-300">{riskPctText(feeFraction)}%</span>
-      </>
-    ) : null;
-
-  return (
-    <AltCard testId="alt-shares-computation">
-      <div className="flex flex-col gap-2 text-sm">
-        {/* Variables are italic words; parentheses only where the math
-            needs them (grouping the loss per share). */}
-        <p className="text-gray-400">
-          <FVar>{t('tiered.alt.f.capital')}</FVar> × <FVar>{t('tiered.alt.f.risk')}</FVar>
-          {multiplier !== null ? (
-            <>
-              {' × '}
-              <FVar>{t('tiered.alt.f.multiplier')}</FVar>
-            </>
-          ) : null}
-          {' / ('}
-          <FVar>{t('tiered.alt.f.entry')}</FVar> − <FVar>{t('tiered.alt.f.stop')}</FVar>
-          {feeFraction > 0 ? (
-            <>
-              {' + '}
-              <FVar>{t('tiered.alt.f.entry')}</FVar> × <FVar>{t('tiered.alt.f.fee')}</FVar>
-            </>
-          ) : null}
-          {')'}
-        </p>
-        <p className="text-gray-400" data-testid="alt-shares-formula">
-          {'= '}
-          <FormulaLink targetId={taskId ? `alt-run-${taskId}-capital` : null}>
-            {plainNumber(capital)}
-          </FormulaLink>
-          {' × '}
-          <FormulaLink targetId={taskId ? `alt-run-${taskId}-risk` : null}>
-            {riskPctText(riskFraction)}%
-          </FormulaLink>
-          {multiplier !== null ? (
-            <>
-              {' × '}
-              <FormulaLink targetId="alt-risk-multiplier">{multiplier}</FormulaLink>
-            </>
-          ) : null}
-          {' / ('}
-          <FormulaLink targetId={entryTargetId}>{formatPrice(entry)}</FormulaLink>
-          {' − '}
-          <FormulaLink targetId={stopTargetId}>{formatPrice(stopLoss)}</FormulaLink>
-          {feeTerm}
-          {')'}
-        </p>
-        <p className="font-semibold text-gray-300">
-          = {t('tiered.altHistory.shares', { value: sizing.shares })}
-        </p>
-      </div>
-    </AltCard>
-  );
-};
 
 // ---------- tier cards ----------
 
@@ -329,13 +138,14 @@ interface AltConclusionProps {
 }
 
 // The run's bottom line, above everything else: the impersonal outlook,
-// the personal action code derived from outlook × your ownership, the
-// warning-only earnings note, and the previous-day staleness note.
+// the personal action code derived from outlook × your ownership, and
+// the previous-day staleness note. (The old earnings warning is gone —
+// the date now lives on the fundamentals card, and the deep analysis
+// weighs the event risk itself.)
 const AltConclusion = ({ result, runDate }: AltConclusionProps) => {
   const { t } = useUiLanguage();
   const outlook = result.outlook ?? 'unknown';
   const action = result.action ?? 'unknown';
-  const earnings: TieredEarnings | null = result.earnings ?? null;
   const stale = runDate ? isFromPreviousDay(runDate) : false;
   return (
     <AltCard testId="alt-conclusion">
@@ -349,14 +159,6 @@ const AltConclusion = ({ result, runDate }: AltConclusionProps) => {
           {t(`tiered.action.${action}` as UiTextKey)}
         </AltFact>
       </div>
-      {earnings?.is_near && earnings.days_until != null ? (
-        <p className="mt-2 text-xs text-amber-300" data-testid="alt-earnings-warning">
-          {t('tiered.alt.earningsWarning', {
-            days: earnings.days_until,
-            date: earnings.next_date ?? '—',
-          })}
-        </p>
-      ) : null}
       {stale ? (
         <p className="mt-2 text-xs text-amber-300" data-testid="alt-stale-note">
           {t('tiered.alt.staleNote')}
@@ -371,26 +173,32 @@ interface AltTierOneProps {
   citations: TieredCitation[];
   /** Undefined on old stored runs → the full levels table (legacy). */
   action?: TieredAction;
+  /** The run's task id — the shares receipt links the run-row inputs. */
+  taskId?: string;
 }
 
 // A resistance-capped target that misses the user's chosen reward-to-risk
-// ratio arrives as a backend warning; surface it ON the plan, not only in
-// the notes popup.
+// ratio arrives as a backend warning; on old stored runs (no structured
+// plan warnings) it is surfaced ON the plan, not only in the notes popup.
+// Plan-review runs carry it in the warnings row instead.
 const REWARD_BELOW_GOAL =
   /^reward below goal: .*reward-to-risk at ([\d.]+), below your ([\d.]+)/;
 
 // The conditional plan display (owner decision): which levels show
 // depends on the action. Old runs (no action) keep the full table.
-const PlanBody = ({ result, citations, action }: AltTierOneProps) => {
+const PlanBody = ({ result, citations, action, taskId }: AltTierOneProps) => {
   const { t } = useUiLanguage();
   const plan =
     action === undefined || action === 'enter' || action === 'unknown'
       ? 'full'
       : action;
   if (plan === 'full') {
-    const rewardMiss = (result.warnings ?? [])
-      .map((warning) => REWARD_BELOW_GOAL.exec(warning))
-      .find((match) => match !== null);
+    const planWarnings = result.plan_warnings ?? null;
+    const rewardMiss = planWarnings
+      ? null
+      : (result.warnings ?? [])
+          .map((warning) => REWARD_BELOW_GOAL.exec(warning))
+          .find((match) => match !== null);
     return (
       <div className="flex flex-col gap-2">
         {rewardMiss ? (
@@ -405,6 +213,8 @@ const PlanBody = ({ result, citations, action }: AltTierOneProps) => {
           levels={result.levels}
           levelsDetail={result.levels_detail}
           citations={citations}
+          planWarnings={planWarnings}
+          taskId={taskId}
         />
       </div>
     );
@@ -437,6 +247,8 @@ const PlanBody = ({ result, citations, action }: AltTierOneProps) => {
   );
 };
 
+// Legacy layout only (old stored runs without an outlook): the tier-1
+// card still carries the plan inside it.
 const AltTierOne = ({ result, citations, action }: AltTierOneProps) => (
   <AltCard testId="alt-tier1">
     {/* No score here: tier 1's stored score is the analyzer's bullishness
@@ -450,17 +262,30 @@ const AltTierOne = ({ result, citations, action }: AltTierOneProps) => (
   </AltCard>
 );
 
-// Depth-2 runs skip the tier-1 one-blob verdict entirely, so the tier-1
-// card is not shown — but the formula-computed plan still exists (and
-// the shares arithmetic links into its numbers), so it gets a card of
-// its own, with the run's data notes pinned top-right like a tier
-// header would.
-const AltPlanCard = ({ result, citations, action }: AltTierOneProps) => (
-  <AltCard testId="alt-plan">
-    <div className="mb-3 flex items-center justify-end">
+// Depth-1 outlook runs: the preliminary-analysis card is the verdict
+// alone (header + the analyzer's narrative); the plan sits in its own
+// card below it, matching the depth-2 layout.
+const AltTierOneVerdict = ({ result }: { result: TieredResult }) => (
+  <AltCard testId="alt-tier1">
+    <TierHeader
+      section={{ direction: result.direction, coverage: result.coverage }}
+      notes={result.warnings}
+    />
+    {result.narrative ? (
+      <p className="text-sm leading-relaxed">{result.narrative}</p>
+    ) : null}
+  </AltCard>
+);
+
+// The trade plan in its own card, under the analysis (owner order,
+// 2026-07-22). The data-notes mark floats in the card's top-right corner
+// so it never occupies a line of its own.
+const AltPlanCard = ({ result, citations, action, taskId }: AltTierOneProps) => (
+  <AltCard testId="alt-plan" className="relative">
+    <span className="absolute right-5 top-5">
       <AltNotesButton notes={result.warnings ?? []} coverage={result.coverage} />
-    </div>
-    <PlanBody result={result} citations={citations} action={action} />
+    </span>
+    <PlanBody result={result} citations={citations} action={action} taskId={taskId} />
   </AltCard>
 );
 
@@ -517,11 +342,12 @@ const TURN_KIND_KEYS: Record<string, UiTextKey> = {
 
 const AltDebate = ({ section, citations }: AltTierSectionProps) => {
   const { t } = useUiLanguage();
+  const [scoreOpen, setScoreOpen] = useState(false);
   const detail = section.debate_detail;
   const verdict = detail?.verdict ?? null;
   // v5/v6 runs carry the defender/attacker/judge tree and render it
-  // whole — no scoring foldable, no bull/bear columns; the arithmetic
-  // lives in the tree's own scores block.
+  // whole — no scoring foldable, no bull/bear columns; the score's
+  // arithmetic opens from the header score itself.
   if (
     detail?.format != null &&
     detail.format >= 5 &&
@@ -536,7 +362,16 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
           side={
             verdict?.final_score != null ? (
               <AltFact label={t('tiered.score')} helpKey="tiered.help.debateScore">
-                <span className="tabular-nums">{verdict.final_score.toFixed(2)}/10</span>
+                {/* Clicking the score opens its arithmetic (owner
+                    decision 2026-07-22 — moved out of the fold). */}
+                <button
+                  type="button"
+                  data-testid="alt-debate-score"
+                  className={cn('cursor-pointer tabular-nums', ALT_LINK)}
+                  onClick={() => setScoreOpen(true)}
+                >
+                  {verdict.final_score.toFixed(2)}/10
+                </button>
               </AltFact>
             ) : null
           }
@@ -548,6 +383,14 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
           <p className="text-sm text-amber-300">{t('tiered.debate.noVerdict')}</p>
         ) : null}
         <AltDebateTree detail={detail} />
+        <AltModal
+          isOpen={scoreOpen}
+          title={t('tiered.tree.scores')}
+          onClose={() => setScoreOpen(false)}
+          panelClassName="w-fit min-w-72 max-w-[95vw]"
+        >
+          <DebateScores detail={detail} />
+        </AltModal>
       </AltCard>
     );
   }
@@ -775,29 +618,14 @@ interface AltResultProps {
   runDate?: Date | null;
 }
 
-// The same fixed skeleton at every depth, each block titled above its
-// card: the four dimension reports (the raw material) → tier 1 → tier 2 →
-// tier 3 → the shares computation, so the reading order matches the order
-// things actually happened in.
+// The fixed skeleton (owner order, 2026-07-22): conclusion → the four
+// dimension reports → the analysis card (preliminary at depth 1, deep at
+// depth 2) → the trade plan (levels + shares + warnings). Old stored
+// runs without an outlook keep their legacy layout.
 export const AltResult = ({ result, taskId, runDate }: AltResultProps) => {
   const { t } = useUiLanguage();
   const citations = sentimentCitations(result.dimensions);
   const usage = result.llm_usage ?? null;
-
-  // Where the sizing formula's entry / stop-loss numbers already appear:
-  // the levels table's adjusted cell when the AI moved the level, its
-  // computed cell otherwise — except a tier-3 tightened stop, which is the
-  // number next to the tier-3 stop advice.
-  const levelTargetId = (key: 'entry' | 'stop_loss'): string | null => {
-    const detail = result.levels_detail?.levels?.[key];
-    if (!detail || detail.base === null) {
-      return null;
-    }
-    return detail.adjusted !== null ? adjustedCellId(key) : computedCellId(key);
-  };
-  const tightenedStop = result.tier3?.risk_detail?.verdict?.tightened_stop ?? null;
-  const entryTargetId = levelTargetId('entry');
-  const stopTargetId = tightenedStop !== null ? 'alt-tightened-stop' : levelTargetId('stop_loss');
 
   return (
     <div className="flex flex-col gap-6">
@@ -811,42 +639,37 @@ export const AltResult = ({ result, taskId, runDate }: AltResultProps) => {
       <AltBlock title={t('tiered.alt.dimensionsTitle')}>
         <AltDimensions dimensions={result.dimensions} />
       </AltBlock>
-      {result.tier2 && result.outlook ? (
-        // Deep-analysis (depth 2) runs skip the tier-1 verdict, so no
-        // tier-1 card at all — just the formula plan in its place. Old
-        // stored depth-2 runs (no outlook) had a real tier-1 verdict and
-        // keep their card.
-        <AltBlock title={t('tiered.alt.planTitle')} helpKey="tiered.help.plan">
-          <AltPlanCard result={result} citations={citations} action={result.action} />
+      {result.outlook && !result.tier2 ? (
+        // Depth-1 outlook runs: the verdict card first, the plan below.
+        <AltBlock title={t('tiered.alt.tier1Title')} helpKey="tiered.help.tier1">
+          <AltTierOneVerdict result={result} />
         </AltBlock>
-      ) : (
+      ) : null}
+      {!result.outlook ? (
+        // Legacy runs (any depth) keep the combined verdict + plan card.
         <AltBlock title={t('tiered.alt.tier1Title')} helpKey="tiered.help.tier1">
           <AltTierOne result={result} citations={citations} action={result.action} />
         </AltBlock>
-      )}
+      ) : null}
       {result.tier2 ? (
         <AltBlock title={t('tiered.alt.tier2Title')} helpKey="tiered.help.debate">
           <AltDebate section={result.tier2} citations={citations} />
         </AltBlock>
       ) : null}
-      {result.tier3 ? (
-        <AltBlock title={t('tiered.alt.tier3Title')} helpKey="tiered.help.risk">
-          <AltRisk section={result.tier3} citations={citations} />
-        </AltBlock>
-      ) : null}
-      {result.sizing ? (
-        <AltBlock title={t('tiered.alt.sharesTitle')} helpKey="tiered.help.sizing">
-          <AltSharesComputation
-            sizing={result.sizing}
+      {result.outlook ? (
+        // The trade plan sits under the analysis that judged it.
+        <AltBlock title={t('tiered.alt.planTitle')} helpKey="tiered.help.plan">
+          <AltPlanCard
+            result={result}
+            citations={citations}
+            action={result.action}
             taskId={taskId}
-            entryTargetId={entryTargetId}
-            stopTargetId={stopTargetId}
           />
         </AltBlock>
       ) : null}
-      {result.risk_card && result.risk_card.length > 0 ? (
-        <AltBlock title={t('tiered.alt.riskCardTitle')} helpKey="tiered.help.riskCard">
-          <AltRiskCard entries={result.risk_card} />
+      {result.tier3 ? (
+        <AltBlock title={t('tiered.alt.tier3Title')} helpKey="tiered.help.risk">
+          <AltRisk section={result.tier3} citations={citations} />
         </AltBlock>
       ) : null}
       <div className="flex flex-col gap-1 text-xs">

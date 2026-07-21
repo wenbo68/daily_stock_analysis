@@ -21,7 +21,9 @@ from .stops import DEFAULT_ATR_MULTIPLIER, suggest_atr_stop
 #: the accepted downside (the run form's reward filter overrides this).
 REWARD_RISK_MULTIPLE = 2.0
 
-#: An adjusted set may not degrade reward-to-risk below this floor.
+#: Below this reward-to-risk the plan is flagged loudly — but still issued
+#: (owner decision 2026-07-22: always give a plan; the warning row carries
+#: the judgment, the user decides).
 MIN_REWARD_RISK = 1.5
 
 #: An adjustment may move a level at most one typical daily swing from its
@@ -95,13 +97,11 @@ def compute_base_levels(
     """The base levels; missing inputs degrade loudly, never silently.
 
     ``reward_risk`` is the user's chosen target multiple (target = entry
-    + reward_risk × risk). Gates (each voids the whole buy plan with an
-    explicit warning):
-    - trend gate: no pullback-buy plan in a downtrend (close ≤ sma_60);
-    - room gate: overhead resistance may cap the target, and a capped
-      target that drops reward-to-risk below MIN_REWARD_RISK means the
-      trade no longer pays for its risk. A capped target that clears the
-      floor but misses the user's chosen ratio draws a warning instead.
+    + reward_risk × risk). The trend gate (close ≤ sma_60 → downtrend →
+    no pullback-buy plan) still voids the plan; a resistance-capped
+    target that misses the user's chosen ratio draws a warning instead
+    (owner decision 2026-07-22: the old 1.5× room gate no longer voids
+    the plan — the warning carries the judgment, the user decides).
     """
     warnings: List[str] = []
 
@@ -179,15 +179,6 @@ def compute_base_levels(
             target_value = nearest_res
             risk = entry_value - stop_value
             actual_ratio = (target_value - entry_value) / risk if risk > 0 else 0.0
-            if actual_ratio < MIN_REWARD_RISK:
-                return BaseLevels(
-                    warnings=warnings
-                    + [
-                        f"room gate: overhead resistance at {nearest_res:g} caps "
-                        f"reward-to-risk at {actual_ratio:.2f} (< {MIN_REWARD_RISK:g}) "
-                        "— not enough room above to pay for the risk, so no buy plan"
-                    ]
-                )
             if actual_ratio < reward_risk:
                 warnings.append(
                     f"reward below goal: overhead resistance at {nearest_res:g} "
@@ -273,6 +264,9 @@ class AdjustmentProposal:
     value: float
     reason: str
     evidence: Tuple[str, ...] = ()
+    #: Inline citations for values stated in the reason — the debate-link
+    #: shape ({ref, value}) so the UI underlines and jumps the same way.
+    links: Tuple[Dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -283,6 +277,7 @@ class LevelDecision:
     adjusted: Optional[float] = None
     reason: Optional[str] = None
     evidence: Tuple[str, ...] = ()
+    links: Tuple[Dict[str, Any], ...] = ()
     rejection: Optional[str] = None
 
     @property
@@ -299,20 +294,14 @@ def _ordering_problem(finals: Dict[str, Optional[float]]) -> Optional[str]:
     target = finals["take_profit"]
 
     pairs = [
-        (stop, entry, "stop-loss must stay below the ideal entry"),
-        (entry, target, "ideal entry must stay below the target"),
+        (stop, entry, "stop-loss must stay below the entry"),
+        (entry, target, "entry must stay below the target"),
     ]
     for low, high, message in pairs:
         if low is not None and high is not None and low >= high:
             return f"levels out of order: {message}"
-
-    if entry is not None and stop is not None and target is not None:
-        risk = entry - stop
-        if risk > 0 and (target - entry) / risk < MIN_REWARD_RISK:
-            return (
-                f"reward-to-risk would fall below {MIN_REWARD_RISK} — the trade "
-                "would no longer pay for its risk"
-            )
+    # No reward-to-risk floor here (owner decision 2026-07-22): a thin
+    # ratio is a warning on the plan, never a reason to revert a level.
     return None
 
 
@@ -373,6 +362,7 @@ def apply_adjustments(
             adjusted=proposal.value,
             reason=proposal.reason,
             evidence=proposal.evidence,
+            links=proposal.links,
         )
         finals = {
             key: (candidate.final if key == proposal.level else decisions[key].final)
@@ -405,6 +395,7 @@ def decisions_to_detail(
             "adjusted": decision.adjusted,
             "reason": decision.reason,
             "evidence": list(decision.evidence),
+            "links": [dict(link) for link in decision.links],
             "rejection": decision.rejection,
             "final": decision.final,
         }

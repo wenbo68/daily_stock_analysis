@@ -812,7 +812,7 @@ const zh = {
   'tiered.coverage.partial': '部分',
   'tiered.coverage.unavailable': '不可用',
   'tiered.levels': '价格参考位',
-  'tiered.levels.entry': '理想买入',
+  'tiered.levels.entry': '买入',
   'tiered.levels.secondaryEntry': '次优买入',
   'tiered.levels.stopLoss': '止损',
   'tiered.levels.takeProfit': '目标',
@@ -836,6 +836,7 @@ const zh = {
   'tiered.group.volume': '成交量',
   'tiered.group.meta': '数据与评分',
   'tiered.group.reportInfo': '报告信息',
+  'tiered.group.earnings': '财报',
   'tiered.group.other': '其他',
   'tiered.dataSources': '数据来源',
   'tiered.help.judgeScore': '辩论裁判对自己结论的把握，满分 10 分。\n越高越有把握。',
@@ -1131,11 +1132,13 @@ const zh = {
   'tiered.altForm.tierOption1': '1：初步分析',
   'tiered.altForm.tierOption2': '2：深度分析',
   'tiered.altForm.tickerPh': '输入代码…',
-  'tiered.altForm.tierPh': '选择层级…',
+  'tiered.altForm.tierPh': '输入层级…',
   'tiered.altForm.capitalPh': '输入本金…',
   'tiered.altForm.riskPh': '输入风险…',
-  'tiered.altForm.reward': '盈亏比: 倍数',
+  'tiered.altForm.reward': '盈亏比: x',
   'tiered.altForm.rewardPh': '输入盈亏比…',
+  'tiered.altForm.lowRewardWarn':
+    '盈亏比低于 1.5 意味着交易几乎不足以覆盖风险——常见要求至少 1.5×。本次运行仍会按你的 {value}× 目标进行。',
   'tiered.help.reward':
     '你要求这份计划的盈亏比（潜在盈利是风险的几倍）。必填，默认 2。\n目标价 = 入场价 + 盈亏比 × 风险；若上方阻力把目标压到低于你要求的倍数，计划会附警告（低于 1.5 的硬下限则直接不给计划）。',
   'tiered.pill.ticker': '代码: {value}',
@@ -1200,6 +1203,14 @@ const zh = {
   'tiered.alt.levels.computed': '计算值',
   'tiered.alt.levels.adjusted': '调整值',
   'tiered.alt.levels.keep': '不变',
+  'tiered.levels.shares': '股数',
+  'tiered.alt.levels.warnings': '警告',
+  'tiered.alt.warn.none': '无',
+  'tiered.alt.warnTitle': '{level}：警告',
+  'tiered.alt.warn.gap_atr':
+    '若隔夜消息导致跳空低开到止损下方 1 个 ATR（{atrOpen}），止损单会在该价成交——亏损 {atrLoss}，比计划的 {planned} 多亏 {atrExtra}。',
+  'tiered.alt.warn.gap_worst':
+    '若重演过去一年最差单日（{worstDayPct}%），开盘价将落在 {worstOpen}，已跌破止损——在该价卖出亏损 {worstLoss}，比计划的 {planned} 多亏 {worstExtra}。',
   'tiered.alt.signalSaved': '已记录到 AI 建议 #{id}',
   'tiered.help.capital': '你的交易本金，货币跟随股票所在市场。\n股数计算以它为起点。\n会记住，供下次运行使用。',
   'tiered.help.riskPct': '单笔交易你最多接受亏掉本金的百分之几。\n常见为 1-2%。',
@@ -1250,11 +1261,12 @@ const zh = {
   'tiered.tree.explainWeights5':
     '每位 AI 还会给每条证据打 1-5 的重要性评分（1 = 非常次要，5 = 非常重要）；证据的最终分是所有评分的中位数，总分按它加权：10 × 看多证据的权重和 ÷ 全部证据的权重和。点击分数或勾叉可看理由。',
   'tiered.tree.lister': '列出者 {n}',
-  'tiered.tree.checkerRole': '核查员',
-  'tiered.tree.deciderRole': '裁决者',
+  'tiered.tree.checker': '核查员 {n}',
+  'tiered.tree.verdictLine': '判定：{value}',
+  'tiered.tree.reasonPrefix': '理由：',
   'tiered.tree.scoreLine': '评分：{value}',
   'tiered.tree.scoresList': '各方评分：{value}',
-  'tiered.tree.medianTitle': '重要性评分',
+  'tiered.tree.medianTitle': '显著性评分',
   'tiered.tree.medianLine': '中位数：{value}',
 
   // ---- 风险检查卡（仅展示，13 项）----
@@ -2184,7 +2196,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.coverage.partial': 'Partial',
   'tiered.coverage.unavailable': 'Unavailable',
   'tiered.levels': 'Price levels',
-  'tiered.levels.entry': 'Ideal entry',
+  'tiered.levels.entry': 'Entry',
   'tiered.levels.secondaryEntry': 'Backup entry',
   'tiered.levels.stopLoss': 'Stop loss',
   'tiered.levels.takeProfit': 'Target',
@@ -2210,6 +2222,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.group.volume': 'Volume',
   'tiered.group.meta': 'Data & score',
   'tiered.group.reportInfo': 'Report info',
+  'tiered.group.earnings': 'Earnings',
   'tiered.group.other': 'Other',
   'tiered.dataSources': 'Data sources',
   'tiered.help.judgeScore':
@@ -2586,11 +2599,13 @@ const en: Record<UiTextKey, string> = {
   'tiered.altForm.tierOption1': '1: preliminary analysis',
   'tiered.altForm.tierOption2': '2: deep analysis',
   'tiered.altForm.tickerPh': 'Enter ticker...',
-  'tiered.altForm.tierPh': 'Select tier...',
+  'tiered.altForm.tierPh': 'Enter tier...',
   'tiered.altForm.capitalPh': 'Enter capital...',
   'tiered.altForm.riskPh': 'Enter risk...',
-  'tiered.altForm.reward': 'Reward: ratio',
+  'tiered.altForm.reward': 'Reward: x',
   'tiered.altForm.rewardPh': 'Enter ratio...',
+  'tiered.altForm.lowRewardWarn':
+    'A reward-to-risk ratio below 1.5 means the trade barely pays for its risk — 1.5× is the common minimum. The run will still use your {value}× target.',
   'tiered.help.reward':
     'The reward-to-risk ratio you ask the plan for (how many times the accepted risk the potential profit should be). Required; the default is 2.\nTarget = entry + ratio × risk. If overhead resistance caps the target below your ratio, the plan carries a warning (below the 1.5 hard floor, no plan is issued at all).',
   'tiered.pill.ticker': 'Ticker: {value}',
@@ -2655,6 +2670,14 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.levels.computed': 'Computed',
   'tiered.alt.levels.adjusted': 'Adjusted',
   'tiered.alt.levels.keep': 'keep',
+  'tiered.levels.shares': 'Shares',
+  'tiered.alt.levels.warnings': 'Warnings',
+  'tiered.alt.warn.none': 'none',
+  'tiered.alt.warnTitle': '{level}: warnings',
+  'tiered.alt.warn.gap_atr':
+    'If overnight news gaps the open 1 ATR below your stop ({atrOpen}), the stop order sells there — a {atrLoss} loss, {atrExtra} more than the {planned} you planned.',
+  'tiered.alt.warn.gap_worst':
+    'If the stock repeats its worst day of the past year ({worstDayPct}%), the open lands at {worstOpen}, past your stop — selling there loses {worstLoss}, {worstExtra} more than the {planned} you planned.',
   'tiered.alt.signalSaved': 'Recorded to AI signals #{id}',
   'tiered.help.capital':
     'The money you trade with, in the ticker’s own currency.\nThe shares computation starts from it.\nRemembered for your next run.',
@@ -2709,11 +2732,12 @@ const en: Record<UiTextKey, string> = {
   'tiered.tree.explainWeights5':
     'Each AI also rates every bullet’s importance 1-5 (1 = very minor, 5 = very important); a bullet’s final score is the median of its ratings, and the total score is weighted by it: 10 × the bullish bullets’ weight ÷ all bullets’ weight. Click a score or a mark for the reasoning.',
   'tiered.tree.lister': 'Lister {n}',
-  'tiered.tree.checkerRole': 'Checker',
-  'tiered.tree.deciderRole': 'Decider',
-  'tiered.tree.scoreLine': 'Score: {value}',
+  'tiered.tree.checker': 'Checker {n}',
+  'tiered.tree.verdictLine': 'verdict: {value}',
+  'tiered.tree.reasonPrefix': 'reason:',
+  'tiered.tree.scoreLine': 'score: {value}',
   'tiered.tree.scoresList': 'Scores: {value}',
-  'tiered.tree.medianTitle': 'Importance score',
+  'tiered.tree.medianTitle': 'Significance Score',
   'tiered.tree.medianLine': 'Median: {value}',
 
   // ---- Risk checks card (display only, 13 entries) ----

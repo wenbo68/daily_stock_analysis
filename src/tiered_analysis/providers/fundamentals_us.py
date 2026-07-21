@@ -255,6 +255,19 @@ def _default_valuation_loader(symbol: str) -> Mapping[str, Any]:
     return info if isinstance(info, Mapping) else {}
 
 
+def _default_earnings_lookup(symbol: str) -> Mapping[str, Any]:
+    """Next earnings date as payload-ready fields (empty dict = unknown)."""
+    from ..earnings import next_earnings_info
+
+    info = next_earnings_info(symbol, Market.US)
+    if info.next_date is None:
+        return {}
+    return {
+        "next_earnings_date": info.next_date,
+        "days_until_earnings": info.days_until,
+    }
+
+
 class FundamentalsUSProvider(DimensionProvider):
     """NUMERIC US fundamentals: EDGAR statements + Yahoo valuation."""
 
@@ -265,9 +278,11 @@ class FundamentalsUSProvider(DimensionProvider):
         self,
         facts_loader: Callable[[str], Mapping[str, Any]] = _default_facts_loader,
         valuation_loader: Callable[[str], Mapping[str, Any]] = _default_valuation_loader,
+        earnings_lookup: Callable[[str], Mapping[str, Any]] = _default_earnings_lookup,
     ) -> None:
         self._facts_loader = facts_loader
         self._valuation_loader = valuation_loader
+        self._earnings_lookup = earnings_lookup
 
     def supports(self, market: Market) -> bool:
         return market == Market.US
@@ -279,6 +294,7 @@ class FundamentalsUSProvider(DimensionProvider):
 
         edgar_ok = self._collect_edgar(symbol, payload, citations, warnings)
         yahoo_ok = self._collect_valuation(symbol, payload, citations, warnings)
+        self._collect_earnings_date(symbol, payload, warnings)
 
         if not edgar_ok and not yahoo_ok:
             return DimensionResult(
@@ -296,6 +312,24 @@ class FundamentalsUSProvider(DimensionProvider):
             citations=citations,
             warnings=warnings,
         )
+
+    def _collect_earnings_date(
+        self,
+        symbol: str,
+        payload: Dict[str, Any],
+        warnings: List[str],
+    ) -> None:
+        """Auxiliary next-earnings-date fields (never degrades coverage —
+        an event-calendar miss is not a statements failure). The deep
+        analysis reads these to weigh event risk near a report date."""
+        try:
+            fields = self._earnings_lookup(symbol)
+        except Exception as exc:
+            warnings.append(f"earnings date lookup failed for {symbol}: {exc}")
+            return
+        for key, value in (fields or {}).items():
+            if value is not None:
+                payload[key] = value
 
     def _collect_edgar(
         self,

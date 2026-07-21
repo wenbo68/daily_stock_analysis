@@ -29,7 +29,7 @@ const DIMENSION_SECTIONS: Record<string, { titleKey: UiTextKey; keys: string[] }
     {
       titleKey: 'tiered.group.volatility',
       // worst_day_5pct: the retired statistic old stored runs still carry.
-      keys: ['atr_14', 'worst_day_1y', 'worst_day_5pct'],
+      keys: ['atr_14', 'volatility_pct', 'worst_day_1y', 'worst_day_5pct'],
     },
     {
       titleKey: 'tiered.group.structure',
@@ -42,6 +42,14 @@ const DIMENSION_SECTIONS: Record<string, { titleKey: UiTextKey; keys: string[] }
     { titleKey: 'tiered.group.meta', keys: ['bars_count', 'score'] },
   ],
   macro_econ: [{ titleKey: 'tiered.group.reportInfo', keys: ['region', 'as_of'] }],
+  // The next earnings date rides in the fundamentals payload (plan-review
+  // redesign) — give it a named section instead of the Other bucket.
+  fundamentals: [
+    {
+      titleKey: 'tiered.group.earnings',
+      keys: ['next_earnings_date', 'days_until_earnings'],
+    },
+  ],
 };
 
 function isGroup(values: unknown): values is Record<string, unknown> {

@@ -4,13 +4,16 @@ import type {
   TieredLevelDetail,
   TieredLevels,
   TieredLevelsDetail,
+  TieredPlanWarning,
+  TieredPlanWarnings,
 } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
-import { adjustedCellId, computedCellId } from './altFormat';
+import { LinkedTextV8 } from './AltDebateTree';
+import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import {
   AltEvidenceRefs,
@@ -26,21 +29,26 @@ const HelpTerm = (props: Parameters<typeof BaseHelpTerm>[0]) => (
 );
 
 // Backup entry retired (owner decision, 2026-07-21): the plan is one
-// order at the ideal entry, so the table shows three levels — old stored
-// runs simply no longer render their backup column.
+// order at the entry, so the table shows three levels — old stored
+// runs simply no longer render their backup column. The plan-review
+// redesign (2026-07-22) adds the shares column at the end.
 const LEVEL_ORDER = ['entry', 'stop_loss', 'take_profit'] as const;
 type LevelKey = (typeof LEVEL_ORDER)[number];
+const COLUMNS = ['entry', 'stop_loss', 'take_profit', 'shares'] as const;
+type ColumnKey = (typeof COLUMNS)[number];
 
-const LEVEL_LABEL_KEYS: Record<LevelKey, UiTextKey> = {
+const LEVEL_LABEL_KEYS: Record<ColumnKey, UiTextKey> = {
   entry: 'tiered.levels.entry',
   stop_loss: 'tiered.levels.stopLoss',
   take_profit: 'tiered.levels.takeProfit',
+  shares: 'tiered.levels.shares',
 };
 
-const LEVEL_HELP_KEYS: Record<LevelKey, UiTextKey> = {
+const LEVEL_HELP_KEYS: Record<ColumnKey, UiTextKey> = {
   entry: 'tiered.help.entry',
   stop_loss: 'tiered.help.stopLoss',
   take_profit: 'tiered.help.takeProfit',
+  shares: 'tiered.help.sizing',
 };
 
 // Formula inputs with a source row on the technicals card.
@@ -70,7 +78,9 @@ const VAR_LABEL: Record<string, string> = {
   high_52w: '52w high',
   round_level: 'round level',
   atr_14: 'atr 14',
-  ideal_entry: 'ideal entry',
+  // The backend key stays ideal_entry (old stored runs carry it); the
+  // display name is just "entry" (owner rename 2026-07-22).
+  ideal_entry: 'entry',
   stop_loss: 'stop loss',
 };
 
@@ -306,7 +316,15 @@ const AltAdjustedCell = ({ levelKey, detail, label, citations }: AltLevelCellPro
           {detail.reason ? (
             <div>
               <AltSectionLabel>{t('tiered.levelModal.reason')}</AltSectionLabel>
-              <p>{detail.reason}</p>
+              <p>
+                {/* Plan-review reasons carry debate-style links: cited
+                    values underline and jump to their source rows. */}
+                {detail.links && detail.links.length > 0 ? (
+                  <LinkedTextV8 text={detail.reason} links={detail.links} />
+                ) : (
+                  detail.reason
+                )}
+              </p>
             </div>
           ) : null}
           {detail.evidence.length > 0 ? (
@@ -328,27 +346,306 @@ const AltAdjustedCell = ({ levelKey, detail, label, citations }: AltLevelCellPro
   );
 };
 
+// ---------- the shares column (plan-review redesign, 2026-07-22) ----------
+
+// A number that scroll-flashes the element it came from (run-row inputs,
+// plan-table cells); plain text when there is nothing to point at.
+const FlashNum = ({ targetId, text }: { targetId: string | null; text: string }) =>
+  targetId ? (
+    <button
+      type="button"
+      className={cn('cursor-pointer tabular-nums', ALT_LINK)}
+      onClick={() => flashElement(targetId)}
+    >
+      {text}
+    </button>
+  ) : (
+    <span className="tabular-nums text-gray-300">{text}</span>
+  );
+
+// The share-count arithmetic, in the same three-line receipt shape as the
+// level formulas: words, this run's numbers (each linking to where it
+// already appears), result.
+const SharesReceipt = ({
+  inputs,
+  shares,
+  taskId,
+  entryTargetId,
+  stopTargetId,
+}: {
+  inputs: Record<string, number>;
+  shares: number;
+  taskId?: string;
+  entryTargetId: string | null;
+  stopTargetId: string | null;
+}) => {
+  const { t } = useUiLanguage();
+  const capital = inputs.capital;
+  const risk = inputs.risk_fraction;
+  const entry = inputs.entry;
+  const stop = inputs.stop_loss;
+  return (
+    <div className="flex flex-col gap-2 overflow-x-auto text-sm" data-testid="alt-shares-receipt">
+      <p className={FORMULA_LINE}>
+        <FVar>{t('tiered.alt.f.capital')}</FVar> × <FVar>{t('tiered.alt.f.risk')}</FVar>
+        {' / ('}
+        <FVar>{t('tiered.alt.f.entry')}</FVar> − <FVar>{t('tiered.alt.f.stop')}</FVar>
+        {')'}
+      </p>
+      <p className={FORMULA_LINE}>
+        {'= '}
+        <FlashNum
+          targetId={taskId ? `alt-run-${taskId}-capital` : null}
+          text={capital != null ? plainNumber(capital) : '—'}
+        />
+        {' × '}
+        <FlashNum
+          targetId={taskId ? `alt-run-${taskId}-risk` : null}
+          text={risk != null ? `${riskPctText(risk)}%` : '—'}
+        />
+        {' / ('}
+        <FlashNum targetId={entryTargetId} text={formatPrice(entry ?? null)} />
+        {' − '}
+        <FlashNum targetId={stopTargetId} text={formatPrice(stop ?? null)} />
+        {')'}
+      </p>
+      <p className={FORMULA_RESULT}>= {t('tiered.altHistory.shares', { value: shares })}</p>
+    </div>
+  );
+};
+
+interface SharesCellProps {
+  detail: TieredLevelDetail | null;
+  taskId?: string;
+  /** Whether entry / stop carry an accepted adjustment (links target). */
+  levelAdjusted: (key: LevelKey) => boolean;
+}
+
+// The computed share count — clicking it opens the arithmetic receipt.
+const AltSharesComputedCell = ({ detail, taskId }: Omit<SharesCellProps, 'levelAdjusted'>) => {
+  const { t } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!detail || detail.base === null) {
+    return <span className="text-gray-600">—</span>;
+  }
+  return (
+    <>
+      <button
+        type="button"
+        id={computedCellId('shares')}
+        data-testid="alt-level-computed-shares"
+        onClick={() => setIsOpen(true)}
+        className={cn('cursor-pointer tabular-nums', ALT_LINK)}
+      >
+        {detail.base}
+      </button>
+      <AltModal
+        isOpen={isOpen}
+        title={t('tiered.levelModal.formulaTitle', { level: t('tiered.levels.shares') })}
+        onClose={() => setIsOpen(false)}
+        panelClassName="w-fit min-w-72 max-w-[95vw]"
+      >
+        <SharesReceipt
+          inputs={detail.inputs ?? {}}
+          shares={detail.base}
+          taskId={taskId}
+          entryTargetId={computedCellId('entry')}
+          stopTargetId={computedCellId('stop_loss')}
+        />
+      </AltModal>
+    </>
+  );
+};
+
+// The adjusted share count: an AI trim opens its cited reason; a purely
+// mechanical recompute (a level moved, so the count followed) opens the
+// same receipt with the final levels plugged in.
+const AltSharesAdjustedCell = ({ detail, taskId, levelAdjusted }: SharesCellProps) => {
+  const { t } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!detail || detail.base === null) {
+    return <span className="text-gray-600">—</span>;
+  }
+  if (detail.adjusted === null) {
+    return (
+      <span data-testid="alt-level-keep-shares" className="text-gray-500">
+        {t('tiered.alt.levels.keep')}
+      </span>
+    );
+  }
+  const levelTarget = (key: LevelKey): string =>
+    levelAdjusted(key) ? adjustedCellId(key) : computedCellId(key);
+  return (
+    <>
+      <button
+        type="button"
+        id={adjustedCellId('shares')}
+        data-testid="alt-level-adjusted-shares"
+        onClick={() => setIsOpen(true)}
+        className={cn('cursor-pointer tabular-nums', ALT_LINK)}
+      >
+        {detail.adjusted}
+      </button>
+      <AltModal
+        isOpen={isOpen}
+        title={t('tiered.levelModal.adjustTitle', { level: t('tiered.levels.shares') })}
+        onClose={() => setIsOpen(false)}
+        panelClassName="w-fit min-w-72 max-w-[95vw]"
+      >
+        <div className={MODAL_BODY}>
+          <div className="tabular-nums">
+            {detail.base} → {detail.adjusted}
+          </div>
+          {detail.reason ? (
+            <div>
+              <AltSectionLabel>{t('tiered.levelModal.reason')}</AltSectionLabel>
+              <p>
+                {detail.links && detail.links.length > 0 ? (
+                  <LinkedTextV8 text={detail.reason} links={detail.links} />
+                ) : (
+                  detail.reason
+                )}
+              </p>
+            </div>
+          ) : null}
+          {!detail.reason && detail.adjusted_inputs ? (
+            <SharesReceipt
+              inputs={detail.adjusted_inputs}
+              shares={detail.adjusted}
+              taskId={taskId}
+              entryTargetId={levelTarget('entry')}
+              stopTargetId={levelTarget('stop_loss')}
+            />
+          ) : null}
+        </div>
+      </AltModal>
+    </>
+  );
+};
+
+// ---------- the warnings row ----------
+
+// A number for warning sentences: at most 2 decimals, no float noise.
+const wNum = (value: unknown): string =>
+  typeof value === 'number' ? String(Number(value.toFixed(2))) : '—';
+
+// One warning's plain-English sentence; unknown ids fall back to the id.
+const warningText = (
+  warning: TieredPlanWarning,
+  t: (key: UiTextKey, params?: Record<string, string | number>) => string,
+): string => {
+  const v = warning.values;
+  switch (warning.id) {
+    case 'gap_atr':
+      return t('tiered.alt.warn.gap_atr', {
+        atrOpen: wNum(v.atr_open),
+        atrLoss: wNum(v.atr_loss),
+        atrExtra: wNum(v.atr_extra),
+        planned: wNum(v.loss_at_stop),
+      });
+    case 'gap_worst':
+      return t('tiered.alt.warn.gap_worst', {
+        worstDayPct:
+          typeof v.worst_day_1y === 'number'
+            ? String(Number((v.worst_day_1y * 100).toFixed(1)))
+            : '—',
+        worstOpen: wNum(v.worst_open),
+        worstLoss: wNum(v.worst_loss),
+        worstExtra: wNum(v.worst_extra),
+        planned: wNum(v.loss_at_stop),
+      });
+    case 'reward_below_goal':
+      return t('tiered.alt.rewardBelowGoal', {
+        ratio: wNum(v.ratio),
+        goal: wNum(v.goal),
+      });
+    default:
+      return warning.id;
+  }
+};
+
+// One warnings cell: an unclickable "none", or the count as a button
+// opening a modal that lists each warning in plain English.
+const AltWarningsCell = ({
+  column,
+  warnings,
+  label,
+}: {
+  column: ColumnKey;
+  warnings: TieredPlanWarning[];
+  label: string;
+}) => {
+  const { t } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (warnings.length === 0) {
+    return (
+      <span data-testid={`alt-plan-warnings-${column}`} className="text-gray-600">
+        {t('tiered.alt.warn.none')}
+      </span>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        data-testid={`alt-plan-warnings-${column}`}
+        onClick={() => setIsOpen(true)}
+        className={cn('cursor-pointer tabular-nums font-semibold', 'text-amber-300 hover:text-amber-200')}
+      >
+        {warnings.length}
+      </button>
+      <AltModal
+        isOpen={isOpen}
+        title={t('tiered.alt.warnTitle', { level: label })}
+        onClose={() => setIsOpen(false)}
+      >
+        <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>
+          {warnings.map((warning, index) => (
+            <li key={index}>{warningText(warning, t)}</li>
+          ))}
+        </ul>
+      </AltModal>
+    </>
+  );
+};
+
 interface AltLevelsProps {
   levels: TieredLevels;
   levelsDetail: TieredLevelsDetail | null | undefined;
   citations: TieredCitation[];
+  /** Plan-review warnings per column; absent on old stored runs. */
+  planWarnings?: TieredPlanWarnings | null;
+  /** The run's task id — lets the shares receipt link the run-row inputs. */
+  taskId?: string;
 }
 
 const CELL = 'py-1.5 pr-4 text-sm';
 const ROW_LABEL = 'py-1.5 pr-4 text-xs text-gray-500';
 
-// The tier-1 price levels as a computed/adjusted table: the formula bases
-// on top, the AI's validated adjustments beneath them (chronological —
-// what was computed first, then what the AI did to it). Old runs without
-// the audit trail fall back to a single row of the stored values.
-export const AltLevels = ({ levels, levelsDetail, citations }: AltLevelsProps) => {
+// The trade plan as a computed/adjusted table — the three price levels
+// plus the share count, with the AI's validated adjustments beneath the
+// formula bases and (on plan-review runs) a warnings row underneath.
+// Old runs without the audit trail fall back to a single row of values.
+export const AltLevels = ({
+  levels,
+  levelsDetail,
+  citations,
+  planWarnings,
+  taskId,
+}: AltLevelsProps) => {
   const { t } = useUiLanguage();
   const details = levelsDetail?.levels ?? null;
+  const sharesDetail = details?.shares ?? null;
+  const levelAdjusted = (key: LevelKey): boolean =>
+    (details?.[key]?.adjusted ?? null) !== null;
 
   const headerCells: ReactNode = (
     <tr>
       <th className="pb-1.5 pr-4" />
-      {LEVEL_ORDER.map((key) => (
+      {COLUMNS.map((key) => (
         <th key={key} className="pb-1.5 pr-4 text-left text-xs font-semibold text-gray-500">
           <HelpTerm label={t(LEVEL_LABEL_KEYS[key])} helpKey={LEVEL_HELP_KEYS[key]} />
         </th>
@@ -374,6 +671,9 @@ export const AltLevels = ({ levels, levelsDetail, citations }: AltLevelsProps) =
                     />
                   </td>
                 ))}
+                <td className={CELL}>
+                  <AltSharesComputedCell detail={sharesDetail} taskId={taskId} />
+                </td>
               </tr>
               <tr>
                 <td className={ROW_LABEL}>{t('tiered.alt.levels.adjusted')}</td>
@@ -387,7 +687,28 @@ export const AltLevels = ({ levels, levelsDetail, citations }: AltLevelsProps) =
                     />
                   </td>
                 ))}
+                <td className={CELL}>
+                  <AltSharesAdjustedCell
+                    detail={sharesDetail}
+                    taskId={taskId}
+                    levelAdjusted={levelAdjusted}
+                  />
+                </td>
               </tr>
+              {planWarnings ? (
+                <tr>
+                  <td className={ROW_LABEL}>{t('tiered.alt.levels.warnings')}</td>
+                  {COLUMNS.map((key) => (
+                    <td key={key} className={CELL}>
+                      <AltWarningsCell
+                        column={key}
+                        warnings={planWarnings[key] ?? []}
+                        label={t(LEVEL_LABEL_KEYS[key])}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ) : null}
             </>
           ) : (
             <tr>
@@ -397,6 +718,7 @@ export const AltLevels = ({ levels, levelsDetail, citations }: AltLevelsProps) =
                   {formatPrice(levels[key])}
                 </td>
               ))}
+              <td className={cn(CELL, 'text-gray-600')}>—</td>
             </tr>
           )}
         </tbody>

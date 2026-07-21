@@ -350,6 +350,10 @@ _LIST_RULES = """Evidence-list rules:
   counts, dates, regions).
 - If (and only if) a dimension truly has no collected data above, skip it
   and name it in "no_data_dimensions" — code verifies this.
+- If fundamentals.next_earnings_date shows a report within roughly a
+  week (see fundamentals.days_until_earnings), list that as a bearish
+  event-risk bullet — an imminent earnings report can gap the price
+  past any plan level, which argues for waiting.
 - Each bullet: one atomic claim (one sentence) containing the cited names
   AND values, tagged "bullish" or "bearish". The direction tags ARE the
   score — code counts them; nobody writes a score.

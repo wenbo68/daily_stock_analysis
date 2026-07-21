@@ -41,8 +41,9 @@ MIN_HISTORY_BARS = max(RSI_PERIOD, ATR_PERIOD) + 1
 # Daily returns needed before a 5th-percentile "worst day" means anything.
 MIN_RETURNS_FOR_TAIL = 20
 #: Payload keys allowed to be None without downgrading coverage — volume
-#: is source-dependent (some feeds omit it), unlike price history.
-OPTIONAL_PAYLOAD_KEYS = frozenset({"avg_volume_20"})
+#: is source-dependent (some feeds omit it), unlike price history;
+#: volatility_pct is derived from atr_14, whose absence is already flagged.
+OPTIONAL_PAYLOAD_KEYS = frozenset({"avg_volume_20", "volatility_pct"})
 
 _SCORE_NEUTRAL = 50.0
 
@@ -316,6 +317,7 @@ class TechnicalsProvider(DimensionProvider):
             )
 
         closes = [bar.close for bar in bars]
+        atr = compute_atr(bars)
         payload: Dict[str, object] = {
             "close": closes[-1],
             "bars_count": len(bars),
@@ -325,7 +327,14 @@ class TechnicalsProvider(DimensionProvider):
             "ema_26": compute_ema(closes, MACD_SLOW),
             "rsi_14": compute_wilder_rsi(closes),
             "macd": compute_macd(closes),
-            "atr_14": compute_atr(bars),
+            "atr_14": atr,
+            # Typical daily swing as % of price — stated here so LLM stages
+            # can cite it directly (plan review's volatility check).
+            "volatility_pct": (
+                round(atr / closes[-1] * 100, 2)
+                if atr is not None and closes[-1] > 0
+                else None
+            ),
             "swing_low_20": compute_swing_low(bars),
             "swing_high_20": compute_swing_high(bars),
             "swing_low_60": compute_swing_low(bars, FULL_HISTORY_BARS),

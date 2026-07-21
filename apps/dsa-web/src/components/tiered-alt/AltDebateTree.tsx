@@ -13,6 +13,7 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, jumpToMetric } from '../tiered/termHelpers';
+import { stripInlineRefs } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT, TAG_BASE } from './altStyles';
 import {
   AltFold,
@@ -21,7 +22,6 @@ import {
   AltSectionLabel,
   FVar,
   MODAL_BODY,
-  MODAL_STRONG,
 } from './AltUi';
 
 // The v5/v6/v7 debate tree: one tree, four steps. Step 1 shows the
@@ -457,14 +457,15 @@ const AdditionThread = ({ item, step }: { item: TieredDebateItem; step: number }
 // [N] hyperlinks that jump to source N. Used for claims AND vote reasons
 // — here and in the tier-3 risk tree (AltRiskTree).
 export const LinkedTextV8 = ({
-  text,
-  links,
+  text: rawText,
+  links: rawLinks,
   struck = false,
 }: {
   text: string;
   links: TieredDebateLink[];
   struck?: boolean;
 }) => {
+  const { text, links } = stripInlineRefs(rawText, rawLinks);
   const payloadLinks = links.filter((link) => !CITATION_REF_RE.test(link.ref));
   const citationLinks = links.filter((link) => CITATION_REF_RE.test(link.ref));
   const markers: { start: number; end: number; link: TieredDebateLink }[] = [];
@@ -599,37 +600,52 @@ const VoteItem = ({
         </div>
       ),
     });
-  // v11 modal body — the user-spec'd shape: the validity reason, a
-  // divider, then the voter's 1-5 score and why they rated it that.
+  // v11 modal body — the owner-spec'd shape (2026-07-22): a verdict
+  // line, the validity reason, a divider, then the voter's 1-5
+  // significance score and why they rated it that. No bold anywhere.
   const scoreBody = (
+    verdictOk: boolean,
     reasonNode: ReactNode,
     weight: number | null | undefined,
     weightReason?: string | null,
   ) => (
     <div className={MODAL_BODY}>
-      <p>{reasonNode}</p>
+      <p>
+        {t('tiered.tree.verdictLine', {
+          value: t(verdictOk ? 'tiered.tree.valid' : 'tiered.tree.invalid'),
+        })}
+      </p>
+      <p>
+        {t('tiered.tree.reasonPrefix')} {reasonNode}
+      </p>
       <AltModalDivider />
-      <p className={MODAL_STRONG}>{t('tiered.tree.scoreLine', { value: weight ?? '—' })}</p>
-      {weightReason ? <p>{weightReason}</p> : null}
+      <p>{t('tiered.tree.scoreLine', { value: weight ?? '—' })}</p>
+      {weightReason ? (
+        <p>
+          {t('tiered.tree.reasonPrefix')} {weightReason}
+        </p>
+      ) : null}
     </div>
   );
   // A lister's own check: listing the bullet IS their valid vote, so the
   // validity reason is the claim itself (with its verified links).
   const showAuthor = (vote: TieredDebateAuthorVote) =>
     onShow({
-      title: `${t('tiered.tree.lister', { n: vote.lister })}: ${t('tiered.tree.valid')}`,
+      title: t('tiered.tree.lister', { n: vote.lister }),
       body: scoreBody(
+        true,
         <LinkedTextV8 text={item.claim} links={item.links ?? []} />,
         vote.weight,
         vote.weight_reason,
       ),
     });
-  const showRichVote = (vote: TieredDebateVote) =>
+  // Checkers are numbered by vote order — always "Checker 1/2", never a
+  // separate decider word (owner decision 2026-07-22).
+  const showRichVote = (vote: TieredDebateVote, index: number) =>
     onShow({
-      title: `${t(
-        vote.role === 'decider' ? 'tiered.tree.deciderRole' : 'tiered.tree.checkerRole',
-      )}: ${t(vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid')}`,
+      title: t('tiered.tree.checker', { n: index + 1 }),
       body: scoreBody(
+        vote.verdict === 'valid',
         vote.reason ? <LinkedTextV8 text={vote.reason} links={vote.links ?? []} /> : '—',
         vote.weight,
         vote.weight_reason,
@@ -644,10 +660,8 @@ const VoteItem = ({
       title: t('tiered.tree.medianTitle'),
       body: (
         <div className={MODAL_BODY}>
-          <p>{t('tiered.tree.scoresList', { value: scores.join(', ') || '—' })}</p>
-          <p className={MODAL_STRONG}>
-            {t('tiered.tree.medianLine', { value: item.weight ?? '—' })}
-          </p>
+          <p>{t('tiered.tree.scoresList', { value: scores.join(' | ') || '—' })}</p>
+          <p>{t('tiered.tree.medianLine', { value: item.weight ?? '—' })}</p>
         </div>
       ),
     });
@@ -710,7 +724,7 @@ const VoteItem = ({
           <MarkButton
             key={index}
             label={vote.verdict === 'valid' ? '✓' : '✗'}
-            onClick={() => (rich ? showRichVote(vote) : showVote(vote, index))}
+            onClick={() => (rich ? showRichVote(vote, index) : showVote(vote, index))}
           />
         ))}
       </span>
@@ -732,24 +746,14 @@ const EXPLAIN_KEYS = [
   'tiered.tree.explain7',
 ] as const;
 
-// The v8/v9 evidence vote, one page: per-dimension groups headed by the
-// surviving ↑/↓ counts, every bullet's history as marks, and the flat
-// final-score formula. No steps, no pills — crossed out = not counted.
-const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
+// The final-score arithmetic (10 × bullish weight ÷ total weight) —
+// shown in the modal behind the score at the top of the deep-analysis
+// card (owner decision 2026-07-22), no longer inside the transcript fold.
+export const DebateScores = ({ detail }: { detail: TieredDebateDetail }) => {
   const { t } = useUiLanguage();
-  const [modal, setModal] = useState<MarkModal | null>(null);
-  const items = detail.items ?? [];
   const verdict = detail.verdict;
   const finalPool = verdict?.pools?.final ?? null;
-  const groups = DIMENSION_ORDER.map((dimension) => ({
-    dimension,
-    items: items.filter((item) => item.dimension === dimension),
-  })).filter((group) => group.items.length > 0);
-  // v10+ weights the score by the voters' importance ratings; v8/v9
-  // counted every bullet the same. v11 (rich) also stores each voter's
-  // score reason and the listers' own checks.
   const weighted = detail.format != null && detail.format >= 10;
-  const rich = detail.format != null && detail.format >= 11;
   const numerator = weighted ? (finalPool?.bullish_weight ?? null) : (finalPool?.bullish ?? null);
   const denominator = weighted ? (finalPool?.total_weight ?? null) : (finalPool?.total ?? null);
   // Show the plugged-in formula only when it reproduces the stored
@@ -762,6 +766,46 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
     flat != null &&
     verdict?.final_score != null &&
     Math.abs(flat - verdict.final_score) < 0.005;
+  if (!verdict || !finalPool) {
+    return null;
+  }
+  return (
+    <div
+      data-testid="alt-tree-scores"
+      className="flex flex-col gap-1 overflow-x-auto text-sm"
+    >
+      <p className={FORMULA_LINE}>
+        {t('tiered.tree.finalScore')}: 10 ×{' '}
+        <FVar>{t(weighted ? 'tiered.tree.bullishWeight' : 'tiered.tree.bullish')}</FVar>{' '}
+        / <FVar>{t(weighted ? 'tiered.tree.totalWeight' : 'tiered.tree.total')}</FVar>
+      </p>
+      {showFormula ? (
+        <p className={FORMULA_LINE} data-testid="alt-tree-final-formula">
+          = 10 × {numerator} / {denominator}
+        </p>
+      ) : null}
+      <p className={FORMULA_RESULT}>= {verdict.final_score?.toFixed(2)}</p>
+    </div>
+  );
+};
+
+// The v8/v9 evidence vote, one page: per-dimension groups headed by the
+// surviving ↑/↓ counts and every bullet's history as marks. No steps, no
+// pills — crossed out = not counted. The score arithmetic lives in the
+// header score's modal (DebateScores), not here.
+const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
+  const { t } = useUiLanguage();
+  const [modal, setModal] = useState<MarkModal | null>(null);
+  const items = detail.items ?? [];
+  const groups = DIMENSION_ORDER.map((dimension) => ({
+    dimension,
+    items: items.filter((item) => item.dimension === dimension),
+  })).filter((group) => group.items.length > 0);
+  // v10+ weights the score by the voters' significance ratings; v8/v9
+  // counted every bullet the same. v11 (rich) also stores each voter's
+  // score reason and the listers' own checks.
+  const weighted = detail.format != null && detail.format >= 10;
+  const rich = detail.format != null && detail.format >= 11;
 
   return (
     <>
@@ -804,30 +848,6 @@ const VoteTree = ({ detail }: { detail: TieredDebateDetail }) => {
               </div>
             );
           })}
-
-          {verdict && finalPool ? (
-            <div
-              data-testid="alt-tree-scores"
-              className="flex flex-col gap-1 border-t border-gray-700/60 pt-3"
-            >
-              <AltSectionLabel>{t('tiered.tree.scores')}</AltSectionLabel>
-              <div className="flex flex-col gap-1 overflow-x-auto text-sm">
-                <p className={FORMULA_LINE}>
-                  {t('tiered.tree.finalScore')}: 10 ×{' '}
-                  <FVar>
-                    {t(weighted ? 'tiered.tree.bullishWeight' : 'tiered.tree.bullish')}
-                  </FVar>{' '}
-                  / <FVar>{t(weighted ? 'tiered.tree.totalWeight' : 'tiered.tree.total')}</FVar>
-                </p>
-                {showFormula ? (
-                  <p className={FORMULA_LINE} data-testid="alt-tree-final-formula">
-                    = 10 × {numerator} / {denominator}
-                  </p>
-                ) : null}
-                <p className={FORMULA_RESULT}>= {verdict.final_score?.toFixed(2)}</p>
-              </div>
-            </div>
-          ) : null}
         </div>
       </AltFold>
 
