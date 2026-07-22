@@ -433,6 +433,10 @@ class TestPlanReviewAdjustments(unittest.TestCase):
     """The AI plan review through the full orchestrator, LLM faked."""
 
     def _run_with_reply(self, reply: str):
+        return self._run_with_reply_sequence([reply])
+
+    def _run_with_reply_sequence(self, replies):
+        """Fake LLM replies, one per call; the last one repeats."""
         from src.tiered_analysis.settings import SizingSettings
 
         payload = {"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
@@ -446,7 +450,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
 
         def summarizer(prompt):
             prompts.append(prompt)
-            return reply
+            return replies[min(len(prompts), len(replies)) - 1]
 
         outcome = run_tiered_analysis(
             "AAPL", market=Market.US,
@@ -484,6 +488,10 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         self.assertIn("liquidity limit", detail["reasons"][0]["text"])
         self.assertEqual(detail["reasons"][0]["links"][0]["ref"],
                          "technicals.avg_volume_20")
+        # Receipt data always rides with an adjusted count (2026-07-22):
+        # the mechanical recompute and the inputs it used.
+        self.assertEqual(detail["mechanical"], 166)
+        self.assertEqual(detail["adjusted_inputs"]["entry"], 96.0)
         # gap warning recomputes off the trimmed count: 50 × (96−87) = 450
         gap = outcome.plan_warnings["stop_loss"][0]
         self.assertAlmostEqual(gap["values"]["atr_loss"], 450.0)
@@ -527,19 +535,53 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         self.assertEqual(len(prompts), 1)
         self.assertEqual(outcome.sizing["shares"], 50)
 
-    def test_share_increase_rejected(self):
+    def test_share_increase_never_converges_so_plan_reverts(self):
+        # The AI "fixes" liquidity by INCREASING shares every round; the
+        # trim guardrail voids it, liquidity keeps firing, and after the
+        # last round every adjustment is discarded (cycle, 2026-07-22).
         reply = json.dumps({"adjustments": [{
             "target": "shares", "value": 500,
             "reasons": [{"check": "liquidity", "text": "More is better.",
                          "links": []}],
         }]})
-        outcome, _ = self._run_with_reply(reply)
+        outcome, prompts = self._run_with_reply(reply)
+        self.assertEqual(len(prompts), 3)  # one call per round, no fix rounds
         self.assertEqual(outcome.sizing["shares"], 166)
         detail = outcome.report.levels_detail["levels"]["shares"]
         self.assertIsNone(detail["adjusted"])
-        self.assertTrue(detail["rejection"])
-        self.assertTrue(any("shares rejected" in w
+        failures = outcome.report.levels_detail["review_failures"]
+        self.assertEqual([f["round"] for f in failures], [1, 2, 3])
+        self.assertTrue(all(f["checks"] == ["liquidity"] for f in failures))
+        self.assertTrue(any("did not converge" in w
                             for w in outcome.report.warnings))
+
+    def test_second_round_fixes_what_the_first_missed(self):
+        # Round 1 trims to 100 — still 10% of the 1000-share ADV, so the
+        # re-run liquidity check flags again; round 2 trims to 50 → 5%,
+        # not above the limit → converged with round 2's value/reason.
+        def trim_reply(value):
+            return json.dumps({"adjustments": [{
+                "target": "shares", "value": value,
+                "reasons": [{
+                    "check": "liquidity",
+                    "text": (f"Cutting to {value} moves the order toward "
+                             "the 5% limit against the average daily "
+                             "volume of 1000."),
+                    "links": [{"ref": "technicals.avg_volume_20",
+                               "value": "1000"}],
+                }],
+            }]})
+
+        replies = [trim_reply(100), trim_reply(50)]
+        outcome, prompts = self._run_with_reply_sequence(replies)
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(outcome.sizing["shares"], 50)
+        detail = outcome.report.levels_detail["levels"]["shares"]
+        self.assertEqual(detail["adjusted"], 50)
+        # Same check re-explained → round 2's reason replaces round 1's.
+        self.assertEqual(len(detail["reasons"]), 1)
+        self.assertIn("Cutting to 50", detail["reasons"][0]["text"])
+        self.assertNotIn("review_failures", outcome.report.levels_detail)
 
     def test_unparseable_reply_keeps_computed_plan(self):
         outcome, prompts = self._run_with_reply("not json at all")
@@ -547,6 +589,10 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         self.assertEqual(outcome.sizing["shares"], 166)
         self.assertTrue(any("plan-review reply problem" in w
                             for w in outcome.report.warnings))
+        # An empty answer while liquidity fires is a round-1 failure: the
+        # computed plan stands and the failure list says why.
+        failures = outcome.report.levels_detail["review_failures"]
+        self.assertEqual(failures, [{"round": 1, "checks": ["liquidity"]}])
 
 
 class TestRegistryBarsLoaderWiring(unittest.TestCase):

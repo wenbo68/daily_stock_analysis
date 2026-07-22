@@ -232,8 +232,6 @@ def _sizing_block(
         stop_loss=final.levels.stop_loss,
         direction=final.direction,
         market=market,
-        max_position_fraction=settings.max_position_fraction,
-        fee_fraction=settings.fee_fraction,
     )
     result = size_position(inputs)
 

@@ -202,22 +202,21 @@ a report from a previous trading day just shows a "re-run for a fresh plan" note
 ## 4. Position sizing (v2 slice 1, `sizing.py`)
 
 ```
-loss_per_share = (entry − stop_loss) + entry × fee_fraction
+loss_per_share = entry − stop_loss
 risk_budget    = capital × risk_fraction
 shares         = floor(risk_budget / loss_per_share)          then:
-                 capped so shares × entry ≤ capital × 25%
                  rounded down to the market's lot size (CN: 100)
 ```
 
 You choose the money you can lose on one trade (`capital × risk_fraction`, e.g.
-$50,000 × 1% = $500). The entry-to-stop gap plus round-trip trading costs
-(`fee_fraction`, default 0 — broker-specific) is what being wrong costs per share.
+$50,000 × 1% = $500). The entry-to-stop gap is what being wrong costs per share.
 Division gives the share count, so **every losing trade costs the same planned
-amount**. The 25% cap stops a tight stop from producing an oversized position; lot
-rounding keeps the count orderable. Any unmet precondition (no stop, stop above
-entry, missing settings, count rounds to zero…) produces an explicit refusal with a
-reason — never a silent zero. Spread and slippage are deliberately out of scope:
-they can't be known in advance.
+amount**. Lot rounding keeps the count orderable. Any unmet precondition (no stop,
+stop above entry, missing settings, count rounds to zero…) produces an explicit
+refusal with a reason — never a silent zero. Spread and slippage are deliberately
+out of scope: they can't be known in advance. The fee rate and the 25%
+single-position cap were removed 2026-07-22 (owner decision) — they return later
+as a per-run fee input and a whole-portfolio concentration check.
 
 Outlook redesign: the tier-3 size multiplier is gone. A bearish outlook while
 holding exits the **full** holding (`sell_shares = ownership`); shares are never
@@ -233,7 +232,6 @@ scaled by any AI-derived factor.
 | Stop distance | 2 × ATR | stops | classic noise-vs-breakdown balance point |
 | Reward-to-risk (geometric target) | user-chosen, default 2.0 | levels | the run form's "Reward" field; below it → warning |
 | Reward-to-risk (room gate) | 1.5 | levels | a resistance-capped plan below this is withheld |
-| Position cap | 25% of capital | sizing | concentration guard when stops are tight |
 | CN lot size | 100 shares | sizing | A-share board-lot rule |
 | Earnings warning window | 7 calendar days | earnings | close enough that turbulence is imminent |
 | Bullet weight range | 1–5 | debate | very minor → very important (thesis-changing) |
@@ -338,6 +336,18 @@ and the vote above is the sole judge. Depth 3 is a validation error
 deleted).
 
 ## 7. Display-only risk card (outlook redesign, `risk_card.py`)
+
+> Retired 2026-07-22 (plan-review redesign): new runs ship no risk card.
+> The adjustable checks (liquidity, volatility, stop-vs-swing-low) moved
+> into `plan_review.py` as a check-adjust cycle — up to 3 AI adjustment
+> rounds, with the plan-dependent checks (liquidity, stop-vs-swing-low)
+> re-run on each adjusted plan; no convergence → all adjustments are
+> discarded and the computed plan stands (`review_failures` in
+> levels_detail). The stop-distance check was deleted as dead code (the
+> base stop is always exactly 2 ATR and the ±1 ATR adjustment band keeps
+> any stop inside 1–3 ATR). The gap scenarios and the reward shortfall
+> became the trade-plan card's structured warnings. The section below
+> describes the old card, which old stored runs still render.
 
 Six deterministic pre-trade checks — computed from data the run
 already has. ZERO LLM calls, and by explicit owner decision the card

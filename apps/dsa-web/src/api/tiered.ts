@@ -51,13 +51,25 @@ export type TieredLevelDetail = {
   evidence: string[];
   links?: TieredDebateLink[];
   adjusted_inputs?: Record<string, number> | null;
+  /** Shares only: the mechanical recompute from the adjusted levels,
+   *  before any AI trim — the receipt's result line. */
+  mechanical?: number | null;
   rejection: string | null;
   final: number | null;
+};
+
+// One round of the check-adjust cycle that ended with a risk check still
+// firing. Present (non-empty) only when the review never converged and
+// the computed plan was kept — the UI words it in the blue-keep modal.
+export type TieredReviewFailure = {
+  round: number;
+  checks: string[];
 };
 
 export type TieredLevelsDetail = {
   levels: Record<string, TieredLevelDetail>;
   warnings: string[];
+  review_failures?: TieredReviewFailure[] | null;
 };
 
 // One structured trade-plan warning: numbers only, the frontend words it.
@@ -401,15 +413,14 @@ export type TieredSizing = {
   risk_amount: number | null;
   loss_per_share: number | null;
   lot_size: number;
-  cap_applied: boolean;
   reason_code: string | null;
   refusal_reason: string | null;
   notes: string[];
+  // Fee rate and the position cap were removed 2026-07-22 (they return
+  // later as user inputs); old stored runs may still carry those keys.
   inputs: {
     capital: number | null;
     risk_fraction: number | null;
-    max_position_fraction: number | null;
-    fee_fraction: number | null;
     // Absent on runs stored before the reward filter existed.
     reward_risk?: number | null;
     entry: number | null;

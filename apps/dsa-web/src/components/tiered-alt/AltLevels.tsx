@@ -6,6 +6,7 @@ import type {
   TieredLevels,
   TieredLevelsDetail,
   TieredPlanWarnings,
+  TieredReviewFailure,
 } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
@@ -61,27 +62,31 @@ const LEVEL_HELP_KEYS: Record<ColumnKey, UiTextKey> = {
 const CHECK_KEYWORD_KEYS: Record<string, UiTextKey> = {
   liquidity: 'tiered.alt.checkKey.liquidity',
   volatility: 'tiered.alt.checkKey.volatility',
-  stop_distance: 'tiered.alt.checkKey.stop_distance',
   stop_vs_swing_low: 'tiered.alt.checkKey.stop_vs_swing_low',
 };
 
 // One bullet per reason, each opening with its check keyword; old stored
 // runs (a single paragraph, no check) get one keyword-less bullet.
+// `leading` renders as the first bullet regardless of reasons — the
+// shares modal always opens with its arithmetic receipt (2026-07-22).
 const AdjustReasonList = ({
   reasons,
   legacyReason,
   legacyLinks,
+  leading,
 }: {
   reasons: TieredLevelReason[];
   legacyReason?: string | null;
   legacyLinks?: TieredLevelDetail['links'];
+  leading?: ReactNode;
 }) => {
   const { t } = useUiLanguage();
-  if (reasons.length === 0 && !legacyReason) {
+  if (!leading && reasons.length === 0 && !legacyReason) {
     return null;
   }
   return (
     <ul className="flex list-disc flex-col gap-2 pl-4" data-testid="alt-adjust-reasons">
+      {leading ? <li data-testid="alt-adjust-receipt">{leading}</li> : null}
       {reasons.map((reason, index) => {
         const keywordKey = CHECK_KEYWORD_KEYS[reason.check];
         return (
@@ -389,6 +394,64 @@ const AltAdjustedCell = ({ levelKey, detail, label, citations }: AltLevelCellPro
   );
 };
 
+// When the check-adjust cycle never converged, the backend threw every
+// adjustment away — the whole adjusted row shows "keep" in link-blue and
+// clicking any of them opens what still failed in each round.
+const AltKeepFailedCell = ({
+  columnKey,
+  detail,
+  failures,
+}: {
+  columnKey: ColumnKey;
+  detail: TieredLevelDetail | null;
+  failures: TieredReviewFailure[];
+}) => {
+  const { t } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!detail || detail.base === null) {
+    return <span className="text-gray-600">—</span>;
+  }
+  const checkNames = (checks: string[]) =>
+    checks
+      .map((check) => {
+        const keywordKey = CHECK_KEYWORD_KEYS[check];
+        return keywordKey ? t(keywordKey) : check;
+      })
+      .join(', ');
+  return (
+    <>
+      <button
+        type="button"
+        data-testid={`alt-level-keepfail-${columnKey}`}
+        onClick={() => setIsOpen(true)}
+        className={cn('cursor-pointer', ALT_LINK)}
+      >
+        {t('tiered.alt.levels.keep')}
+      </button>
+      <AltModal
+        isOpen={isOpen}
+        title={t('tiered.alt.reviewFail.title')}
+        onClose={() => setIsOpen(false)}
+      >
+        <div className={MODAL_BODY}>
+          <p>{t('tiered.alt.reviewFail.intro')}</p>
+          <ul className="flex list-disc flex-col gap-2 pl-4" data-testid="alt-review-failures">
+            {failures.map((failure, index) => (
+              <li key={index}>
+                {t('tiered.alt.reviewFail.round', {
+                  round: String(failure.round),
+                  checks: checkNames(failure.checks),
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </AltModal>
+    </>
+  );
+};
+
 // ---------- the shares column (plan-review redesign, 2026-07-22) ----------
 
 // A number that scroll-flashes the element it came from (run-row inputs,
@@ -538,20 +601,24 @@ const AltSharesAdjustedCell = ({ detail, taskId, levelAdjusted }: SharesCellProp
         panelClassName="w-fit min-w-72 max-w-[95vw]"
       >
         <div className={MODAL_BODY}>
+          {/* Bullet 1 is always the mechanical recompute from the adjusted
+              levels — the AI trim's reasons follow (owner, 2026-07-22). */}
           <AdjustReasonList
             reasons={detail.reasons ?? []}
             legacyReason={detail.reason}
             legacyLinks={detail.links}
+            leading={
+              detail.adjusted_inputs ? (
+                <SharesReceipt
+                  inputs={detail.adjusted_inputs}
+                  shares={detail.mechanical ?? detail.adjusted}
+                  taskId={taskId}
+                  entryTargetId={levelTarget('entry')}
+                  stopTargetId={levelTarget('stop_loss')}
+                />
+              ) : undefined
+            }
           />
-          {!detail.reasons?.length && !detail.reason && detail.adjusted_inputs ? (
-            <SharesReceipt
-              inputs={detail.adjusted_inputs}
-              shares={detail.adjusted}
-              taskId={taskId}
-              entryTargetId={levelTarget('entry')}
-              stopTargetId={levelTarget('stop_loss')}
-            />
-          ) : null}
         </div>
       </AltModal>
     </>
@@ -589,6 +656,7 @@ export const AltLevels = ({
   const { t } = useUiLanguage();
   const details = levelsDetail?.levels ?? null;
   const sharesDetail = details?.shares ?? null;
+  const reviewFailures = levelsDetail?.review_failures ?? [];
   const levelAdjusted = (key: LevelKey): boolean =>
     (details?.[key]?.adjusted ?? null) !== null;
   // Where a warning value pointing at a plan column should flash: the
@@ -634,23 +702,37 @@ export const AltLevels = ({
               </tr>
               <tr>
                 <td className={ROW_LABEL}>{t('tiered.alt.levels.adjusted')}</td>
-                {LEVEL_ORDER.map((key) => (
-                  <td key={key} className={CELL}>
-                    <AltAdjustedCell
-                      levelKey={key}
-                      detail={details[key] ?? null}
-                      label={t(LEVEL_LABEL_KEYS[key])}
-                      citations={citations}
-                    />
-                  </td>
-                ))}
-                <td className={CELL}>
-                  <AltSharesAdjustedCell
-                    detail={sharesDetail}
-                    taskId={taskId}
-                    levelAdjusted={levelAdjusted}
-                  />
-                </td>
+                {reviewFailures.length > 0 ? (
+                  COLUMNS.map((key) => (
+                    <td key={key} className={CELL}>
+                      <AltKeepFailedCell
+                        columnKey={key}
+                        detail={(key === 'shares' ? sharesDetail : details[key]) ?? null}
+                        failures={reviewFailures}
+                      />
+                    </td>
+                  ))
+                ) : (
+                  <>
+                    {LEVEL_ORDER.map((key) => (
+                      <td key={key} className={CELL}>
+                        <AltAdjustedCell
+                          levelKey={key}
+                          detail={details[key] ?? null}
+                          label={t(LEVEL_LABEL_KEYS[key])}
+                          citations={citations}
+                        />
+                      </td>
+                    ))}
+                    <td className={CELL}>
+                      <AltSharesAdjustedCell
+                        detail={sharesDetail}
+                        taskId={taskId}
+                        levelAdjusted={levelAdjusted}
+                      />
+                    </td>
+                  </>
+                )}
               </tr>
               {planWarnings ? (
                 <tr>

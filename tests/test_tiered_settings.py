@@ -9,16 +9,14 @@ from __future__ import annotations
 import unittest
 
 from src.tiered_analysis.settings import (
-    DEFAULT_FEE_FRACTION,
+    DEFAULT_REWARD_RISK,
     ENV_CAPITAL,
-    ENV_FEE_FRACTION,
-    ENV_MAX_POSITION_FRACTION,
+    ENV_REWARD_RISK,
     ENV_RISK_FRACTION,
     SizingSettings,
     load_sizing_settings,
     merge_overrides,
 )
-from src.tiered_analysis.sizing import DEFAULT_MAX_POSITION_FRACTION
 
 
 class TestLoadSizingSettings(unittest.TestCase):
@@ -27,23 +25,19 @@ class TestLoadSizingSettings(unittest.TestCase):
         self.assertFalse(settings.is_enabled)
         self.assertIsNone(settings.capital)
         self.assertIsNone(settings.risk_fraction)
-        self.assertEqual(settings.max_position_fraction,
-                         DEFAULT_MAX_POSITION_FRACTION)
-        self.assertEqual(settings.fee_fraction, DEFAULT_FEE_FRACTION)
+        self.assertEqual(settings.reward_risk, DEFAULT_REWARD_RISK)
         self.assertEqual(settings.warnings, ())
 
     def test_full_valid_env_parses(self):
         settings = load_sizing_settings(env={
             ENV_CAPITAL: "120000",
             ENV_RISK_FRACTION: "0.01",
-            ENV_MAX_POSITION_FRACTION: "0.2",
-            ENV_FEE_FRACTION: "0.001",
+            ENV_REWARD_RISK: "2.5",
         })
         self.assertTrue(settings.is_enabled)
         self.assertEqual(settings.capital, 120000.0)
         self.assertEqual(settings.risk_fraction, 0.01)
-        self.assertEqual(settings.max_position_fraction, 0.2)
-        self.assertEqual(settings.fee_fraction, 0.001)
+        self.assertEqual(settings.reward_risk, 2.5)
         self.assertEqual(settings.warnings, ())
 
     def test_capital_alone_is_not_enabled(self):
@@ -63,11 +57,11 @@ class TestLoadSizingSettings(unittest.TestCase):
         settings = load_sizing_settings(env={
             ENV_CAPITAL: "50000",
             ENV_RISK_FRACTION: "0.01",
-            ENV_FEE_FRACTION: "cheap",
+            ENV_REWARD_RISK: "plenty",
         })
         self.assertTrue(settings.is_enabled)
-        self.assertEqual(settings.fee_fraction, DEFAULT_FEE_FRACTION)
-        self.assertTrue(any(ENV_FEE_FRACTION in w for w in settings.warnings))
+        self.assertEqual(settings.reward_risk, DEFAULT_REWARD_RISK)
+        self.assertTrue(any(ENV_REWARD_RISK in w for w in settings.warnings))
 
     def test_blank_strings_treated_as_absent(self):
         settings = load_sizing_settings(env={

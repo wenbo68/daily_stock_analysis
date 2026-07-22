@@ -2,8 +2,9 @@
 """Offline tests for the deterministic position-sizing engine (v2 slice 1).
 
 Fixed-fractional sizing: shares = (capital * risk_fraction) / loss_per_share,
-where loss_per_share = (entry - stop) + entry * fee_fraction. Every refusal
-path must carry an explicit reason code — never a silent zero.
+where loss_per_share = entry - stop. Every refusal path must carry an
+explicit reason code — never a silent zero. (Fee rate and the position
+cap were removed 2026-07-22; they return as user inputs later.)
 """
 from __future__ import annotations
 
@@ -12,7 +13,6 @@ import unittest
 from src.tiered_analysis.providers.base import Market
 from src.tiered_analysis.schema import Direction
 from src.tiered_analysis.sizing import (
-    DEFAULT_MAX_POSITION_FRACTION,
     RefusalReason,
     SizingInputs,
     size_position,
@@ -48,47 +48,24 @@ class TestFormula(unittest.TestCase):
         wide = size_position(_inputs(stop_loss=190.0))  # loss/share 20
         self.assertGreater(tight.shares, wide.shares)
 
-    def test_fees_shrink_the_size(self):
-        # Budget 300, loss/share 2 -> 150 shares; with a 1% round-trip fee the
-        # loss/share becomes 2 + 1 = 3 -> 100 shares. Capital is large enough
-        # that the position cap stays out of the way.
-        no_fee = size_position(
+    def test_loss_per_share_is_the_entry_stop_distance(self):
+        # Budget 300, loss/share 2 -> exactly 150 shares (no fee term).
+        result = size_position(
             _inputs(capital=120_000.0, risk_fraction=0.0025, entry=100.0, stop_loss=98.0)
         )
-        with_fee = size_position(
-            _inputs(
-                capital=120_000.0,
-                risk_fraction=0.0025,
-                entry=100.0,
-                stop_loss=98.0,
-                fee_fraction=0.01,
-            )
-        )
-        self.assertEqual(no_fee.shares, 150)
-        self.assertEqual(with_fee.shares, 100)
-
-    def test_risk_amount_reflects_fees(self):
-        result = size_position(
-            _inputs(
-                capital=120_000.0,
-                risk_fraction=0.0025,
-                entry=100.0,
-                stop_loss=98.0,
-                fee_fraction=0.01,
-            )
-        )
-        self.assertAlmostEqual(result.risk_amount, 100 * 3.0)
+        self.assertEqual(result.shares, 150)
+        self.assertAlmostEqual(result.loss_per_share, 2.0)
+        self.assertAlmostEqual(result.risk_amount, 150 * 2.0)
 
 
 class TestGuardrails(unittest.TestCase):
-    def test_position_value_cap(self):
-        # loss/share 1 -> 500 raw shares = 50k position; cap 25% of 50k = 12.5k.
+    def test_no_position_cap_anymore(self):
+        # loss/share 1 -> 500 shares = a 50k position on 50k capital; the
+        # old 25% cap would have cut this to 125 — removed 2026-07-22.
         result = size_position(
             _inputs(capital=50_000.0, risk_fraction=0.01, entry=100.0, stop_loss=99.0)
         )
-        self.assertTrue(result.cap_applied)
-        self.assertEqual(result.shares, 125)
-        self.assertLessEqual(result.position_value, 50_000.0 * DEFAULT_MAX_POSITION_FRACTION)
+        self.assertEqual(result.shares, 500)
 
     def test_cn_lot_rounding(self):
         # 1000 budget / 0.55 = 1818.18 -> floor to lot 100 -> 1800.
@@ -112,10 +89,10 @@ class TestGuardrails(unittest.TestCase):
         self.assertTrue(any("board lot" in note.lower() for note in result.notes))
 
     def test_rounds_down_to_zero_is_a_refusal_not_a_zero(self):
-        # Cap: 25% of 1000 = 250 -> 25 shares -> CN lot 100 -> 0 -> refuse.
+        # Budget 5 / loss 0.1 = 50 raw shares -> CN lot 100 floor -> 0 -> refuse.
         result = size_position(
             _inputs(
-                capital=1_000.0,
+                capital=500.0,
                 risk_fraction=0.01,
                 entry=10.0,
                 stop_loss=9.9,
@@ -185,17 +162,6 @@ class TestRefusals(unittest.TestCase):
             {"risk_fraction": 0.0},
             {"risk_fraction": 1.0},
             {"entry": 0.0},
-        ):
-            self._assert_refused(
-                size_position(_inputs(**overrides)), RefusalReason.INVALID_INPUT
-            )
-
-    def test_bad_fee_or_cap_fraction_is_invalid(self):
-        for overrides in (
-            {"fee_fraction": -0.01},
-            {"fee_fraction": 1.0},
-            {"max_position_fraction": 0.0},
-            {"max_position_fraction": 1.5},
         ):
             self._assert_refused(
                 size_position(_inputs(**overrides)), RefusalReason.INVALID_INPUT

@@ -2,11 +2,14 @@
 """Deterministic position sizing (docs/tiered-analysis-design.md §3.2; v2 slice 1).
 
 Fixed-fractional risk sizing: the user picks the loss they can accept
-(capital * risk_fraction); the entry-to-stop distance plus round-trip
-trading costs give the loss per share; division gives the share count.
-Pure functions, no I/O, no LLM — every refusal carries an explicit reason
-instead of a silent zero, mirroring the provider layer's no-silent-blanks
-rule.
+(capital * risk_fraction); the entry-to-stop distance gives the loss per
+share; division gives the share count. Pure functions, no I/O, no LLM —
+every refusal carries an explicit reason instead of a silent zero,
+mirroring the provider layer's no-silent-blanks rule.
+
+Fee rate and the 25% single-name position cap were removed 2026-07-22
+(owner decision): they return later as a per-run fee input and a
+whole-portfolio cap once those features exist.
 """
 from __future__ import annotations
 
@@ -17,10 +20,6 @@ from typing import List, Optional, Tuple
 
 from .providers.base import Market
 from .schema import Direction, SizingSlots
-
-#: Never put more than this fraction of capital into one name, no matter how
-#: tight the stop is — a near-entry stop makes the raw formula explode.
-DEFAULT_MAX_POSITION_FRACTION = 0.25
 
 #: Above this per-trade risk fraction we still size, but flag it as unusual.
 HIGH_RISK_FRACTION_NOTE_THRESHOLD = 0.05
@@ -59,22 +58,16 @@ class SizingInputs:
     stop_loss: Optional[float]
     direction: Direction
     market: Market = Market.UNKNOWN
-    max_position_fraction: float = DEFAULT_MAX_POSITION_FRACTION
-    #: Round-trip trading costs (commission, stamp duty, transfer fees) as a
-    #: fraction of traded value; 0 by default because costs are broker- and
-    #: market-specific. Spread/slippage stay out of scope — unknowable here.
-    fee_fraction: float = 0.0
 
 
 @dataclass(frozen=True)
 class SizingResult:
     shares: Optional[int] = None
     position_value: Optional[float] = None
-    #: Planned maximum loss if the stop is hit, fees included.
+    #: Planned maximum loss if the stop is hit.
     risk_amount: Optional[float] = None
     loss_per_share: Optional[float] = None
     lot_size: int = _DEFAULT_LOT_SIZE
-    cap_applied: bool = False
     reason_code: Optional[RefusalReason] = None
     refusal_reason: Optional[str] = None
     notes: List[str] = field(default_factory=list)
@@ -119,14 +112,6 @@ def _validate(inputs: SizingInputs) -> Tuple[Optional[SizingResult], List[str]]:
         return _refuse(
             RefusalReason.SIZING_OFF,
             f"Sizing is off: {' and '.join(missing)} {verb} not provided.",
-        ), notes
-    if not (0 < inputs.fee_fraction < 1 or inputs.fee_fraction == 0):
-        return _refuse(
-            RefusalReason.INVALID_INPUT, "fee_fraction must be in [0, 1)."
-        ), notes
-    if not 0 < inputs.max_position_fraction <= 1:
-        return _refuse(
-            RefusalReason.INVALID_INPUT, "max_position_fraction must be in (0, 1]."
         ), notes
     if inputs.capital <= 0 or not 0 < inputs.risk_fraction < 1:
         return _refuse(
@@ -180,25 +165,16 @@ def size_position(inputs: SizingInputs) -> SizingResult:
             notes=notes,
         )
 
-    loss_per_share = (inputs.entry - inputs.stop_loss) + inputs.entry * inputs.fee_fraction
+    loss_per_share = inputs.entry - inputs.stop_loss
     risk_budget = inputs.capital * inputs.risk_fraction
     raw_shares = risk_budget / loss_per_share
-
-    max_position_value = inputs.capital * inputs.max_position_fraction
-    cap_applied = raw_shares * inputs.entry > max_position_value
-    if cap_applied:
-        raw_shares = max_position_value / inputs.entry
-        notes.append(
-            f"Size capped at {inputs.max_position_fraction:.0%} of capital in one "
-            "name; the risk budget alone would have allowed more."
-        )
 
     shares = int(math.floor(raw_shares / lot_size)) * lot_size
     if shares <= 0:
         return _refuse(
             RefusalReason.TOO_SMALL,
-            "The computed size rounds down to zero — the risk budget (or the "
-            "position cap) is too small for even one "
+            "The computed size rounds down to zero — the risk budget is too "
+            "small for even one "
             + ("board lot" if lot_size > 1 else "share")
             + " at this price.",
             lot_size=lot_size,
@@ -211,7 +187,6 @@ def size_position(inputs: SizingInputs) -> SizingResult:
         risk_amount=shares * loss_per_share,
         loss_per_share=loss_per_share,
         lot_size=lot_size,
-        cap_applied=cap_applied,
         notes=notes,
     )
 

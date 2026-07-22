@@ -107,9 +107,6 @@ export const SizingCard = ({ sizing }: SizingCardProps) => {
               {t('tiered.sizing.zeroShares')}
             </p>
           ) : null}
-          {sizing.cap_applied ? (
-            <p className="mt-2 text-xs text-secondary-text">{t('tiered.sizing.capApplied')}</p>
-          ) : null}
           <p className="mt-2 text-xs text-secondary-text">
             {t('tiered.sizing.inputsLine', {
               capital: formatPrice(sizing.inputs.capital),

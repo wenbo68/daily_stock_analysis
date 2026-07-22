@@ -1,18 +1,25 @@
 # -*- coding: utf-8 -*-
-"""AI plan review (owner redesign 2026-07-22).
+"""AI plan review (owner redesign 2026-07-22; check-adjust cycle same day).
 
-The old display-only risk card is gone; its six deterministic checks now
-do something:
+The old display-only risk card is gone; its deterministic checks now do
+something:
 
 - **Adjustable checks** — liquidity (order > 5% of the average daily
-  volume), volatility (typical daily swing > 4% of price), stop distance
-  (outside the healthy 1-3 ATR band) and stop-vs-swing-low (stop resting
-  at/above the 20-day low) are handed to ONE LLM call that may adjust
-  the plan: trim the share count, move the stop, move the target. Every
-  accepted adjustment carries a code-validated, link-cited reason (the
-  same citation contract as the tier-2 debate: values copied exactly as
-  the report displays them, each with a {ref, value} link; sentiment
-  claims cite citation:N).
+  volume), volatility (typical daily swing > 4% of price) and
+  stop-vs-swing-low (stop resting at/above the 20-day low) feed an LLM
+  call that may adjust the plan: trim the share count, move the stop,
+  move the target. Every accepted adjustment carries a code-validated,
+  link-cited reason (the same citation contract as the tier-2 debate).
+- **The cycle** — an adjusted plan can trip a check the computed plan
+  did not (a tightened stop raises the mechanical share count past the
+  liquidity limit), so the PLAN-DEPENDENT checks (liquidity, stop vs
+  swing low) re-run after every adjustment round, up to
+  ``MAX_ADJUST_ROUNDS`` rounds. Volatility depends only on report data —
+  no adjustment can change it — so it fires in round 1 as context and
+  never counts against convergence. Converged (no plan-dependent check
+  fires) → the cumulative adjustments stand. Not converged → every
+  adjustment is discarded, the computed plan stands, and
+  ``levels_detail["review_failures"]`` records what failed per round.
 - **Warning checks** — the two overnight-gap scenarios and a
   reward-to-risk shortfall become structured per-column warnings on the
   trade-plan card. The backend ships numbers only; the frontend words
@@ -67,14 +74,20 @@ ADV_FLAG_FRACTION = 0.05
 #: Typical daily swing above this % of price → the AI reviews shares,
 #: stop and target together.
 VOLATILITY_FLAG_PCT = 4.0
-#: Healthy stop distance band in ATRs; outside it the AI reviews the stop.
-STOP_ATR_MIN = 1.0
-STOP_ATR_MAX = 3.0
 #: How far past the stop the ATR gap scenario assumes the open lands.
 GAP_ATR_MULTIPLE = 1.0
 
 #: Adjustable targets the LLM may propose (the entry is formula-owned).
 _ADJUSTABLE = ("stop_loss", "take_profit", "shares")
+
+#: Checks whose condition depends on the plan itself (share count, stop
+#: placement). Only these re-run each round and define convergence —
+#: volatility depends on report data alone, so demanding it clear would
+#: make every volatile stock fail all rounds and revert.
+_PLAN_DEPENDENT_CHECKS = ("liquidity", "stop_vs_swing_low")
+
+#: Adjustment rounds the AI gets before the computed plan stands.
+MAX_ADJUST_ROUNDS = 3
 
 
 @dataclass(frozen=True)
@@ -116,8 +129,6 @@ def _size(
         stop_loss=levels.stop_loss,
         direction=direction,
         market=market,
-        max_position_fraction=settings.max_position_fraction,
-        fee_fraction=settings.fee_fraction,
     )
     return inputs, size_position(inputs)
 
@@ -150,15 +161,12 @@ def sizing_detail_dict(
         "risk_amount": final_risk,
         "loss_per_share": result.loss_per_share,
         "lot_size": result.lot_size,
-        "cap_applied": result.cap_applied,
         "reason_code": result.reason_code.value if result.reason_code else None,
         "refusal_reason": result.refusal_reason,
         "notes": list(result.notes) + list(settings.warnings) + list(extra_notes),
         "inputs": {
             "capital": settings.capital,
             "risk_fraction": settings.risk_fraction,
-            "max_position_fraction": settings.max_position_fraction,
-            "fee_fraction": settings.fee_fraction,
             "reward_risk": settings.reward_risk,
             "entry": levels.entry,
             "stop_loss": levels.stop_loss,
@@ -185,8 +193,7 @@ def _flagged_checks(
     shares: Optional[int],
 ) -> List[_Check]:
     checks: List[_Check] = []
-    entry, stop = levels.entry, levels.stop_loss
-    atr = _num(tech, "atr_14")
+    stop = levels.stop_loss
     avg_volume = _num(tech, "avg_volume_20")
     volatility = _num(tech, "volatility_pct")
     swing_low = _num(tech, "swing_low_20")
@@ -211,15 +218,6 @@ def _flagged_checks(
             "stop and the target together and adjust what the volatility "
             "actually threatens",
         ))
-    if entry is not None and stop is not None and atr:
-        multiple = (entry - stop) / atr
-        if multiple < STOP_ATR_MIN or multiple > STOP_ATR_MAX:
-            checks.append(_Check(
-                "stop_distance",
-                f"the stop sits {multiple:.2f} ATR from the entry, outside "
-                f"the healthy {STOP_ATR_MIN:g}-{STOP_ATR_MAX:g} band — "
-                'propose a corrected "stop_loss"',
-            ))
     if stop is not None and swing_low is not None and stop >= swing_low:
         checks.append(_Check(
             "stop_vs_swing_low",
@@ -304,8 +302,8 @@ The computed plan (deterministic formulas):
 - entry = {entry} ({entry_formula})
 - stop_loss = {stop_loss} ({stop_formula})
 - take_profit = {take_profit} ({target_formula})
-- shares = {shares} (capital × risk fraction ÷ (entry − stop_loss))
-
+- shares = {base_shares} (capital × risk fraction ÷ (entry − stop_loss))
+{round_note}
 Deterministic checks flagged these problems:
 {checks}
 
@@ -323,7 +321,7 @@ checked mechanically by code):
   "check" is that problem's name copied exactly from the flagged list
   above; "text" is one plain sentence. One entry per flagged problem —
   never invent a check name, never repeat one within an adjustment.
-- "shares" may only go DOWN from {shares}.
+- "shares" may only go DOWN from {trim_baseline}.
 - A price move must stay within 1 ATR ({atr}) of its computed value, and
   keep stop_loss < entry < take_profit.
 - Each text must state every report number it relies on EXACTLY as the
@@ -515,11 +513,21 @@ def _request_adjustments(
     dimensions: Sequence[DimensionResult],
     bases: BaseLevels,
     base_shares: Optional[int],
+    trim_baseline: Optional[int],
     checks: Sequence[_Check],
     atr: Optional[float],
     summarizer: Callable[[str], str],
+    round_note: str = "",
+    extra_allowed: Sequence[str] = (),
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """One call + one fix round; returns (adjustments, warnings)."""
+    """One call + one fix round; returns (adjustments, warnings).
+
+    ``trim_baseline`` is the current round's mechanical share count (the
+    reduction-only floor for a shares proposal); ``round_note`` describes
+    the current plan on rounds after the first; ``extra_allowed`` lists
+    displayed values (the current plan's numbers) a reason may state
+    without a citation — they have no report row to link to.
+    """
 
     def basis(key: str) -> Tuple[str, str]:
         b = bases.get(key)
@@ -536,7 +544,9 @@ def _request_adjustments(
         entry=entry_v, entry_formula=entry_f,
         stop_loss=stop_v, stop_formula=stop_f,
         take_profit=target_v, target_formula=target_f,
-        shares=base_shares if base_shares is not None else "—",
+        base_shares=base_shares if base_shares is not None else "—",
+        trim_baseline=trim_baseline if trim_baseline is not None else "—",
+        round_note=round_note,
         checks="\n".join(f"- {check.name}: {check.text}" for check in checks),
         atr=display_value(atr) if atr is not None else "—",
     )
@@ -544,7 +554,9 @@ def _request_adjustments(
     allowed_checks = [check.name for check in checks]
     base_displays = {
         "stop_loss": stop_v, "take_profit": target_v,
-        "shares": display_value(base_shares) if base_shares is not None else "—",
+        "shares": (
+            display_value(trim_baseline) if trim_baseline is not None else "—"
+        ),
     }
 
     def reason_link_errors(adjustment: Dict[str, Any]) -> List[str]:
@@ -553,6 +565,7 @@ def _request_adjustments(
             display_value(adjustment["value"]),
             base_displays.get(target, "—"),
             *_THRESHOLD_DISPLAYS,
+            *extra_allowed,
         ]
         problems: List[str] = []
         for reason in adjustment["reasons"]:
@@ -618,8 +631,10 @@ def _shares_detail(
 
     base = the count from the computed levels; adjusted = what the run
     actually uses when that changed (levels moved and/or the AI trimmed
-    it); adjusted_inputs = the final levels the mechanical recompute
-    used, so the frontend receipt can show that arithmetic.
+    it). Every adjusted count also ships ``adjusted_inputs`` (the final
+    levels the mechanical recompute used) and ``mechanical`` (the count
+    that recompute produced, before any AI trim) so the frontend can
+    always open with the arithmetic receipt (owner decision 2026-07-22).
     """
     base = base_result.shares
     final = ai_shares if ai_shares is not None else final_result.shares
@@ -645,14 +660,59 @@ def _shares_detail(
         "rejection": rejection,
         "final": final,
     }
-    if adjusted is not None and final_result.shares != base:
+    if adjusted is not None:
         detail["adjusted_inputs"] = {
             "capital": final_inputs.capital,
             "risk_fraction": final_inputs.risk_fraction,
             "entry": final_inputs.entry,
             "stop_loss": final_inputs.stop_loss,
         }
+        detail["mechanical"] = final_result.shares
     return detail
+
+
+@dataclass(frozen=True)
+class _RoundPlan:
+    """One round's fully-evaluated plan: cumulative adjustments applied
+    to the bases, mechanical share recompute, AI trim verdict."""
+
+    decisions: Dict[str, Any]
+    adjust_warnings: List[str]
+    levels: SniperLevels
+    inputs: SizingInputs
+    result: SizingResult
+    ai_shares: Optional[int]
+    ai_reasons: Tuple[Dict[str, Any], ...]
+    shares_rejection: Optional[str]
+
+    @property
+    def shares(self) -> Optional[int]:
+        return self.ai_shares if self.ai_shares is not None else self.result.shares
+
+
+def _merge_proposals(
+    merged: Dict[str, Dict[str, Any]],
+    adjustments: Sequence[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Fold one round's adjustments into the cumulative set (new dict).
+
+    A later round's value replaces the earlier one for the same target;
+    reasons merge — an earlier reason survives unless the new round
+    re-explains the same check (one bullet per check in the UI).
+    """
+    combined = dict(merged)
+    for adjustment in adjustments:
+        target = adjustment["target"]
+        reasons = list(adjustment["reasons"])
+        previous = combined.get(target)
+        if previous is not None:
+            fresh_checks = {reason["check"] for reason in reasons}
+            reasons = [
+                reason for reason in previous["reasons"]
+                if reason["check"] not in fresh_checks
+            ] + reasons
+        combined[target] = {"value": adjustment["value"], "reasons": reasons}
+    return combined
 
 
 def review_plan(
@@ -665,10 +725,17 @@ def review_plan(
     ownership: int = 0,
     summarizer: Optional[Callable[[str], str]] = None,
 ) -> PlanReview:
-    """Run the checks, maybe the LLM, and produce the final plan block.
+    """Run the check-adjust cycle and produce the final plan block.
 
     Only called for BUY verdicts (there is nothing to size or adjust on
-    a hold/sell). Every failure path keeps the computed plan and says so.
+    a hold/sell). Up to ``MAX_ADJUST_ROUNDS`` rounds: flag → the AI
+    adjusts → the plan-dependent checks re-run on the adjusted plan.
+    Converged (no plan-dependent check fires) → the cumulative
+    adjustments stand. Not converged (a check still fires after the last
+    round, or the AI answers "no change helps" while one fires) → every
+    adjustment is discarded, the computed plan stands, and
+    ``levels_detail["review_failures"]`` lists what failed per round.
+    LLM outages keep the computed plan with a warning, as before.
     """
     tech = _tech_payload(dimensions)
     atr = _num(tech, "atr_14")
@@ -680,64 +747,185 @@ def review_plan(
     base_levels = decisions_to_sniper(base_decisions)
     base_inputs, base_result = _size(base_levels, direction, market, settings)
 
+    def evaluate(merged: Dict[str, Dict[str, Any]]) -> _RoundPlan:
+        """Apply the cumulative proposals to the bases and size the result."""
+        price_proposals = [
+            AdjustmentProposal(
+                level=key, value=item["value"], reasons=tuple(item["reasons"]),
+            )
+            for key, item in merged.items()
+            if key in LEVEL_KEYS
+        ]
+        decisions, adjust_warnings = apply_adjustments(
+            bases, price_proposals, atr=atr
+        )
+        levels = decisions_to_sniper(decisions)
+        inputs, result = _size(levels, direction, market, settings)
+
+        # The AI's share trim: reductions only (vs this round's mechanical
+        # recompute), floored to the lot size.
+        ai_shares: Optional[int] = None
+        ai_reasons: Tuple[Dict[str, Any], ...] = ()
+        rejection: Optional[str] = None
+        proposal = merged.get("shares")
+        if proposal is not None:
+            lot = result.lot_size
+            proposed = int(math.floor(proposal["value"] / lot)) * lot
+            mechanical = result.shares
+            if mechanical is None:
+                rejection = "no computed share count exists to adjust"
+            elif proposed <= 0:
+                rejection = (
+                    f"proposed count {proposal['value']:g} rounds down to "
+                    "zero — a trim cannot erase the position"
+                )
+            elif proposed >= mechanical:
+                rejection = (
+                    f"proposed count {proposed} is not below the computed "
+                    f"{mechanical} — shares may only be trimmed"
+                )
+            else:
+                ai_shares = proposed
+                ai_reasons = tuple(proposal["reasons"])
+        return _RoundPlan(
+            decisions=decisions,
+            adjust_warnings=adjust_warnings,
+            levels=levels,
+            inputs=inputs,
+            result=result,
+            ai_shares=ai_shares,
+            ai_reasons=ai_reasons,
+            shares_rejection=rejection,
+        )
+
     checks = _flagged_checks(tech, base_levels, base_result.shares)
 
-    adjustments: List[Dict[str, Any]] = []
-    if checks:
-        try:
-            adjustments, request_warnings = _request_adjustments(
-                symbol, dimensions, bases, base_result.shares, checks, atr,
-                summarizer or default_summarizer,
-            )
-            warnings.extend(request_warnings)
-        except LlmConfigError as exc:
-            warnings.append(f"plan review skipped: {exc}")
-        except Exception as exc:  # LLM transport failures degrade loudly
-            logger.warning("plan review LLM call failed for %s: %s", symbol, exc)
-            warnings.append(f"plan review LLM call failed: {exc}")
-
-    price_proposals = [
-        AdjustmentProposal(
-            level=a["target"], value=a["value"], reasons=tuple(a["reasons"]),
-        )
-        for a in adjustments
-        if a["target"] in LEVEL_KEYS
-    ]
-    decisions, adjust_warnings = apply_adjustments(bases, price_proposals, atr=atr)
-    warnings.extend(adjust_warnings)
-    levels = decisions_to_sniper(decisions)
-
-    # Mechanical share recompute from the final levels.
-    final_inputs, final_result = _size(levels, direction, market, settings)
-
-    # The AI's share trim: reductions only, floored to the lot size.
-    ai_shares: Optional[int] = None
-    ai_reasons: Sequence[Dict[str, Any]] = ()
-    shares_rejection: Optional[str] = None
-    shares_proposal = next(
-        (a for a in adjustments if a["target"] == "shares"), None
+    merged: Dict[str, Dict[str, Any]] = {}
+    plan = _RoundPlan(
+        decisions=base_decisions, adjust_warnings=[], levels=base_levels,
+        inputs=base_inputs, result=base_result,
+        ai_shares=None, ai_reasons=(), shares_rejection=None,
     )
-    if shares_proposal is not None:
-        lot = final_result.lot_size
-        proposed = int(math.floor(shares_proposal["value"] / lot)) * lot
-        mechanical = final_result.shares
-        if mechanical is None:
-            shares_rejection = "no computed share count exists to adjust"
-        elif proposed <= 0:
-            shares_rejection = (
-                f"proposed count {shares_proposal['value']:g} rounds down to "
-                "zero — a trim cannot erase the position"
+    review_failures: List[Dict[str, Any]] = []
+    converged = True
+
+    if checks:
+        converged = False
+        prompt_checks = checks
+        for round_no in range(1, MAX_ADJUST_ROUNDS + 1):
+            round_note = ""
+            extra_allowed: List[str] = []
+            if round_no > 1:
+                # Rounds after the first describe the current plan; its
+                # numbers have no report row, so they may go uncited.
+                current = {
+                    "stop_loss": (
+                        display_value(plan.levels.stop_loss)
+                        if plan.levels.stop_loss is not None else "—"
+                    ),
+                    "take_profit": (
+                        display_value(plan.levels.take_profit)
+                        if plan.levels.take_profit is not None else "—"
+                    ),
+                    "shares": (
+                        display_value(plan.shares)
+                        if plan.shares is not None else "—"
+                    ),
+                }
+                round_note = (
+                    "Your earlier accepted adjustments were applied; the plan "
+                    f"currently stands at stop_loss = {current['stop_loss']}, "
+                    f"take_profit = {current['take_profit']}, shares = "
+                    f"{current['shares']}. The checks below were re-run "
+                    "against this CURRENT plan. New adjustments replace your "
+                    "earlier ones for the same target and must still obey "
+                    "every rule against the computed bases above.\n"
+                )
+                extra_allowed = list(current.values()) + (
+                    [display_value(base_result.shares)]
+                    if base_result.shares is not None else []
+                )
+            try:
+                adjustments, request_warnings = _request_adjustments(
+                    symbol, dimensions, bases,
+                    base_result.shares, plan.result.shares,
+                    prompt_checks, atr,
+                    summarizer or default_summarizer,
+                    round_note=round_note, extra_allowed=extra_allowed,
+                )
+            except LlmConfigError as exc:
+                warnings.append(f"plan review skipped: {exc}")
+                converged = not review_failures
+                break
+            except Exception as exc:  # LLM transport failures degrade loudly
+                logger.warning(
+                    "plan review LLM call failed for %s: %s", symbol, exc
+                )
+                warnings.append(f"plan review LLM call failed: {exc}")
+                # No completed-but-flagged round yet → plain outage, keep
+                # the computed plan without the failure verdict.
+                converged = not review_failures
+                break
+            warnings.extend(
+                f"round {round_no}: {warning}" for warning in request_warnings
             )
-        elif proposed >= mechanical:
-            shares_rejection = (
-                f"proposed count {proposed} is not below the computed "
-                f"{mechanical} — shares may only be trimmed"
+            if not adjustments:
+                # The AI's answer is "no change helps". Terminal: a failure
+                # if a plan-dependent check is firing, done otherwise.
+                dependent = [
+                    check for check in prompt_checks
+                    if check.name in _PLAN_DEPENDENT_CHECKS
+                ]
+                if dependent:
+                    review_failures.append({
+                        "round": round_no,
+                        "checks": [check.name for check in dependent],
+                    })
+                else:
+                    converged = True
+                break
+            merged = _merge_proposals(merged, adjustments)
+            plan = evaluate(merged)
+            flagged = [
+                check
+                for check in _flagged_checks(tech, plan.levels, plan.shares)
+                if check.name in _PLAN_DEPENDENT_CHECKS
+            ]
+            if not flagged:
+                converged = True
+                break
+            review_failures.append({
+                "round": round_no,
+                "checks": [check.name for check in flagged],
+            })
+            prompt_checks = flagged
+
+    if converged:
+        # Only the final plan's guardrail verdicts surface — intermediate
+        # rounds' rejections were superseded by later proposals.
+        warnings.extend(plan.adjust_warnings)
+        if plan.shares_rejection is not None:
+            warnings.append(
+                f"adjustment for shares rejected: {plan.shares_rejection}"
             )
-        else:
-            ai_shares = proposed
-            ai_reasons = shares_proposal["reasons"]
-        if shares_rejection is not None:
-            warnings.append(f"adjustment for shares rejected: {shares_rejection}")
+        review_failures = []
+    else:
+        warnings.append(
+            "plan review did not converge: the adjusted plan still tripped "
+            "risk checks after every round, so all adjustments were "
+            "discarded and the computed plan stands"
+        )
+        plan = _RoundPlan(
+            decisions=base_decisions, adjust_warnings=[], levels=base_levels,
+            inputs=base_inputs, result=base_result,
+            ai_shares=None, ai_reasons=(), shares_rejection=None,
+        )
+
+    decisions = plan.decisions
+    levels = plan.levels
+    final_inputs, final_result = plan.inputs, plan.result
+    ai_shares, ai_reasons = plan.ai_shares, plan.ai_reasons
+    shares_rejection = plan.shares_rejection
 
     final_shares = ai_shares if ai_shares is not None else final_result.shares
     final_risk = (
@@ -771,6 +959,10 @@ def review_plan(
         base_inputs, base_result, final_inputs, final_result,
         ai_shares, ai_reasons, shares_rejection,
     )
+    if review_failures:
+        # Not converged: the UI turns every adjusted cell into a blue
+        # "keep" whose modal words these per-round failures.
+        levels_detail["review_failures"] = review_failures
 
     plan_warnings = build_plan_warnings(
         tech, levels, final_shares, final_risk, settings.reward_risk

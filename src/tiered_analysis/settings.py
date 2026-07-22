@@ -17,15 +17,10 @@ import os
 from dataclasses import dataclass, replace
 from typing import List, Mapping, Optional, Tuple
 
-from .sizing import DEFAULT_MAX_POSITION_FRACTION
-
 ENV_CAPITAL = "TIERED_SIZING_CAPITAL"
 ENV_RISK_FRACTION = "TIERED_SIZING_RISK_FRACTION"
-ENV_MAX_POSITION_FRACTION = "TIERED_SIZING_MAX_POSITION_FRACTION"
-ENV_FEE_FRACTION = "TIERED_SIZING_FEE_FRACTION"
 ENV_REWARD_RISK = "TIERED_SIZING_REWARD_RISK"
 
-DEFAULT_FEE_FRACTION = 0.0
 #: The reward-to-risk ratio the target aims for (target = entry + R × risk).
 #: A resistance-capped target below this ratio draws a warning; the 1.5
 #: hard floor in levels.py still voids the plan outright.
@@ -38,8 +33,6 @@ class SizingSettings:
 
     capital: Optional[float] = None
     risk_fraction: Optional[float] = None
-    max_position_fraction: float = DEFAULT_MAX_POSITION_FRACTION
-    fee_fraction: float = DEFAULT_FEE_FRACTION
     #: Shares of this stock the user already holds. Per-run input only (a
     #: holding is stock-specific, so an .env default makes no sense);
     #: 0 = none, which keeps every pre-ownership behavior unchanged.
@@ -75,12 +68,6 @@ def load_sizing_settings(env: Optional[Mapping[str, str]] = None) -> SizingSetti
     capital = _parse_optional(env, ENV_CAPITAL, warnings)
     risk_fraction = _parse_optional(env, ENV_RISK_FRACTION, warnings)
 
-    max_position = _parse_optional(env, ENV_MAX_POSITION_FRACTION, warnings)
-    if max_position is None:
-        max_position = DEFAULT_MAX_POSITION_FRACTION
-    fee = _parse_optional(env, ENV_FEE_FRACTION, warnings)
-    if fee is None:
-        fee = DEFAULT_FEE_FRACTION
     reward = _parse_optional(env, ENV_REWARD_RISK, warnings)
     if reward is None or reward <= 1.0:
         if reward is not None:
@@ -95,8 +82,6 @@ def load_sizing_settings(env: Optional[Mapping[str, str]] = None) -> SizingSetti
     return SizingSettings(
         capital=capital,
         risk_fraction=risk_fraction,
-        max_position_fraction=max_position,
-        fee_fraction=fee,
         reward_risk=reward,
         warnings=tuple(warnings),
     )

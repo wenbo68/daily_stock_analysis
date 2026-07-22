@@ -1107,7 +1107,6 @@ const zh = {
   'tiered.help.stopUsed': '仓位公式实际采用的止损价——与上方价格参考位中的止损一致（经校验的最终值）。',
   'tiered.sizing.multiplierApplied': '风险裁判倍数已应用：{before} 股 × {multiplier} → {after} 股。',
   'tiered.sizing.zeroShares': '0 股 = 风险裁判判定：方向成立，但现在不要开仓。这是明确的结论，不是数据缺失。',
-  'tiered.sizing.capApplied': '已触发单一持仓上限：按风险预算本可买更多，但单只股票的仓位被限制在本金的一定比例内。',
   'tiered.sizing.inputsLine': '计算输入：本金 {capital}，单笔风险 {riskPct}%，入场价 {entry}。',
   'tiered.sizing.reason.sizing_off': '仓位计算未开启（未提供本金和单笔风险比例）。',
   'tiered.sizing.reason.sizing_off_capital': '仓位计算未开启（未提供本金）。',
@@ -1239,8 +1238,11 @@ const zh = {
   'tiered.alt.warnKey.reward_below_goal': '盈亏比',
   'tiered.alt.checkKey.liquidity': '流动性',
   'tiered.alt.checkKey.volatility': '波动',
-  'tiered.alt.checkKey.stop_distance': '止损距离',
   'tiered.alt.checkKey.stop_vs_swing_low': '摆动低点',
+  'tiered.alt.reviewFail.title': '为什么维持原计算值',
+  'tiered.alt.reviewFail.intro':
+    'AI 尝试调整了这份方案，但每次调整后仍有风控检查未通过，因此放弃全部调整，维持按公式计算的方案。',
+  'tiered.alt.reviewFail.round': '第 {round} 轮调整后仍触发：{checks}',
   'tiered.alt.signalSaved': '已记录到 AI 建议 #{id}',
   'tiered.help.capital': '你的交易本金，货币跟随股票所在市场。\n股数计算以它为起点。\n会记住，供下次运行使用。',
   'tiered.help.riskPct': '单笔交易你最多接受亏掉本金的百分之几。\n常见为 1-2%。',
@@ -2592,8 +2594,6 @@ const en: Record<UiTextKey, string> = {
     'Risk-judge multiplier applied: {before} shares × {multiplier} → {after} shares.',
   'tiered.sizing.zeroShares':
     '0 shares = the risk judge ruled: the direction stands, but do not open a position now. That is a deliberate statement, not missing data.',
-  'tiered.sizing.capApplied':
-    'The single-position cap kicked in: the risk budget alone would have allowed more, but one stock is limited to a set share of your capital.',
   'tiered.sizing.inputsLine':
     'Inputs: capital {capital}, risk per trade {riskPct}%, entry {entry}.',
   'tiered.sizing.reason.sizing_off':
@@ -2739,8 +2739,11 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.warnKey.reward_below_goal': 'Reward ratio',
   'tiered.alt.checkKey.liquidity': 'Liquidity',
   'tiered.alt.checkKey.volatility': 'Volatility',
-  'tiered.alt.checkKey.stop_distance': 'Stop distance',
   'tiered.alt.checkKey.stop_vs_swing_low': 'Swing low',
+  'tiered.alt.reviewFail.title': 'Why the plan keeps its computed numbers',
+  'tiered.alt.reviewFail.intro':
+    'The AI tried adjusting this plan, but every attempt still tripped a risk check, so all adjustments were discarded and the formula-computed plan stands.',
+  'tiered.alt.reviewFail.round': 'Round {round} still flagged: {checks}',
   'tiered.alt.signalSaved': 'Recorded to AI signals #{id}',
   'tiered.help.capital':
     'The money you trade with, in the ticker’s own currency.\nThe shares computation starts from it.\nRemembered for your next run.',
