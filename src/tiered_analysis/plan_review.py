@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -34,6 +35,7 @@ from .debate import (
     _payload_value,
     _value_in_text,
     _values_equal,
+    value_pattern,
 )
 from .levels import (
     LEVEL_KEYS,
@@ -328,7 +330,13 @@ checked mechanically by code):
   report above displays it, each cited in that entry's "links" with
   {{"ref": the leaf field, "value": the displayed value}}; claims resting
   on a news source cite {{"ref": "citation:N"}} with no value. Plain
-  sentences only — never paste refs or link JSON into the text."""
+  sentences only — never paste refs or link JSON into the text.
+- Never point at a report metric by name alone: write its name AND its
+  displayed value, cited in "links" (e.g. "the 52-week high (461.62)").
+  Do not state numbers you cannot cite — the only uncited numbers
+  allowed are your proposed value, that target's computed value, and
+  the thresholds quoted in the flagged checks. No market lore that the
+  report does not carry."""
 
 _FIX_TEMPLATE = """{prompt}
 
@@ -338,6 +346,43 @@ Your previous reply had citation problems that code could not verify:
 Send the corrected JSON (same shape). Fix every listed problem: point
 each ref at the right leaf field, copy the value exactly as the report
 displays it, and make sure the reason text contains that value."""
+
+
+#: Number tokens a reason is accountable for: decimals, percentages, and
+#: integers of 3+ digits. One- and two-digit integers are grammar
+#: ("2-day", "the 52-week high", "20-day low"), not report values.
+_REASON_NUMBER_RE = re.compile(r"\d+\.\d+\s?%?|\d+(?:\.\d+)?\s?%|\d{3,}")
+
+#: Numbers the flagged-check texts quote as fixed rules — restating a
+#: threshold needs no citation (there is no report row for it).
+_THRESHOLD_DISPLAYS = (
+    f"{ADV_FLAG_FRACTION:.0%}",
+    f"{VOLATILITY_FLAG_PCT:g}%",
+)
+
+
+def _uncited_number_errors(
+    text: str,
+    where: str,
+    allowed_values: Sequence[str],
+) -> List[str]:
+    """Every number the reason states must be accounted for: a cited link
+    value, the adjustment's own value or base, or a check threshold.
+    Naming a metric without its cited number is what this kills — the
+    reader must get the name AND the value, and the value must jump to
+    its source row."""
+    remainder = text
+    for allowed in allowed_values:
+        if allowed and any(char.isdigit() for char in allowed):
+            remainder = value_pattern(allowed).sub(" ", remainder)
+    return [
+        f"{where}: the number {token!r} has no citation — every report "
+        "value must be written exactly as the report displays it and "
+        "cited in links; the only uncited numbers allowed are this "
+        "adjustment's own value, its computed base, and the flagged "
+        "thresholds"
+        for token in _REASON_NUMBER_RE.findall(remainder)
+    ]
 
 
 def _link_errors(
@@ -497,14 +542,31 @@ def _request_adjustments(
     )
 
     allowed_checks = [check.name for check in checks]
+    base_displays = {
+        "stop_loss": stop_v, "take_profit": target_v,
+        "shares": display_value(base_shares) if base_shares is not None else "—",
+    }
 
     def reason_link_errors(adjustment: Dict[str, Any]) -> List[str]:
+        target = adjustment["target"]
+        allowed_always = [
+            display_value(adjustment["value"]),
+            base_displays.get(target, "—"),
+            *_THRESHOLD_DISPLAYS,
+        ]
         problems: List[str] = []
         for reason in adjustment["reasons"]:
+            where = f'adjustment "{target}" ({reason["check"]})'
             problems.extend(_link_errors(
-                reason["links"], reason["text"],
-                f'adjustment "{adjustment["target"]}" ({reason["check"]})',
-                dimensions,
+                reason["links"], reason["text"], where, dimensions,
+            ))
+            cited = [
+                _link_value_text(link.get("value"))
+                for link in reason["links"]
+                if link.get("value") is not None
+            ]
+            problems.extend(_uncited_number_errors(
+                reason["text"], where, cited + allowed_always,
             ))
         return problems
 

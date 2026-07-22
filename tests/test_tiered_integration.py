@@ -490,6 +490,43 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         self.assertEqual(outcome.llm_usage["stages"].get("plan_adjust", {})
                          .get("calls", 0), 0)  # fake summarizer records none
 
+    def test_uncited_number_in_reason_drops_adjustment(self):
+        # "12.34%" is stated but cited by nothing and matches no report
+        # value → both rounds fail → the computed plan stands.
+        reply = json.dumps({"adjustments": [{
+            "target": "shares", "value": 50,
+            "reasons": [{
+                "check": "liquidity",
+                "text": ("Order flow above 12.34% of daily volume is "
+                         "hard to exit, so the count comes down."),
+                "links": [{"ref": "technicals.avg_volume_20",
+                           "value": "1000"}],
+            }],
+        }]})
+        outcome, prompts = self._run_with_reply(reply)
+        self.assertEqual(len(prompts), 2)  # one call + one fix round
+        self.assertEqual(outcome.sizing["shares"], 166)
+        self.assertTrue(any("has no citation" in w
+                            for w in outcome.report.warnings))
+
+    def test_threshold_and_own_numbers_need_no_citation(self):
+        # "5%" restates the liquidity threshold and "50" is the proposed
+        # value itself — neither needs a link; "1000" is cited.
+        reply = json.dumps({"adjustments": [{
+            "target": "shares", "value": 50,
+            "reasons": [{
+                "check": "liquidity",
+                "text": ("Cutting to 50 keeps the order under the 5% "
+                         "limit against the average daily volume of "
+                         "1000."),
+                "links": [{"ref": "technicals.avg_volume_20",
+                           "value": "1000"}],
+            }],
+        }]})
+        outcome, prompts = self._run_with_reply(reply)
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(outcome.sizing["shares"], 50)
+
     def test_share_increase_rejected(self):
         reply = json.dumps({"adjustments": [{
             "target": "shares", "value": 500,
