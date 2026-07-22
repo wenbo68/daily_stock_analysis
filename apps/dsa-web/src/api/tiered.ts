@@ -32,12 +32,22 @@ export type TieredLevels = {
 // shape (base = count from the computed levels; adjusted_inputs = the
 // final levels a mechanical recompute used) and `links` — inline
 // citations for the adjustment reason, in the debate-link shape.
+// One adjustment reason: the flagged check it fixes (a fixed keyword id
+// the UI translates) plus one cited sentence.
+export type TieredLevelReason = {
+  check: string;
+  text: string;
+  links?: TieredDebateLink[];
+};
+
 export type TieredLevelDetail = {
   base: number | null;
   formula: string | null;
   inputs: Record<string, number> | null;
   adjusted: number | null;
-  reason: string | null;
+  /** Old stored runs: one paragraph. New runs carry `reasons` instead. */
+  reason?: string | null;
+  reasons?: TieredLevelReason[] | null;
   evidence: string[];
   links?: TieredDebateLink[];
   adjusted_inputs?: Record<string, number> | null;

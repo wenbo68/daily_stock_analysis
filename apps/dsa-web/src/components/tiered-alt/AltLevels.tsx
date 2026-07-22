@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import type {
   TieredCitation,
   TieredLevelDetail,
+  TieredLevelReason,
   TieredLevels,
   TieredLevelsDetail,
   TieredPlanWarning,
@@ -21,6 +22,7 @@ import {
   AltSectionLabel,
   FVar,
   MODAL_BODY,
+  MODAL_STRONG,
 } from './AltUi';
 
 // Alt skin rule: help popups everywhere, dotted underlines nowhere.
@@ -49,6 +51,63 @@ const LEVEL_HELP_KEYS: Record<ColumnKey, UiTextKey> = {
   stop_loss: 'tiered.help.stopLoss',
   take_profit: 'tiered.help.takeProfit',
   shares: 'tiered.help.sizing',
+};
+
+// Every risk line — an AI adjustment reason or a plan warning — opens
+// with a fixed keyword so the reader can categorize it at a glance
+// (owner decision 2026-07-22). The keyword comes from the backend's
+// deterministic check/warning id, never from LLM text; unknown ids
+// render without one rather than get a made-up label.
+const CHECK_KEYWORD_KEYS: Record<string, UiTextKey> = {
+  liquidity: 'tiered.alt.checkKey.liquidity',
+  volatility: 'tiered.alt.checkKey.volatility',
+  stop_distance: 'tiered.alt.checkKey.stop_distance',
+  stop_vs_swing_low: 'tiered.alt.checkKey.stop_vs_swing_low',
+};
+
+const WARN_KEYWORD_KEYS: Record<string, UiTextKey> = {
+  gap_atr: 'tiered.alt.warnKey.gap_atr',
+  gap_worst: 'tiered.alt.warnKey.gap_worst',
+  reward_below_goal: 'tiered.alt.warnKey.reward_below_goal',
+};
+
+// One bullet per reason, each opening with its check keyword; old stored
+// runs (a single paragraph, no check) get one keyword-less bullet.
+const AdjustReasonList = ({
+  reasons,
+  legacyReason,
+  legacyLinks,
+}: {
+  reasons: TieredLevelReason[];
+  legacyReason?: string | null;
+  legacyLinks?: TieredLevelDetail['links'];
+}) => {
+  const { t } = useUiLanguage();
+  if (reasons.length === 0 && !legacyReason) {
+    return null;
+  }
+  return (
+    <ul className="flex list-disc flex-col gap-2 pl-4" data-testid="alt-adjust-reasons">
+      {reasons.map((reason, index) => {
+        const keywordKey = CHECK_KEYWORD_KEYS[reason.check];
+        return (
+          <li key={index}>
+            <span className={MODAL_STRONG}>{keywordKey ? t(keywordKey) : reason.check}: </span>
+            <LinkedTextV8 text={reason.text} links={reason.links ?? []} />
+          </li>
+        );
+      })}
+      {reasons.length === 0 && legacyReason ? (
+        <li>
+          {legacyLinks && legacyLinks.length > 0 ? (
+            <LinkedTextV8 text={legacyReason} links={legacyLinks} />
+          ) : (
+            legacyReason
+          )}
+        </li>
+      ) : null}
+    </ul>
+  );
 };
 
 // Formula inputs with a source row on the technicals card.
@@ -310,23 +369,13 @@ const AltAdjustedCell = ({ levelKey, detail, label, citations }: AltLevelCellPro
         onClose={close}
       >
         <div className={MODAL_BODY}>
-          <div className="tabular-nums">
-            {formatPrice(detail.base)} → {formatPrice(detail.adjusted)}
-          </div>
-          {detail.reason ? (
-            <div>
-              <AltSectionLabel>{t('tiered.levelModal.reason')}</AltSectionLabel>
-              <p>
-                {/* Plan-review reasons carry debate-style links: cited
-                    values underline and jump to their source rows. */}
-                {detail.links && detail.links.length > 0 ? (
-                  <LinkedTextV8 text={detail.reason} links={detail.links} />
-                ) : (
-                  detail.reason
-                )}
-              </p>
-            </div>
-          ) : null}
+          {/* No header lines (owner decision 2026-07-22): straight to the
+              bulleted reasons, keyword first, cited values linked. */}
+          <AdjustReasonList
+            reasons={detail.reasons ?? []}
+            legacyReason={detail.reason}
+            legacyLinks={detail.links}
+          />
           {detail.evidence.length > 0 ? (
             <div>
               <AltSectionLabel>{t('tiered.levelModal.references')}</AltSectionLabel>
@@ -495,22 +544,12 @@ const AltSharesAdjustedCell = ({ detail, taskId, levelAdjusted }: SharesCellProp
         panelClassName="w-fit min-w-72 max-w-[95vw]"
       >
         <div className={MODAL_BODY}>
-          <div className="tabular-nums">
-            {detail.base} → {detail.adjusted}
-          </div>
-          {detail.reason ? (
-            <div>
-              <AltSectionLabel>{t('tiered.levelModal.reason')}</AltSectionLabel>
-              <p>
-                {detail.links && detail.links.length > 0 ? (
-                  <LinkedTextV8 text={detail.reason} links={detail.links} />
-                ) : (
-                  detail.reason
-                )}
-              </p>
-            </div>
-          ) : null}
-          {!detail.reason && detail.adjusted_inputs ? (
+          <AdjustReasonList
+            reasons={detail.reasons ?? []}
+            legacyReason={detail.reason}
+            legacyLinks={detail.links}
+          />
+          {!detail.reasons?.length && !detail.reason && detail.adjusted_inputs ? (
             <SharesReceipt
               inputs={detail.adjusted_inputs}
               shares={detail.adjusted}
@@ -581,8 +620,9 @@ const AltWarningsCell = ({
   const [isOpen, setIsOpen] = useState(false);
 
   if (warnings.length === 0) {
+    // Same quiet gray as the adjusted row's "keep".
     return (
-      <span data-testid={`alt-plan-warnings-${column}`} className="text-gray-600">
+      <span data-testid={`alt-plan-warnings-${column}`} className="text-gray-500">
         {t('tiered.alt.warn.none')}
       </span>
     );
@@ -593,7 +633,7 @@ const AltWarningsCell = ({
         type="button"
         data-testid={`alt-plan-warnings-${column}`}
         onClick={() => setIsOpen(true)}
-        className={cn('cursor-pointer tabular-nums font-semibold', 'text-amber-300 hover:text-amber-200')}
+        className={cn('cursor-pointer tabular-nums', ALT_LINK)}
       >
         {warnings.length}
       </button>
@@ -603,9 +643,17 @@ const AltWarningsCell = ({
         onClose={() => setIsOpen(false)}
       >
         <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>
-          {warnings.map((warning, index) => (
-            <li key={index}>{warningText(warning, t)}</li>
-          ))}
+          {warnings.map((warning, index) => {
+            const keywordKey = WARN_KEYWORD_KEYS[warning.id];
+            return (
+              <li key={index}>
+                {keywordKey ? (
+                  <span className={MODAL_STRONG}>{t(keywordKey)}: </span>
+                ) : null}
+                {warningText(warning, t)}
+              </li>
+            );
+          })}
         </ul>
       </AltModal>
     </>

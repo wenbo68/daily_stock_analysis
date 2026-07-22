@@ -144,6 +144,11 @@ class TestTrendAndRoomGates(unittest.TestCase):
         self.assertNotIn("resistance", bases.take_profit.formula)
 
 
+def _reason(text: str) -> dict:
+    """A minimal reasons entry: the flagged-check keyword + one sentence."""
+    return {"check": "volatility", "text": text, "links": []}
+
+
 class TestApplyAdjustments(unittest.TestCase):
     def test_in_band_adjustment_accepted(self):
         bases = _bases()
@@ -151,7 +156,7 @@ class TestApplyAdjustments(unittest.TestCase):
         # and R:R improves to (108-94.5)/(94.5-90) = 3.0.
         proposals = [
             AdjustmentProposal(
-                level="entry", value=94.5, reason="support cluster",
+                level="entry", value=94.5, reasons=(_reason("support cluster"),),
                 evidence=("technicals.sma_20",),
             )
         ]
@@ -169,7 +174,7 @@ class TestApplyAdjustments(unittest.TestCase):
     def test_out_of_band_adjustment_rejected(self):
         self.assertEqual(ADJUSTMENT_BAND_ATR_MULTIPLE, 1.0)
         proposals = [
-            AdjustmentProposal(level="entry", value=92.0, reason="x", evidence=("e",))
+            AdjustmentProposal(level="entry", value=92.0, reasons=(_reason("x"),), evidence=("e",))
         ]  # |92 - 96| = 4 > 1 * ATR(3)
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
         self.assertIsNone(decisions["entry"].adjusted)
@@ -180,7 +185,7 @@ class TestApplyAdjustments(unittest.TestCase):
     def test_no_atr_rejects_all_adjustments(self):
         bases = _bases(atr=None)
         proposals = [
-            AdjustmentProposal(level="entry", value=95.0, reason="x", evidence=("e",))
+            AdjustmentProposal(level="entry", value=95.0, reasons=(_reason("x"),), evidence=("e",))
         ]
         decisions, warnings = apply_adjustments(bases, proposals, atr=None)
         self.assertIsNone(decisions["entry"].adjusted)
@@ -191,8 +196,8 @@ class TestApplyAdjustments(unittest.TestCase):
         # adjusted up to 93 (in band: |93-90| = 3): the stop would sit ON
         # the entry, so the stop proposal is rejected for ordering.
         proposals = [
-            AdjustmentProposal(level="entry", value=93.0, reason="x", evidence=("e",)),
-            AdjustmentProposal(level="stop_loss", value=93.0, reason="x", evidence=("e",)),
+            AdjustmentProposal(level="entry", value=93.0, reasons=(_reason("x"),), evidence=("e",)),
+            AdjustmentProposal(level="stop_loss", value=93.0, reasons=(_reason("x"),), evidence=("e",)),
         ]
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
         self.assertAlmostEqual(decisions["entry"].adjusted, 93.0)
@@ -206,7 +211,7 @@ class TestApplyAdjustments(unittest.TestCase):
         # old floor, but a thin ratio is a plan warning now, never a
         # reason to revert a level.
         proposals = [
-            AdjustmentProposal(level="entry", value=97.5, reason="x", evidence=("e",))
+            AdjustmentProposal(level="entry", value=97.5, reasons=(_reason("x"),), evidence=("e",))
         ]
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
         self.assertAlmostEqual(decisions["entry"].adjusted, 97.5)
@@ -217,7 +222,7 @@ class TestApplyAdjustments(unittest.TestCase):
         # deterministic base to adjust and is rejected.
         bases = _bases(close=None)
         proposals = [
-            AdjustmentProposal(level="entry", value=95.0, reason="x", evidence=("e",))
+            AdjustmentProposal(level="entry", value=95.0, reasons=(_reason("x"),), evidence=("e",))
         ]
         decisions, warnings = apply_adjustments(bases, proposals, atr=3.0)
         self.assertIsNone(decisions["entry"].adjusted)
@@ -225,8 +230,8 @@ class TestApplyAdjustments(unittest.TestCase):
 
     def test_duplicate_proposal_rejected(self):
         proposals = [
-            AdjustmentProposal(level="entry", value=97.0, reason="a", evidence=("e",)),
-            AdjustmentProposal(level="entry", value=95.5, reason="b", evidence=("e",)),
+            AdjustmentProposal(level="entry", value=97.0, reasons=(_reason("a"),), evidence=("e",)),
+            AdjustmentProposal(level="entry", value=95.5, reasons=(_reason("b"),), evidence=("e",)),
         ]
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
         self.assertAlmostEqual(decisions["entry"].adjusted, 97.0)
@@ -236,7 +241,7 @@ class TestApplyAdjustments(unittest.TestCase):
 class TestConverters(unittest.TestCase):
     def test_decisions_to_sniper_uses_final_values(self):
         proposals = [
-            AdjustmentProposal(level="entry", value=94.5, reason="x", evidence=("e",))
+            AdjustmentProposal(level="entry", value=94.5, reasons=(_reason("x"),), evidence=("e",))
         ]
         decisions, _ = apply_adjustments(_bases(), proposals, atr=3.0)
         sniper = decisions_to_sniper(decisions)
@@ -248,7 +253,7 @@ class TestConverters(unittest.TestCase):
 
         proposals = [
             AdjustmentProposal(
-                level="entry", value=94.5, reason="why", evidence=("citation:1",)
+                level="entry", value=94.5, reasons=(_reason("why"),), evidence=("citation:1",)
             )
         ]
         decisions, warnings = apply_adjustments(_bases(), proposals, atr=3.0)
@@ -257,7 +262,7 @@ class TestConverters(unittest.TestCase):
         entry = detail["levels"]["entry"]
         self.assertAlmostEqual(entry["base"], 96.0)
         self.assertAlmostEqual(entry["adjusted"], 94.5)
-        self.assertEqual(entry["reason"], "why")
+        self.assertEqual(entry["reasons"], [_reason("why")])
         self.assertEqual(entry["evidence"], ["citation:1"])
         self.assertIn("formula", entry)
         self.assertIn("inputs", entry)

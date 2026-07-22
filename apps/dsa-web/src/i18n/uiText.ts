@@ -827,6 +827,7 @@ const zh = {
   'tiered.citations': '参考来源（编号对应正文中的 [n] 标注）',
   'tiered.warnings': '警告',
   'tiered.dataNotes': '数据说明',
+  // 仅旧版 /tiered 页仍内联展示；alt 页弹窗不再显示这行说明。
   'tiered.dataNotesHint': '记录数据受限之处，以及系统的替代做法。\n保留展示，让你判断这份报告有多扎实。',
   'tiered.note.none': '这一部分没有可用数据，但没有记录更具体的原因。',
   'tiered.group.trend': '价格与趋势',
@@ -1211,6 +1212,14 @@ const zh = {
     '若隔夜消息导致跳空低开到止损下方 1 个 ATR（{atrOpen}），止损单会在该价成交——亏损 {atrLoss}，比计划的 {planned} 多亏 {atrExtra}。',
   'tiered.alt.warn.gap_worst':
     '若重演过去一年最差单日（{worstDayPct}%），开盘价将落在 {worstOpen}，已跌破止损——在该价卖出亏损 {worstLoss}，比计划的 {planned} 多亏 {worstExtra}。',
+  // 每条风险文案开头的固定关键词（由代码根据检查项 id 决定，非 AI 生成）。
+  'tiered.alt.warnKey.gap_atr': '隔夜跳空',
+  'tiered.alt.warnKey.gap_worst': '最差单日',
+  'tiered.alt.warnKey.reward_below_goal': '盈亏比',
+  'tiered.alt.checkKey.liquidity': '流动性',
+  'tiered.alt.checkKey.volatility': '波动',
+  'tiered.alt.checkKey.stop_distance': '止损距离',
+  'tiered.alt.checkKey.stop_vs_swing_low': '摆动低点',
   'tiered.alt.signalSaved': '已记录到 AI 建议 #{id}',
   'tiered.help.capital': '你的交易本金，货币跟随股票所在市场。\n股数计算以它为起点。\n会记住，供下次运行使用。',
   'tiered.help.riskPct': '单笔交易你最多接受亏掉本金的百分之几。\n常见为 1-2%。',
@@ -1223,13 +1232,13 @@ const zh = {
   'tiered.outlook.neutral': '中性',
   'tiered.outlook.bearish': '看空',
   'tiered.outlook.unknown': '未知',
-  'tiered.action.enter': '可建仓（见下方买入计划）',
+  'tiered.action.enter': '买入（见「交易计划」部分）',
   'tiered.action.keep_holding': '继续持有',
   'tiered.action.no_trade': '不交易',
   'tiered.action.sell_all': '清仓卖出',
   'tiered.action.unknown': '未知——本次运行未产生可用结论，请重跑',
   'tiered.help.outlook':
-    '「展望」是对这只股票本身的判断（看多 / 中性 / 看空），与你是否持有无关。\n「操作」由代码根据展望和你的持仓推出：看多且未持有→可建仓；看多或中性且已持有→继续持有；中性且未持有→不交易；看空且已持有→清仓卖出；看空且未持有→不交易。',
+    '「展望」是对这只股票本身的判断（看多 / 中性 / 看空），与你是否持有无关。\n「操作」由代码根据展望和你的持仓推出：看多且未持有→买入；看多或中性且已持有→继续持有；中性且未持有→不交易；看空且已持有→清仓卖出；看空且未持有→不交易。',
   'tiered.help.action':
     '由展望和你填写的持仓股数按固定表格推出的个人操作建议。\n注意：看多且已持有时本产品刻意不建议加仓——只建议继续持有。',
   'tiered.alt.earningsWarning': '{days} 天后（{date}）发布财报——预计波动加大，谨慎交易。',
@@ -1240,7 +1249,7 @@ const zh = {
   'tiered.alt.noPlan': '本次操作无需买卖计划价位。',
   'tiered.alt.planTitle': '交易计划',
   'tiered.help.plan':
-    '由固定公式从价格数据算出的计划价位（不经 AI）。\n显示内容随「操作」变化：可建仓→完整价位表；继续持有→仅结构性止损位；不交易 / 清仓→无价位。',
+    '由固定公式从价格数据算出的计划价位（不经 AI）。\n显示内容随「操作」变化：买入→完整价位表；继续持有→仅结构性止损位；不交易 / 清仓→无价位。',
   'tiered.altFilter.outlook': '展望',
   'tiered.altFilter.outlookPh': '筛选展望…',
   'tiered.pill.outlook': '展望：{value}',
@@ -2211,6 +2220,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.citations': 'Sources (numbers match the [n] marks in the text)',
   'tiered.warnings': 'Warnings',
   'tiered.dataNotes': 'Data notes',
+  // Only the legacy /tiered page still shows this inline; the alt-page
+  // modal dropped it.
   'tiered.dataNotesHint':
     'Where data fell short, and what the system did instead.\nShown so you can judge how solid this report is.',
   'tiered.note.none':
@@ -2678,6 +2689,15 @@ const en: Record<UiTextKey, string> = {
     'If overnight news gaps the open 1 ATR below your stop ({atrOpen}), the stop order sells there — a {atrLoss} loss, {atrExtra} more than the {planned} you planned.',
   'tiered.alt.warn.gap_worst':
     'If the stock repeats its worst day of the past year ({worstDayPct}%), the open lands at {worstOpen}, past your stop — selling there loses {worstLoss}, {worstExtra} more than the {planned} you planned.',
+  // The fixed keyword each risk line opens with (code-picked from the
+  // check id, never AI-written).
+  'tiered.alt.warnKey.gap_atr': 'Overnight gap',
+  'tiered.alt.warnKey.gap_worst': 'Worst-day gap',
+  'tiered.alt.warnKey.reward_below_goal': 'Reward ratio',
+  'tiered.alt.checkKey.liquidity': 'Liquidity',
+  'tiered.alt.checkKey.volatility': 'Volatility',
+  'tiered.alt.checkKey.stop_distance': 'Stop distance',
+  'tiered.alt.checkKey.stop_vs_swing_low': 'Swing low',
   'tiered.alt.signalSaved': 'Recorded to AI signals #{id}',
   'tiered.help.capital':
     'The money you trade with, in the ticker’s own currency.\nThe shares computation starts from it.\nRemembered for your next run.',
@@ -2692,13 +2712,13 @@ const en: Record<UiTextKey, string> = {
   'tiered.outlook.neutral': 'Neutral',
   'tiered.outlook.bearish': 'Bearish',
   'tiered.outlook.unknown': 'Unknown',
-  'tiered.action.enter': 'Enter (see the buy plan below)',
+  'tiered.action.enter': 'Buy (see Trade Plan section)',
   'tiered.action.keep_holding': 'Keep holding',
   'tiered.action.no_trade': 'No trade',
   'tiered.action.sell_all': 'Sell all shares',
   'tiered.action.unknown': 'Unknown — this run produced no usable outlook; re-run it',
   'tiered.help.outlook':
-    'The outlook is the judgment on the stock itself (bullish / neutral / bearish), regardless of whether you hold it.\nThe action is derived by code from the outlook and your holding: bullish + not holding → enter; bullish or neutral + holding → keep holding; neutral + not holding → no trade; bearish + holding → sell all; bearish + not holding → no trade.',
+    'The outlook is the judgment on the stock itself (bullish / neutral / bearish), regardless of whether you hold it.\nThe action is derived by code from the outlook and your holding: bullish + not holding → buy; bullish or neutral + holding → keep holding; neutral + not holding → no trade; bearish + holding → sell all; bearish + not holding → no trade.',
   'tiered.help.action':
     'Your personal instruction, derived by a fixed code table from the outlook and the share count you entered.\nNote: when bullish while already holding, this product deliberately does NOT suggest buying more — only keeping what you hold.',
   'tiered.alt.earningsWarning':
@@ -2711,7 +2731,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.noPlan': 'No plan levels for this action.',
   'tiered.alt.planTitle': 'Trade plan',
   'tiered.help.plan':
-    'The plan levels a fixed formula computed from the price data (no AI).\nWhat shows depends on the Action: enter → the full levels table; keep holding → the structural stop only; no trade / sell → no levels.',
+    'The plan levels a fixed formula computed from the price data (no AI).\nWhat shows depends on the Action: buy → the full levels table; keep holding → the structural stop only; no trade / sell → no levels.',
   'tiered.altFilter.outlook': 'Outlook',
   'tiered.altFilter.outlookPh': 'Filter outlook...',
   'tiered.pill.outlook': 'Outlook: {value}',

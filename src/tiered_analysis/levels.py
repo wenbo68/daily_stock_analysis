@@ -262,11 +262,12 @@ class AdjustmentProposal:
 
     level: str
     value: float
-    reason: str
+    #: One entry per flagged check the adjustment fixes, each in the
+    #: shape {"check": <flagged check name>, "text": <one sentence>,
+    #: "links": [{ref, value}, ...]} — the check name is the UI's
+    #: deterministic keyword, the links are debate-style citations.
+    reasons: Tuple[Dict[str, Any], ...] = ()
     evidence: Tuple[str, ...] = ()
-    #: Inline citations for values stated in the reason — the debate-link
-    #: shape ({ref, value}) so the UI underlines and jumps the same way.
-    links: Tuple[Dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -275,9 +276,8 @@ class LevelDecision:
 
     base: Optional[LevelBasis] = None
     adjusted: Optional[float] = None
-    reason: Optional[str] = None
+    reasons: Tuple[Dict[str, Any], ...] = ()
     evidence: Tuple[str, ...] = ()
-    links: Tuple[Dict[str, Any], ...] = ()
     rejection: Optional[str] = None
 
     @property
@@ -360,9 +360,8 @@ def apply_adjustments(
         candidate = LevelDecision(
             base=base,
             adjusted=proposal.value,
-            reason=proposal.reason,
+            reasons=proposal.reasons,
             evidence=proposal.evidence,
-            links=proposal.links,
         )
         finals = {
             key: (candidate.final if key == proposal.level else decisions[key].final)
@@ -393,9 +392,8 @@ def decisions_to_detail(
             "formula": decision.base.formula if decision.base else None,
             "inputs": dict(decision.base.inputs) if decision.base else None,
             "adjusted": decision.adjusted,
-            "reason": decision.reason,
+            "reasons": [dict(reason) for reason in decision.reasons],
             "evidence": list(decision.evidence),
-            "links": [dict(link) for link in decision.links],
             "rejection": decision.rejection,
             "final": decision.final,
         }

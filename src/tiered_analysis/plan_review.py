@@ -311,18 +311,24 @@ Propose adjustments that fix ONLY the flagged problems. Rules (all
 checked mechanically by code):
 - Reply with JSON only:
   {{"adjustments": [{{"target": "stop_loss" | "take_profit" | "shares",
-    "value": <number>, "reason": "<one or two sentences>",
-    "links": [{{"ref": "technicals.volatility_pct", "value": "4.3"}}]}}]}}
+    "value": <number>,
+    "reasons": [{{"check": "<flagged check name>",
+      "text": "<one sentence>",
+      "links": [{{"ref": "technicals.volatility_pct", "value": "4.3"}}]}}]}}]}}
 - At most one adjustment per target. An empty list is a valid answer if
   no change genuinely helps.
+- Each reasons entry explains ONE flagged problem this adjustment fixes:
+  "check" is that problem's name copied exactly from the flagged list
+  above; "text" is one plain sentence. One entry per flagged problem —
+  never invent a check name, never repeat one within an adjustment.
 - "shares" may only go DOWN from {shares}.
 - A price move must stay within 1 ATR ({atr}) of its computed value, and
   keep stop_loss < entry < take_profit.
-- The reason must state every report number it relies on EXACTLY as the
-  report above displays it, each cited in "links" with {{"ref": the leaf
-  field, "value": the displayed value}}; claims resting on a news source
-  cite {{"ref": "citation:N"}} with no value. Plain sentences only —
-  never paste refs or link JSON into the reason text."""
+- Each text must state every report number it relies on EXACTLY as the
+  report above displays it, each cited in that entry's "links" with
+  {{"ref": the leaf field, "value": the displayed value}}; claims resting
+  on a news source cite {{"ref": "citation:N"}} with no value. Plain
+  sentences only — never paste refs or link JSON into the text."""
 
 _FIX_TEMPLATE = """{prompt}
 
@@ -331,7 +337,7 @@ Your previous reply had citation problems that code could not verify:
 
 Send the corrected JSON (same shape). Fix every listed problem: point
 each ref at the right leaf field, copy the value exactly as the report
-displays it, and make sure the reason sentence contains that value."""
+displays it, and make sure the reason text contains that value."""
 
 
 def _link_errors(
@@ -374,8 +380,52 @@ def _link_errors(
     return errors
 
 
+def _parse_reasons(
+    item: Dict[str, Any],
+    where: str,
+    allowed_checks: Sequence[str],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """One adjustment's reasons list: [{check, text, links}] validated
+    against the flagged check names (the UI's deterministic keywords)."""
+    raw = item.get("reasons")
+    if not isinstance(raw, list) or not raw:
+        return [], [f'{where}: a non-empty "reasons" list is required']
+    reasons: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    seen_checks: set = set()
+    for index, entry in enumerate(raw):
+        entry_where = f"{where} reason {index + 1}"
+        if not isinstance(entry, dict):
+            errors.append(f"{entry_where}: not an object")
+            continue
+        check = str(entry.get("check", "")).strip()
+        if check not in allowed_checks:
+            errors.append(
+                f"{entry_where}: check must be one of the flagged names "
+                f"({', '.join(allowed_checks)})"
+            )
+            continue
+        if check in seen_checks:
+            errors.append(f"{entry_where}: duplicate check {check!r}")
+            continue
+        text = str(entry.get("text", "")).strip()
+        if not text:
+            errors.append(f"{entry_where}: text is required")
+            continue
+        links = entry.get("links")
+        links = (
+            [link for link in links if isinstance(link, dict)]
+            if isinstance(links, list)
+            else []
+        )
+        seen_checks.add(check)
+        reasons.append({"check": check, "text": text, "links": links})
+    return reasons, errors
+
+
 def _parse_adjustments(
     parsed: Optional[dict],
+    allowed_checks: Sequence[str],
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """(usable adjustment dicts, shape errors)."""
     if parsed is None:
@@ -404,20 +454,13 @@ def _parse_adjustments(
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             errors.append(f"{where}: value must be a number")
             continue
-        reason = str(item.get("reason", "")).strip()
-        if not reason:
-            errors.append(f"{where}: reason is required")
+        reasons, reason_errors = _parse_reasons(item, where, allowed_checks)
+        if reason_errors:
+            errors.extend(reason_errors)
             continue
-        links = item.get("links")
-        links = (
-            [link for link in links if isinstance(link, dict)]
-            if isinstance(links, list)
-            else []
-        )
         seen.add(target)
         usable.append({
-            "target": target, "value": float(value),
-            "reason": reason, "links": links,
+            "target": target, "value": float(value), "reasons": reasons,
         })
     return usable, errors
 
@@ -453,24 +496,34 @@ def _request_adjustments(
         atr=display_value(atr) if atr is not None else "—",
     )
 
+    allowed_checks = [check.name for check in checks]
+
+    def reason_link_errors(adjustment: Dict[str, Any]) -> List[str]:
+        problems: List[str] = []
+        for reason in adjustment["reasons"]:
+            problems.extend(_link_errors(
+                reason["links"], reason["text"],
+                f'adjustment "{adjustment["target"]}" ({reason["check"]})',
+                dimensions,
+            ))
+        return problems
+
     warnings: List[str] = []
-    adjustments, errors = _parse_adjustments(parse_llm_json(summarizer(prompt)))
+    adjustments, errors = _parse_adjustments(
+        parse_llm_json(summarizer(prompt)), allowed_checks
+    )
     for adjustment in adjustments:
-        errors.extend(_link_errors(
-            adjustment["links"], adjustment["reason"],
-            f'adjustment "{adjustment["target"]}"', dimensions,
-        ))
+        errors.extend(reason_link_errors(adjustment))
     if errors:
         fix_prompt = _FIX_TEMPLATE.format(
             prompt=prompt, errors="\n".join(f"- {error}" for error in errors)
         )
-        adjustments, errors = _parse_adjustments(parse_llm_json(summarizer(fix_prompt)))
+        adjustments, errors = _parse_adjustments(
+            parse_llm_json(summarizer(fix_prompt)), allowed_checks
+        )
         kept: List[Dict[str, Any]] = []
         for adjustment in adjustments:
-            link_problems = _link_errors(
-                adjustment["links"], adjustment["reason"],
-                f'adjustment "{adjustment["target"]}"', dimensions,
-            )
+            link_problems = reason_link_errors(adjustment)
             if link_problems:
                 warnings.append(
                     f"plan-review adjustment for {adjustment['target']} dropped "
@@ -496,8 +549,7 @@ def _shares_detail(
     final_inputs: SizingInputs,
     final_result: SizingResult,
     ai_shares: Optional[int],
-    ai_reason: Optional[str],
-    ai_links: Sequence[Dict[str, Any]],
+    ai_reasons: Sequence[Dict[str, Any]],
     rejection: Optional[str],
 ) -> Dict[str, Any]:
     """The trade-plan card's shares column, in the level-detail shape.
@@ -523,9 +575,11 @@ def _shares_detail(
             "stop_loss": base_inputs.stop_loss,
         } if base is not None else None,
         "adjusted": adjusted,
-        "reason": ai_reason if adjusted is not None else None,
+        "reasons": (
+            [dict(reason) for reason in ai_reasons]
+            if adjusted is not None else []
+        ),
         "evidence": [],
-        "links": [dict(link) for link in ai_links] if adjusted is not None else [],
         "rejection": rejection,
         "final": final,
     }
@@ -582,8 +636,7 @@ def review_plan(
 
     price_proposals = [
         AdjustmentProposal(
-            level=a["target"], value=a["value"], reason=a["reason"],
-            links=tuple(a["links"]),
+            level=a["target"], value=a["value"], reasons=tuple(a["reasons"]),
         )
         for a in adjustments
         if a["target"] in LEVEL_KEYS
@@ -597,8 +650,7 @@ def review_plan(
 
     # The AI's share trim: reductions only, floored to the lot size.
     ai_shares: Optional[int] = None
-    ai_reason: Optional[str] = None
-    ai_links: Sequence[Dict[str, Any]] = ()
+    ai_reasons: Sequence[Dict[str, Any]] = ()
     shares_rejection: Optional[str] = None
     shares_proposal = next(
         (a for a in adjustments if a["target"] == "shares"), None
@@ -621,8 +673,7 @@ def review_plan(
             )
         else:
             ai_shares = proposed
-            ai_reason = shares_proposal["reason"]
-            ai_links = shares_proposal["links"]
+            ai_reasons = shares_proposal["reasons"]
         if shares_rejection is not None:
             warnings.append(f"adjustment for shares rejected: {shares_rejection}")
 
@@ -656,7 +707,7 @@ def review_plan(
     levels_detail = decisions_to_detail(decisions, list(bases.warnings) + warnings)
     levels_detail["levels"]["shares"] = _shares_detail(
         base_inputs, base_result, final_inputs, final_result,
-        ai_shares, ai_reason, ai_links, shares_rejection,
+        ai_shares, ai_reasons, shares_rejection,
     )
 
     plan_warnings = build_plan_warnings(

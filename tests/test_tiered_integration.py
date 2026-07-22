@@ -466,9 +466,12 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         # the fake AI trims to 50 with a verified link.
         reply = json.dumps({"adjustments": [{
             "target": "shares", "value": 50,
-            "reason": ("The planned order is far above the 5% liquidity "
-                       "limit against an average daily volume of 1000."),
-            "links": [{"ref": "technicals.avg_volume_20", "value": "1000"}],
+            "reasons": [{
+                "check": "liquidity",
+                "text": ("The planned order is far above the 5% liquidity "
+                         "limit against an average daily volume of 1000."),
+                "links": [{"ref": "technicals.avg_volume_20", "value": "1000"}],
+            }],
         }]})
         outcome, prompts = self._run_with_reply(reply)
         self.assertEqual(len(prompts), 1)
@@ -477,8 +480,10 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         detail = outcome.report.levels_detail["levels"]["shares"]
         self.assertEqual(detail["base"], 166)
         self.assertEqual(detail["adjusted"], 50)
-        self.assertIn("liquidity limit", detail["reason"])
-        self.assertEqual(detail["links"][0]["ref"], "technicals.avg_volume_20")
+        self.assertEqual(detail["reasons"][0]["check"], "liquidity")
+        self.assertIn("liquidity limit", detail["reasons"][0]["text"])
+        self.assertEqual(detail["reasons"][0]["links"][0]["ref"],
+                         "technicals.avg_volume_20")
         # gap warning recomputes off the trimmed count: 50 × (96−87) = 450
         gap = outcome.plan_warnings["stop_loss"][0]
         self.assertAlmostEqual(gap["values"]["atr_loss"], 450.0)
@@ -488,7 +493,8 @@ class TestPlanReviewAdjustments(unittest.TestCase):
     def test_share_increase_rejected(self):
         reply = json.dumps({"adjustments": [{
             "target": "shares", "value": 500,
-            "reason": "More is better.", "links": [],
+            "reasons": [{"check": "liquidity", "text": "More is better.",
+                         "links": []}],
         }]})
         outcome, _ = self._run_with_reply(reply)
         self.assertEqual(outcome.sizing["shares"], 166)

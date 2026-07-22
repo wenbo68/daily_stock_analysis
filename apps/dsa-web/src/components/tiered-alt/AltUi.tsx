@@ -143,16 +143,16 @@ export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps
         <Icon className="h-4 w-4" />
       </button>
       <AltModal isOpen={isOpen} title={t('tiered.dataNotes')} onClose={() => setIsOpen(false)}>
-        <p className="mb-4 whitespace-pre-line text-xs leading-relaxed text-gray-500">
-          {t('tiered.dataNotesHint')}
-        </p>
-        {notes.length === 0 ? <p className="text-sm text-amber-300">{t('tiered.note.none')}</p> : null}
-        <ul className="flex flex-col gap-4">
+        {/* No explainer line, regular body color, numbered entries
+            (owner decision 2026-07-22) — the amber lives on the trigger
+            icon only. */}
+        {notes.length === 0 ? <p className="text-sm text-gray-300">{t('tiered.note.none')}</p> : null}
+        <ol className="flex list-decimal flex-col gap-4 pl-5 text-gray-300">
           {notes.map((raw, index) => {
             const friendly = friendlyWarning(raw, t);
             return (
               <li key={index} className="text-sm leading-relaxed">
-                <span className="text-amber-300">{friendly ?? raw}</span>
+                {friendly ?? raw}
                 {friendly ? (
                   <span className="mt-1 block font-mono text-[11px] leading-relaxed text-gray-500">
                     {raw}
@@ -161,7 +161,7 @@ export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps
               </li>
             );
           })}
-        </ul>
+        </ol>
       </AltModal>
     </>
   );

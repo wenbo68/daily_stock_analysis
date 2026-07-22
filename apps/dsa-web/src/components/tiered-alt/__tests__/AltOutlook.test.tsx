@@ -258,7 +258,7 @@ describe('AltResult outlook conclusion', () => {
     renderResult(makeOutlookResult());
     const conclusion = screen.getByTestId('alt-conclusion');
     expect(conclusion).toHaveTextContent(/(展望|Outlook): (看多|Bullish)/);
-    expect(conclusion).toHaveTextContent(/(操作|Action): (可建仓|Enter)/);
+    expect(conclusion).toHaveTextContent(/(操作|Action): (买入|Buy)/);
     expect(screen.getByTestId('alt-levels-table')).toBeInTheDocument();
   });
 

@@ -105,7 +105,10 @@ const LevelTile = ({ levelKey, finalValue, detail, citations }: LevelTileProps) 
 
   const label = t(LEVEL_LABEL_KEYS[levelKey]);
   const hasBase = detail?.base !== null && detail?.base !== undefined;
-  const hasAdjustmentStory = Boolean(detail && (detail.reason || detail.rejection));
+  // New runs carry a reasons list; old stored runs a single paragraph.
+  const reasonText =
+    detail?.reason ?? detail?.reasons?.map((reason) => reason.text).join(' ') ?? null;
+  const hasAdjustmentStory = Boolean(detail && (reasonText || detail.rejection));
 
   // Old stored runs (no audit trail): the plain tile from v1.
   if (!detail) {
@@ -242,10 +245,10 @@ const LevelTile = ({ levelKey, finalValue, detail, citations }: LevelTileProps) 
               {formatPrice(detail.base)} → {formatPrice(detail.adjusted)}
             </p>
           ) : null}
-          {detail.reason ? (
+          {reasonText ? (
             <div>
               <div className="label-uppercase mb-1">{t('tiered.levelModal.reason')}</div>
-              <p className="leading-relaxed text-secondary-text">{detail.reason}</p>
+              <p className="leading-relaxed text-secondary-text">{reasonText}</p>
             </div>
           ) : null}
           {detail.evidence.length > 0 ? (
