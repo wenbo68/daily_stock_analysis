@@ -40,9 +40,10 @@ function renderHistory(overrides: Partial<AltRunHistoryProps> = {}) {
 
 // Min/Max pairs render in filter order — capital, risk, shares, date —
 // so index 0 is the capital box, 1 risk, 2 shares, 3 date.
+// Min boxes in filter order: capital, risk, reward, shares, date.
 const minBoxes = () => screen.getAllByPlaceholderText(/^下限$|^Min$/);
-const DATE_MIN = 3;
-const SHARES_MIN = 2;
+const DATE_MIN = 4;
+const SHARES_MIN = 3;
 
 describe('AltRunHistory', () => {
   it('shows ticker, capital, risk, tier, outlook, shares and date per row', () => {
@@ -71,8 +72,9 @@ describe('AltRunHistory', () => {
     expect(screen.getByText(/41/)).toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
     expect(screen.getByText(/分析中|Running/)).toBeInTheDocument();
-    // the running row has no capital/risk/tier/shares yet — four dashes
-    expect(screen.getAllByText('—')).toHaveLength(4);
+    // the running row has no capital/risk/reward/tier/shares yet — five
+    // dashes, plus the done row's reward dash (stored before rewards).
+    expect(screen.getAllByText('—')).toHaveLength(6);
     // the pager is always there, even when everything fits on one page
     expect(screen.getByRole('button', { name: '1' })).toBeInTheDocument();
   });
@@ -185,6 +187,28 @@ describe('AltRunHistory', () => {
 
     expect(dateMin).toHaveValue('yesterday');
     expect(screen.getByText('MSFT')).toBeInTheDocument();
+  });
+
+  it('shows the column-name header row and filters by reward', () => {
+    renderHistory({
+      runs: [
+        makeRun('t1', { stock_code: 'MSFT', reward_risk: 1.5 }),
+        makeRun('t2', { stock_code: 'NVDA', reward_risk: 3 }),
+      ],
+    });
+    expect(screen.getByTestId('alt-history-header')).toBeInTheDocument();
+    expect(screen.getByText('1.5×')).toBeInTheDocument();
+    expect(screen.getByText('3×')).toBeInTheDocument();
+
+    const rewardMin = minBoxes()[2];
+    fireEvent.change(rewardMin, { target: { value: '2' } });
+    fireEvent.keyDown(rewardMin, { key: 'Enter' });
+
+    expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
+    expect(screen.getByText('NVDA')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /(Reward Min|盈亏比下限): 2×/ }),
+    ).toBeInTheDocument();
   });
 
   it('filters by minimum shares', () => {

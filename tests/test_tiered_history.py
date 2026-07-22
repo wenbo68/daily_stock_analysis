@@ -91,7 +91,8 @@ class TestTieredRunHistory:
                              "final": {"direction": "buy", "tier": 3},
                              "sizing": {"shares": 41,
                                         "inputs": {"capital": 100000,
-                                                   "risk_fraction": 0.01}}})
+                                                   "risk_fraction": 0.01,
+                                                   "reward_risk": 2.0}}})
         create_run("task-2", "NVDA")  # still running — no digest yet
         runs = {r["task_id"]: r for r in list_runs()}
         assert runs["task-1"]["direction"] == "buy"
@@ -99,11 +100,13 @@ class TestTieredRunHistory:
         assert runs["task-1"]["tier"] == 3
         assert runs["task-1"]["capital"] == 100000
         assert runs["task-1"]["risk_fraction"] == 0.01
+        assert runs["task-1"]["reward_risk"] == 2.0
         assert runs["task-2"]["direction"] is None
         assert runs["task-2"]["shares"] is None
         assert runs["task-2"]["tier"] is None
         assert runs["task-2"]["capital"] is None
         assert runs["task-2"]["risk_fraction"] is None
+        assert runs["task-2"]["reward_risk"] is None
 
     def test_list_digest_degrades_on_old_or_refused_runs(self, isolated_db):
         # v1 result: no final/sizing/depth -> top-level direction, dash

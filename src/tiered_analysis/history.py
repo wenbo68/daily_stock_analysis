@@ -91,6 +91,7 @@ def _result_digest(row: Any) -> Dict[str, Any]:
         "tier": None,
         "capital": None,
         "risk_fraction": None,
+        "reward_risk": None,
     }
     if row.status != "done" or not row.result_json:
         return digest
@@ -124,6 +125,7 @@ def _result_digest(row: Any) -> Dict[str, Any]:
         inputs = sizing["inputs"]
         digest["capital"] = inputs.get("capital")
         digest["risk_fraction"] = inputs.get("risk_fraction")
+        digest["reward_risk"] = inputs.get("reward_risk")
     return digest
 
 

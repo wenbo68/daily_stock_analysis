@@ -483,6 +483,9 @@ export type TieredRunSummary = {
   // risk as a 0-1 fraction); null when the run had no sizing block.
   capital?: number | null;
   risk_fraction?: number | null;
+  // The reward-to-risk goal the run planned toward (target = entry +
+  // reward × risk); null on runs stored before it was recorded.
+  reward_risk?: number | null;
 };
 
 export type TieredRun = TieredRunSummary & {

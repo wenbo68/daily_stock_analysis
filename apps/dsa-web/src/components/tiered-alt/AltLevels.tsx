@@ -5,7 +5,6 @@ import type {
   TieredLevelReason,
   TieredLevels,
   TieredLevelsDetail,
-  TieredPlanWarning,
   TieredPlanWarnings,
 } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -14,6 +13,7 @@ import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { LinkedTextV8 } from './AltDebateTree';
+import { AltWarningsCell } from './AltPlanWarnings';
 import { adjustedCellId, computedCellId, plainNumber, riskPctText } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import {
@@ -63,12 +63,6 @@ const CHECK_KEYWORD_KEYS: Record<string, UiTextKey> = {
   volatility: 'tiered.alt.checkKey.volatility',
   stop_distance: 'tiered.alt.checkKey.stop_distance',
   stop_vs_swing_low: 'tiered.alt.checkKey.stop_vs_swing_low',
-};
-
-const WARN_KEYWORD_KEYS: Record<string, UiTextKey> = {
-  gap_atr: 'tiered.alt.warnKey.gap_atr',
-  gap_worst: 'tiered.alt.warnKey.gap_worst',
-  reward_below_goal: 'tiered.alt.warnKey.reward_below_goal',
 };
 
 // One bullet per reason, each opening with its check keyword; old stored
@@ -565,100 +559,8 @@ const AltSharesAdjustedCell = ({ detail, taskId, levelAdjusted }: SharesCellProp
 };
 
 // ---------- the warnings row ----------
-
-// A number for warning sentences: at most 2 decimals, no float noise.
-const wNum = (value: unknown): string =>
-  typeof value === 'number' ? String(Number(value.toFixed(2))) : '—';
-
-// One warning's plain-English sentence; unknown ids fall back to the id.
-const warningText = (
-  warning: TieredPlanWarning,
-  t: (key: UiTextKey, params?: Record<string, string | number>) => string,
-): string => {
-  const v = warning.values;
-  switch (warning.id) {
-    case 'gap_atr':
-      return t('tiered.alt.warn.gap_atr', {
-        atrOpen: wNum(v.atr_open),
-        atrLoss: wNum(v.atr_loss),
-        atrExtra: wNum(v.atr_extra),
-        planned: wNum(v.loss_at_stop),
-      });
-    case 'gap_worst':
-      return t('tiered.alt.warn.gap_worst', {
-        worstDayPct:
-          typeof v.worst_day_1y === 'number'
-            ? String(Number((v.worst_day_1y * 100).toFixed(1)))
-            : '—',
-        worstOpen: wNum(v.worst_open),
-        worstLoss: wNum(v.worst_loss),
-        worstExtra: wNum(v.worst_extra),
-        planned: wNum(v.loss_at_stop),
-      });
-    case 'reward_below_goal':
-      return t('tiered.alt.rewardBelowGoal', {
-        ratio: wNum(v.ratio),
-        goal: wNum(v.goal),
-      });
-    default:
-      return warning.id;
-  }
-};
-
-// One warnings cell: an unclickable "none", or the count as a button
-// opening a modal that lists each warning in plain English.
-const AltWarningsCell = ({
-  column,
-  warnings,
-  label,
-}: {
-  column: ColumnKey;
-  warnings: TieredPlanWarning[];
-  label: string;
-}) => {
-  const { t } = useUiLanguage();
-  const [isOpen, setIsOpen] = useState(false);
-
-  if (warnings.length === 0) {
-    // Same quiet gray as the adjusted row's "keep".
-    return (
-      <span data-testid={`alt-plan-warnings-${column}`} className="text-gray-500">
-        {t('tiered.alt.warn.none')}
-      </span>
-    );
-  }
-  return (
-    <>
-      <button
-        type="button"
-        data-testid={`alt-plan-warnings-${column}`}
-        onClick={() => setIsOpen(true)}
-        className={cn('cursor-pointer tabular-nums', ALT_LINK)}
-      >
-        {warnings.length}
-      </button>
-      <AltModal
-        isOpen={isOpen}
-        title={t('tiered.alt.warnTitle', { level: label })}
-        onClose={() => setIsOpen(false)}
-      >
-        <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>
-          {warnings.map((warning, index) => {
-            const keywordKey = WARN_KEYWORD_KEYS[warning.id];
-            return (
-              <li key={index}>
-                {keywordKey ? (
-                  <span className={MODAL_STRONG}>{t(keywordKey)}: </span>
-                ) : null}
-                {warningText(warning, t)}
-              </li>
-            );
-          })}
-        </ul>
-      </AltModal>
-    </>
-  );
-};
+// Rendering lives in AltPlanWarnings.tsx: keyword-first sentences whose
+// every value is clickable (report rows, plan cells, formula popups).
 
 interface AltLevelsProps {
   levels: TieredLevels;
@@ -689,6 +591,13 @@ export const AltLevels = ({
   const sharesDetail = details?.shares ?? null;
   const levelAdjusted = (key: LevelKey): boolean =>
     (details?.[key]?.adjusted ?? null) !== null;
+  // Where a warning value pointing at a plan column should flash: the
+  // adjusted cell when an adjustment exists, else the computed cell.
+  const cellTarget = (key: ColumnKey): string => {
+    const isAdjusted =
+      key === 'shares' ? (sharesDetail?.adjusted ?? null) !== null : levelAdjusted(key);
+    return isAdjusted ? adjustedCellId(key) : computedCellId(key);
+  };
 
   const headerCells: ReactNode = (
     <tr>
@@ -752,6 +661,8 @@ export const AltLevels = ({
                         column={key}
                         warnings={planWarnings[key] ?? []}
                         label={t(LEVEL_LABEL_KEYS[key])}
+                        taskId={taskId}
+                        cellTarget={cellTarget}
                       />
                     </td>
                   ))}

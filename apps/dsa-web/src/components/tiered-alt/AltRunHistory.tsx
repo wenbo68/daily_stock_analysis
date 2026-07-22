@@ -15,9 +15,15 @@ const FILTER_OUTLOOKS = ['bullish', 'neutral', 'bearish'] as const;
 // Old stored runs went to tier 3, so the history filter keeps offering it.
 const FILTER_TIERS = ['1', '2', '3'] as const;
 
-// The filter grid and every run row share this template, so each row value
-// sits exactly under its filter column.
-const ROW_GRID = 'grid w-full grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-7';
+// The filters sit on two lines (owner decision 2026-07-22): ticker,
+// capital, risk, reward and tier on the first; outlook, shares and date
+// on the second.
+const FILTER_GRID =
+  'grid w-full grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-5';
+// The column-name header and every run row share this template, so each
+// value sits under its column name.
+const ROW_GRID =
+  'grid w-full grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 lg:gap-4 xl:grid-cols-8';
 
 // Filter colors follow the shared palette in field order; a range's Min
 // and Max share one color (ALT_COLOR).
@@ -25,11 +31,24 @@ const TONE = {
   ticker: ALT_COLOR[1],
   capital: ALT_COLOR[2],
   risk: ALT_COLOR[3],
-  tier: ALT_COLOR[4],
-  verdict: ALT_COLOR[5],
-  shares: ALT_COLOR[6],
-  date: ALT_COLOR[7],
+  reward: ALT_COLOR[4],
+  tier: ALT_COLOR[5],
+  verdict: ALT_COLOR[6],
+  shares: ALT_COLOR[7],
+  date: ALT_COLOR[8],
 };
+
+// The run list's column names, in row order.
+const HEADER_KEYS = [
+  'tiered.altHistory.h.ticker',
+  'tiered.altHistory.h.capital',
+  'tiered.altHistory.h.risk',
+  'tiered.altHistory.h.reward',
+  'tiered.altHistory.h.tier',
+  'tiered.altHistory.h.outlook',
+  'tiered.altHistory.h.shares',
+  'tiered.altHistory.h.date',
+] as const;
 
 // Accepts 2026/07/14 or 2026-07-14; day boundaries are the viewer's local time.
 const DAY_RE = /^\d{4}[/-]\d{2}[/-]\d{2}$/;
@@ -84,6 +103,11 @@ function riskCell(run: TieredRunSummary): string {
   return run.risk_fraction == null ? '—' : `${riskPctText(run.risk_fraction)}%`;
 }
 
+// The run's reward-to-risk goal as the multiple the user typed ('2×').
+function rewardCell(run: TieredRunSummary): string {
+  return run.reward_risk == null ? '—' : `${plainNumber(run.reward_risk)}×`;
+}
+
 // The row's outlook: stored on new runs; rows fetched before the backend
 // digest existed map their legacy verdict as a fallback.
 function runOutlook(run: TieredRunSummary): string {
@@ -96,6 +120,8 @@ interface HistoryFilters {
   capitalMax: string | null;
   riskMin: string | null;
   riskMax: string | null;
+  rewardMin: string | null;
+  rewardMax: string | null;
   tiers: string[];
   outlooks: string[];
   sharesMin: string | null;
@@ -110,6 +136,8 @@ const NO_FILTERS: HistoryFilters = {
   capitalMax: null,
   riskMin: null,
   riskMax: null,
+  rewardMin: null,
+  rewardMax: null,
   tiers: [],
   outlooks: [],
   sharesMin: null,
@@ -139,6 +167,18 @@ function matchesFilters(run: TieredRunSummary, filters: HistoryFilters): boolean
     return false;
   }
   if (filters.riskMax && !(riskPct != null && riskPct <= Number(filters.riskMax))) {
+    return false;
+  }
+  if (
+    filters.rewardMin &&
+    !(run.reward_risk != null && run.reward_risk >= Number(filters.rewardMin))
+  ) {
+    return false;
+  }
+  if (
+    filters.rewardMax &&
+    !(run.reward_risk != null && run.reward_risk <= Number(filters.rewardMax))
+  ) {
     return false;
   }
   if (filters.tiers.length > 0 && !filters.tiers.includes(String(run.tier ?? ''))) {
@@ -216,12 +256,15 @@ export const AltRunHistory = ({
     filters.capitalMax !== null ||
     filters.riskMin !== null ||
     filters.riskMax !== null ||
+    filters.rewardMin !== null ||
+    filters.rewardMax !== null ||
     filters.sharesMin !== null ||
     filters.sharesMax !== null ||
     filters.dateMin !== null ||
     filters.dateMax !== null;
 
-  // Pills in filter order: ticker, capital, risk, tier, verdict, shares, date.
+  // Pills in filter order: ticker, capital, risk, reward, tier, verdict,
+  // shares, date.
   const pills: { key: string; tone: string; label: string; onRemove: () => void }[] = [];
   filters.tickers.forEach((ticker) => {
     pills.push({
@@ -236,6 +279,8 @@ export const AltRunHistory = ({
     ['capitalMax', TONE.capital, 'tiered.pill.capitalMax'],
     ['riskMin', TONE.risk, 'tiered.pill.riskMin'],
     ['riskMax', TONE.risk, 'tiered.pill.riskMax'],
+    ['rewardMin', TONE.reward, 'tiered.pill.rewardMin'],
+    ['rewardMax', TONE.reward, 'tiered.pill.rewardMax'],
   ] as const).forEach(([field, tone, labelKey]) => {
     const value = filters[field];
     if (value) {
@@ -284,7 +329,7 @@ export const AltRunHistory = ({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className={cn(ROW_GRID, 'text-sm')}>
+      <div className={cn(FILTER_GRID, 'text-sm')}>
         <AltSelect
           label={t('tiered.altForm.ticker')}
           options={knownTickers.map((value) => ({ value, label: value }))}
@@ -321,6 +366,21 @@ export const AltRunHistory = ({
             inputMode: 'decimal',
             validate: isRiskPct,
             onCommit: (value) => updateFilters({ riskMax: value }),
+          }}
+        />
+        <AltPairField
+          label={t('tiered.altFilter.reward')}
+          start={{
+            placeholder: t('tiered.altFilter.min'),
+            inputMode: 'decimal',
+            validate: isPositiveNumber,
+            onCommit: (value) => updateFilters({ rewardMin: value }),
+          }}
+          end={{
+            placeholder: t('tiered.altFilter.max'),
+            inputMode: 'decimal',
+            validate: isPositiveNumber,
+            onCommit: (value) => updateFilters({ rewardMax: value }),
           }}
         />
         <AltSelect
@@ -392,7 +452,19 @@ export const AltRunHistory = ({
           {hasFilters && runs.length > 0 ? t('tiered.altHistory.none') : t('tiered.empty')}
         </p>
       ) : (
-        <ul className="flex flex-col divide-y divide-gray-800">
+        <>
+          {/* Column names, so each row value reads without guessing. */}
+          <div
+            data-testid="alt-history-header"
+            className={cn(ROW_GRID, 'border-b border-gray-800 pb-1.5')}
+          >
+            {HEADER_KEYS.map((key) => (
+              <span key={key} className="text-xs font-semibold text-gray-500">
+                {t(key)}
+              </span>
+            ))}
+          </div>
+          <ul className="flex flex-col divide-y divide-gray-800">
           {visible.map((run) => {
             const isExpanded = run.task_id === expandedTaskId;
             return (
@@ -423,6 +495,12 @@ export const AltRunHistory = ({
                     className="text-xs tabular-nums text-gray-400"
                   >
                     {riskCell(run)}
+                  </span>
+                  <span
+                    id={`alt-run-${run.task_id}-reward`}
+                    className="text-xs tabular-nums text-gray-400"
+                  >
+                    {rewardCell(run)}
                   </span>
                   <span className="text-xs text-gray-500">
                     {run.tier == null ? '—' : t('tiered.altHistory.tier', { value: run.tier })}
@@ -467,7 +545,8 @@ export const AltRunHistory = ({
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </>
       )}
 
       <AltPageSelector
