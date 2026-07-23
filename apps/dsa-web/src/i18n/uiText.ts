@@ -1220,6 +1220,8 @@ const zh = {
   'tiered.alt.levels.warnings': '警告',
   'tiered.alt.warn.none': '无',
   'tiered.alt.warnTitle': '{level}：警告',
+  'tiered.alt.warn.downtrend':
+    '收盘价（{close}）不高于 60 日均线（{sma60}）——股票处于中期下行趋势，此时入场是逆势买入，进一步下跌的风险更高。',
   'tiered.alt.warn.gap_atr':
     '若隔夜消息导致跳空低开，开盘价比止损（{stop}）再低 1 个 ATR（{atr}），落在 {atrOpen}——止损单会在该价成交，亏损 {atrLoss}，比计划的 {planned} 多亏 {atrExtra}。',
   'tiered.alt.warn.gap_worst':
@@ -1234,9 +1236,11 @@ const zh = {
   'tiered.alt.f.shares': '股数',
   'tiered.alt.f.target': '目标价',
   // 每条风险文案开头的固定关键词（由代码根据检查项 id 决定，非 AI 生成）。
+  'tiered.alt.warnKey.downtrend': '逆势',
   'tiered.alt.warnKey.gap_atr': '隔夜跳空',
   'tiered.alt.warnKey.gap_worst': '最差单日',
   'tiered.alt.warnKey.reward_below_goal': '盈亏比',
+  'tiered.alt.checkKey.downtrend': '逆势',
   'tiered.alt.checkKey.liquidity': '流动性',
   'tiered.alt.checkKey.volatility': '波动',
   'tiered.alt.checkKey.stop_vs_swing_low': '摆动低点',
@@ -2720,6 +2724,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.levels.warnings': 'Warnings',
   'tiered.alt.warn.none': 'none',
   'tiered.alt.warnTitle': '{level}: warnings',
+  'tiered.alt.warn.downtrend':
+    'The close ({close}) is at or below its 60-day average ({sma60}) — the stock is in a medium-term downtrend, so entering here is buying against the trend and carries extra risk of further downside.',
   'tiered.alt.warn.gap_atr':
     'If overnight news gaps the open 1 ATR ({atr}) below your stop ({stop}), it opens at {atrOpen}; the stop order sells there — a {atrLoss} loss, {atrExtra} more than the {planned} you planned.',
   'tiered.alt.warn.gap_worst':
@@ -2736,9 +2742,11 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.f.target': 'target',
   // The fixed keyword each risk line opens with (code-picked from the
   // check id, never AI-written).
+  'tiered.alt.warnKey.downtrend': 'Downtrend',
   'tiered.alt.warnKey.gap_atr': 'Overnight gap',
   'tiered.alt.warnKey.gap_worst': 'Worst-day gap',
   'tiered.alt.warnKey.reward_below_goal': 'Reward ratio',
+  'tiered.alt.checkKey.downtrend': 'Downtrend',
   'tiered.alt.checkKey.liquidity': 'Liquidity',
   'tiered.alt.checkKey.volatility': 'Volatility',
   'tiered.alt.checkKey.stop_vs_swing_low': 'Swing low',

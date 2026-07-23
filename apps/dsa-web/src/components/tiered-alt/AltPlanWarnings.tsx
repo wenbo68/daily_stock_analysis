@@ -18,6 +18,7 @@ import { AltModal, FVar, MODAL_BODY, MODAL_STRONG } from './AltUi';
 type PlanColumn = 'entry' | 'stop_loss' | 'take_profit' | 'shares';
 
 const WARN_KEYWORD_KEYS: Record<string, UiTextKey> = {
+  downtrend: 'tiered.alt.warnKey.downtrend',
   gap_atr: 'tiered.alt.warnKey.gap_atr',
   gap_worst: 'tiered.alt.warnKey.gap_worst',
   reward_below_goal: 'tiered.alt.warnKey.reward_below_goal',
@@ -198,6 +199,14 @@ const warningNodes = (
   );
 
   switch (warning.id) {
+    case 'downtrend':
+      return {
+        templateKey: 'tiered.alt.warn.downtrend',
+        nodes: {
+          close: reportJump('technicals.close', wPrice(v.close)),
+          sma60: reportJump('technicals.sma_60', wPrice(v.sma_60)),
+        },
+      };
     case 'gap_atr':
       return {
         templateKey: 'tiered.alt.warn.gap_atr',

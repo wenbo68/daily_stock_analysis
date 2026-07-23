@@ -96,21 +96,23 @@ class TestComputeBaseLevels(unittest.TestCase):
 
 
 class TestTrendAndRoomGates(unittest.TestCase):
-    def test_trend_gate_voids_plan_in_downtrend(self):
+    def test_downtrend_still_issues_a_plan_with_a_trend_warning(self):
+        # Owner decision 2026-07-24: the trend gate no longer voids the
+        # plan — the warning row carries the judgment, the user decides.
         bases = _bases(close=89.0)  # close <= sma_60 (90)
-        self.assertIsNone(bases.entry)
-        self.assertIsNone(bases.take_profit)
-        self.assertTrue(any("trend gate" in w for w in bases.warnings))
+        self.assertIsNotNone(bases.entry)
+        self.assertIsNotNone(bases.take_profit)
+        self.assertTrue(any("trend warning" in w for w in bases.warnings))
 
-    def test_trend_gate_boundary_close_equal_sma60_is_downtrend(self):
+    def test_trend_boundary_close_equal_sma60_is_downtrend(self):
         bases = _bases(close=90.0, sma_20=89.0, swing_low=88.0)
-        self.assertIsNone(bases.entry)
-        self.assertTrue(any("trend gate" in w for w in bases.warnings))
+        self.assertIsNotNone(bases.entry)
+        self.assertTrue(any("trend warning" in w for w in bases.warnings))
 
-    def test_missing_sma60_skips_gate_with_warning(self):
+    def test_missing_sma60_skips_trend_check_with_warning(self):
         bases = _bases(sma_60=None)
         self.assertIsNotNone(bases.entry)
-        self.assertTrue(any("trend gate skipped" in w for w in bases.warnings))
+        self.assertTrue(any("trend check skipped" in w for w in bases.warnings))
 
     def test_overhead_resistance_caps_target(self):
         # entry 96, stop 90, geometric target 108; nearest resistance 106

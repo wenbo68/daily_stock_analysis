@@ -30,7 +30,7 @@ from src.tiered_analysis.providers.base import (
     Market,
     SourceKind,
 )
-from src.tiered_analysis.schema import Direction
+from src.tiered_analysis.schema import Direction, SniperLevels
 
 
 def _daily_df(rows):
@@ -611,6 +611,51 @@ class TestRegistryBarsLoaderWiring(unittest.TestCase):
         result = technicals.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
         self.assertIsNotNone(result.payload["score"])
+
+
+class TestDowntrendCheckAndWarning(unittest.TestCase):
+    """A close at or below the 60-day average no longer voids the plan
+    (owner decision 2026-07-24) — it flags the adjust cycle and lands a
+    structured warning on the entry column instead."""
+
+    DOWNTREND_TECH = {"close": 89.0, "sma_60": 90.0, "atr_14": 3.0}
+    LEVELS = SniperLevels(entry=89.0, stop_loss=83.0, take_profit=101.0)
+
+    def test_downtrend_is_flagged_for_the_adjust_cycle(self):
+        from src.tiered_analysis.plan_review import _flagged_checks
+
+        names = [c.name for c in
+                 _flagged_checks(self.DOWNTREND_TECH, self.LEVELS, shares=None)]
+        self.assertIn("downtrend", names)
+
+    def test_uptrend_is_not_flagged(self):
+        from src.tiered_analysis.plan_review import _flagged_checks
+
+        uptrend = dict(self.DOWNTREND_TECH, close=91.0)
+        names = [c.name for c in
+                 _flagged_checks(uptrend, self.LEVELS, shares=None)]
+        self.assertNotIn("downtrend", names)
+
+    def test_entry_column_carries_the_downtrend_warning(self):
+        from src.tiered_analysis.plan_review import build_plan_warnings
+
+        warnings = build_plan_warnings(
+            self.DOWNTREND_TECH, self.LEVELS,
+            shares=None, risk_amount=None, reward_goal=2.0,
+        )
+        self.assertEqual(
+            warnings["entry"],
+            [{"id": "downtrend", "values": {"close": 89.0, "sma_60": 90.0}}],
+        )
+
+    def test_no_entry_warning_without_an_entry(self):
+        from src.tiered_analysis.plan_review import build_plan_warnings
+
+        warnings = build_plan_warnings(
+            self.DOWNTREND_TECH, SniperLevels(),
+            shares=None, risk_amount=None, reward_goal=2.0,
+        )
+        self.assertEqual(warnings["entry"], [])
 
 
 if __name__ == "__main__":

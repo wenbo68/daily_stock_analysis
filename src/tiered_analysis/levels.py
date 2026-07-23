@@ -97,11 +97,13 @@ def compute_base_levels(
     """The base levels; missing inputs degrade loudly, never silently.
 
     ``reward_risk`` is the user's chosen target multiple (target = entry
-    + reward_risk × risk). The trend gate (close ≤ sma_60 → downtrend →
-    no pullback-buy plan) still voids the plan; a resistance-capped
-    target that misses the user's chosen ratio draws a warning instead
-    (owner decision 2026-07-22: the old 1.5× room gate no longer voids
-    the plan — the warning carries the judgment, the user decides).
+    + reward_risk × risk). No condition voids the plan anymore (owner
+    decisions 2026-07-22 and 2026-07-24: always give a plan — the
+    warning row carries the judgment, the user decides). A close at or
+    below the 60-day average (downtrend) draws a trend warning, and the
+    plan review flags it so the AI can tighten stop/target/shares; a
+    resistance-capped target that misses the user's chosen ratio draws
+    a warning the same way.
     """
     warnings: List[str] = []
 
@@ -112,15 +114,13 @@ def compute_base_levels(
 
     if _valid(sma_60):
         if close <= sma_60:
-            return BaseLevels(
-                warnings=[
-                    f"trend gate: close {close:g} is at or below the 60-day "
-                    f"average {sma_60:g} (downtrend) — buying a pullback in a "
-                    "falling stock is catching a falling knife, so no buy plan"
-                ]
+            warnings.append(
+                f"trend warning: close {close:g} is at or below the 60-day "
+                f"average {sma_60:g} (downtrend) — a pullback buy against "
+                "the trend carries extra downside risk"
             )
     else:
-        warnings.append("sma_60 unavailable — trend gate skipped")
+        warnings.append("sma_60 unavailable — trend check skipped")
 
     structural = [
         v for v in (sma_20, sma_60, swing_low, swing_low_60) if _valid(v)

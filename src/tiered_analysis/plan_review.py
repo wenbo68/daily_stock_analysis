@@ -195,7 +195,19 @@ def _flagged_checks(
     avg_volume = _num(tech, "avg_volume_20")
     volatility = _num(tech, "volatility_pct")
     swing_low = _num(tech, "swing_low_20")
+    close = _num(tech, "close")
+    sma_60 = _num(tech, "sma_60")
 
+    if close is not None and sma_60 is not None and close <= sma_60:
+        # Report-data check like volatility: it can never clear through
+        # plan changes, so it must not join _PLAN_DEPENDENT_CHECKS.
+        checks.append(_Check(
+            "downtrend",
+            f"the close ({display_value(close)}) is at or below the 60-day "
+            f"average ({display_value(sma_60)}) — a counter-trend entry; "
+            "review the stop, the target and the share count together and "
+            "tighten what the downtrend threatens",
+        ))
     if shares and avg_volume:
         fraction = shares / avg_volume
         if fraction > ADV_FLAG_FRACTION:
@@ -240,6 +252,15 @@ def build_plan_warnings(
     entry, stop, target = levels.entry, levels.stop_loss, levels.take_profit
     atr = _num(tech, "atr_14")
     worst_day = _num(tech, "worst_day_1y")
+    close = _num(tech, "close")
+    sma_60 = _num(tech, "sma_60")
+
+    if entry is not None and close is not None and sma_60 is not None \
+            and close <= sma_60:
+        warnings["entry"].append({
+            "id": "downtrend",
+            "values": {"close": close, "sma_60": sma_60},
+        })
 
     sized = shares is not None and shares > 0
     if sized and entry is not None and stop is not None and atr:

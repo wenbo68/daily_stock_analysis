@@ -109,7 +109,7 @@ class TestLevelsWiring(unittest.TestCase):
             any("technicals unavailable" in w for w in outcome.report.warnings)
         )
 
-    def test_trend_gate_warning_reaches_the_report(self):
+    def test_downtrend_plan_still_issues_and_warns_in_the_report(self):
         downtrend = DimensionResult(
             dimension="technicals", kind=SourceKind.NUMERIC,
             coverage=Coverage.FULL,
@@ -117,9 +117,9 @@ class TestLevelsWiring(unittest.TestCase):
                      "swing_low_20": 94.0, "atr_14": 3.0},
         )
         outcome = _run(providers=[_StubProvider(downtrend)])
-        self.assertIsNone(outcome.report.levels.entry)
+        self.assertIsNotNone(outcome.report.levels.entry)
         self.assertTrue(
-            any("trend gate" in w for w in outcome.report.warnings)
+            any("trend warning" in w for w in outcome.report.warnings)
         )
 
 

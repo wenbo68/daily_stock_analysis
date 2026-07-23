@@ -60,6 +60,7 @@ const LEVEL_HELP_KEYS: Record<ColumnKey, UiTextKey> = {
 // deterministic check/warning id, never from LLM text; unknown ids
 // render without one rather than get a made-up label.
 const CHECK_KEYWORD_KEYS: Record<string, UiTextKey> = {
+  downtrend: 'tiered.alt.checkKey.downtrend',
   liquidity: 'tiered.alt.checkKey.liquidity',
   volatility: 'tiered.alt.checkKey.volatility',
   stop_vs_swing_low: 'tiered.alt.checkKey.stop_vs_swing_low',

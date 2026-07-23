@@ -105,16 +105,21 @@ sizing. (`worst_day_1y` replaced the softer `worst_day_5pct` percentile,
 Owner decision 2026-07-20: **levels are pure formulas at every depth. The AI level
 adjuster is deleted** — no nudging, no bands. What the formulas print is the plan.
 
-### Trend gate
+### Trend warning (the voiding gate retired 2026-07-24)
 
 ```
-if close ≤ SMA(60):  no buy plan at all (warning explains)
-if SMA(60) missing:  gate skipped, warning notes it
+if close ≤ SMA(60):  plan still issues — "trend warning" in the notes, a
+                     "downtrend" warning on the entry column, and a
+                     "downtrend" flagged check for the plan-review cycle
+if SMA(60) missing:  trend check skipped, warning notes it
 ```
 
-Pullback-buying only makes sense in an uptrend. Below the one-quarter average the
-"support" anchors are falling with the price, so the whole plan is withheld rather
-than printed with false confidence.
+Pullback-buying works best in an uptrend — below the one-quarter average the
+"support" anchors are falling with the price. The old gate withheld the whole
+plan; owner decision 2026-07-24: always issue the plan and let the warnings
+row carry the judgment. The downtrend also joins the plan-review flagged
+checks, so the AI adjust cycle can tighten the stop, target, or share count
+with cited reasons.
 
 ### Ideal entry
 
@@ -158,24 +163,21 @@ target      = min(geometric, nearest resistance above close)
 Demand R times the upside of the accepted downside — but never pretend the price
 can sail through a ceiling where sellers already showed up once. If overhead
 resistance caps the target, the target honestly stops there; if the capped ratio
-falls below the user's chosen R (but clears the 1.5 floor), the plan carries a
-visible "reward below goal" warning instead of bending any level.
+falls below the user's chosen R, the plan carries a visible "reward below goal"
+warning instead of bending any level.
 
-### Room gate
+### Room gate — retired (owner decision 2026-07-22)
 
-```
-if (target − ideal_entry) / (ideal_entry − stop_loss) < 1.5:  no plan (warning)
-```
-
-If the nearest ceiling is so close that the capped trade cannot pay at least
-1.5-to-1, the whole plan is withheld — a trade without room is not worth printing.
-The 1.5 floor is absolute; the user's chosen R only warns (above), never voids.
+The old 1.5-to-1 floor withheld the plan when overhead resistance capped the
+reward too tightly. It no longer voids anything: the capped ratio draws the
+"reward below goal" warning (above) and the plan issues — the warning carries
+the judgment, the user decides.
 
 ### Dependency chain
 
-`trend gate → supports → ideal entry → stop → target → room gate`. A
-missing upstream input makes the downstream levels explicitly unavailable (with a
-warning) — never silently guessed.
+`supports → ideal entry → stop → target`. A missing upstream input makes the
+downstream levels explicitly unavailable (with a warning) — never silently
+guessed.
 
 ## 3. Outlook → action table (outlook redesign, `schema.py`)
 
@@ -338,7 +340,8 @@ deleted).
 ## 7. Display-only risk card (outlook redesign, `risk_card.py`)
 
 > Retired 2026-07-22 (plan-review redesign): new runs ship no risk card.
-> The adjustable checks (liquidity, volatility, stop-vs-swing-low) moved
+> The adjustable checks (liquidity, volatility, stop-vs-swing-low, and —
+> since 2026-07-24 — downtrend) moved
 > into `plan_review.py` as a check-adjust cycle — up to 3 AI adjustment
 > rounds, with the plan-dependent checks (liquidity, stop-vs-swing-low)
 > re-run on each adjusted plan; no convergence → all adjustments are
