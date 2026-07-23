@@ -244,5 +244,10 @@ with English conventional-commit messages, no Co-Authored-By (repo rule).
 - CN/HK/JP/KR/TW earnings calendars (deterministic, same pattern as
   `earnings.py`).
 - Dedicated social APIs (Reddit/Stocktwits) as extra tools.
+- Cheap-model page distiller for pages > 15k chars (Claude Code WebFetch
+  pattern): localized swap inside `read_source` — distill oversized pages
+  with a cheap model that must extract verbatim quotes so the existing
+  quote-verification chain keeps working. Not built now: news articles fit
+  in 15k, and it adds a second probabilistic layer + a second model config.
 - Provider-native server-side search backends.
 - Any change to the legacy (non-tiered) report pipeline.
