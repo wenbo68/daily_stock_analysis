@@ -11,6 +11,8 @@ const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
   technicals: 'tiered.dimension.technicals',
   fundamentals: 'tiered.dimension.fundamentals',
   macro_econ: 'tiered.dimension.macro_econ',
+  positioning: 'tiered.dimension.positioning',
+  // Old stored runs still carry the retired news-sentiment dimension.
   sentiment: 'tiered.dimension.sentiment',
 };
 

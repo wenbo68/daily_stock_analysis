@@ -7,8 +7,7 @@ inside DSA's decision path, which this package never modifies.
 
 The evidence helpers implement the anchoring contract: LLM claims may only
 reference collected evidence — a dimension payload key path that actually
-resolves (``technicals.rsi_14``) or a verified sentiment citation number
-(``citation:2``).
+resolves (``technicals.rsi_14``).
 """
 from __future__ import annotations
 
@@ -20,8 +19,6 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence
 
 from .providers.base import DimensionResult
-
-_CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 
 class LlmConfigError(RuntimeError):
@@ -179,56 +176,6 @@ def parse_llm_json(raw: str) -> Optional[dict]:
     return parsed if isinstance(parsed, dict) else None
 
 
-def resolve_payload_ref(
-    ref: str, dimensions: Sequence[DimensionResult], leaf_only: bool = False
-) -> bool:
-    """True when ``dimension.key[.subkey…]`` points at real payload data.
-
-    ``leaf_only=True`` (the v5 debate's citation rule) additionally
-    requires the path to land on an actual value — a number, text, flag,
-    or simple list — never on a grouping like ``technicals.macd``.
-    """
-    parts = ref.split(".")
-    if len(parts) < 2:
-        return False
-    dimension_name, path = parts[0], parts[1:]
-    for dim in dimensions:
-        if dim.dimension != dimension_name or not dim.payload:
-            continue
-        node: Any = dim.payload
-        for segment in path:
-            if not isinstance(node, dict) or segment not in node:
-                node = None
-                break
-            node = node[segment]
-        if node is not None and not (leaf_only and isinstance(node, dict)):
-            return True
-    return False
-
-
-def validate_evidence(
-    refs: Sequence[Any],
-    dimensions: Sequence[DimensionResult],
-    leaf_only: bool = False,
-) -> List[str]:
-    """Keep only refs that resolve: payload paths or in-range citations."""
-    citation_count = max(
-        (len(dim.citations or []) for dim in dimensions if dim.dimension == "sentiment"),
-        default=0,
-    )
-    valid: List[str] = []
-    for raw in refs:
-        ref = str(raw).strip()
-        citation = _CITATION_REF_RE.match(ref)
-        if citation:
-            if 1 <= int(citation.group(1)) <= citation_count:
-                valid.append(ref)
-            continue
-        if resolve_payload_ref(ref, dimensions, leaf_only=leaf_only):
-            valid.append(ref)
-    return valid
-
-
 def display_value(value: Any) -> str:
     """One number, formatted exactly as the web report pages show it.
 
@@ -276,10 +223,4 @@ def evidence_block(dimensions: Sequence[DimensionResult], display: bool = False)
                 f"[{dim.dimension} payload — cite as \"{dim.dimension}.<key>\"]\n"
                 + json.dumps(payload, ensure_ascii=False, default=str)
             )
-        if dim.dimension == "sentiment" and dim.narrative:
-            lines = [f"[sentiment narrative]\n{dim.narrative}"]
-            for index, citation in enumerate(dim.citations or [], start=1):
-                title = citation.title or citation.source_name
-                lines.append(f"citation:{index} = {title} ({citation.url})")
-            blocks.append("\n".join(lines))
     return "\n\n".join(blocks) if blocks else "(no evidence collected)"

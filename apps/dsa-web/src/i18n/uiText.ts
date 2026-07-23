@@ -796,7 +796,7 @@ const zh = {
 
   'layout.nav.tiered': '分层分析',
   'tiered.title': '分层分析',
-  'tiered.subtitle': '四维数据采集（技术面 / 基本面 / 宏观 / 情绪面）+ 一次 AI 综合判断，并记录到 AI 建议。',
+  'tiered.subtitle': '四维数据采集（技术面 / 基本面 / 宏观 / 持仓结构）+ 一次 AI 综合判断，并记录到 AI 建议。',
   'tiered.inputPlaceholder': '输入股票代码，如 AAPL、600519、hk00700',
   'tiered.run': '开始分析',
   'tiered.running': '分析中（约 2-5 分钟：抓取数据、检索新闻、AI 综合）…',
@@ -822,6 +822,7 @@ const zh = {
   'tiered.dimension.technicals': '技术面',
   'tiered.dimension.fundamentals': '基本面',
   'tiered.dimension.macro_econ': '宏观经济',
+  'tiered.dimension.positioning': '持仓结构',
   'tiered.dimension.sentiment': '新闻情绪',
   'tiered.dimension.plan': '交易计划',
   'tiered.citations': '参考来源（编号对应正文中的 [n] 标注）',
@@ -2212,7 +2213,7 @@ const en: Record<UiTextKey, string> = {
 
   'layout.nav.tiered': 'Tiered',
   'tiered.title': 'Tiered analysis',
-  'tiered.subtitle': 'Four-dimension data collection (technicals / fundamentals / macro / sentiment) plus one AI verdict, recorded to AI signals.',
+  'tiered.subtitle': 'Four-dimension data collection (technicals / fundamentals / macro / positioning) plus one AI verdict, recorded to AI signals.',
   'tiered.inputPlaceholder': 'Enter a ticker, e.g. AAPL, 600519, hk00700',
   'tiered.run': 'Run analysis',
   'tiered.running': 'Running (2-5 min: fetching data, searching news, AI synthesis)…',
@@ -2238,6 +2239,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.dimension.technicals': 'Technicals',
   'tiered.dimension.fundamentals': 'Fundamentals',
   'tiered.dimension.macro_econ': 'Macro economy',
+  'tiered.dimension.positioning': 'Positioning',
   'tiered.dimension.sentiment': 'News sentiment',
   'tiered.dimension.plan': 'Trade plan',
   'tiered.citations': 'Sources (numbers match the [n] marks in the text)',

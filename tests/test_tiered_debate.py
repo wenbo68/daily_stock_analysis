@@ -10,8 +10,7 @@ the vote arithmetic (author = first valid vote; both-listed = confirmed
 median of its voters' ratings, mean when there are two; score =
 10 × Σweight(bullish) / Σweight(all); snapshots initial/final),
 the display-value citation contract (links are {ref, value} copied
-exactly as the report pages display it; sentiment links are bare
-{ref: citation:N}), the vote citation contract (reasons stating numbers
+exactly as the report pages display it), the vote citation contract (reasons stating numbers
 must cite them; unfixable votes are discarded), struck bullets from
 either analyst, the Pydantic retry-once contract, and every failure
 rule — both lists failing voids the verdict (tier 2 falls back to
@@ -66,21 +65,23 @@ def _technicals():
     )
 
 
-def _sentiment():
+def _positioning():
     return DimensionResult(
-        dimension="sentiment",
-        kind=SourceKind.TEXTUAL,
+        dimension="positioning",
+        kind=SourceKind.NUMERIC,
         coverage=Coverage.FULL,
-        narrative="Sentiment: positive. Big deal announced [1]. Doubts remain [2].",
-        citations=[
-            Citation(source_name="reuters", url="https://ex.com/1"),
-            Citation(source_name="bloomberg", url="https://ex.com/2"),
-        ],
+        # Leaf count = 4. Display strings: "3.10", "1.80", "61.55", "0.92".
+        payload={
+            "short_interest": {"short_pct_of_float": 3.1, "days_to_cover": 1.8},
+            "ownership": {"institutional_pct": 61.55},
+            "options": {"put_call_oi_ratio": 0.92},
+        },
+        citations=[Citation(source_name="FINRA short interest via Yahoo Finance")],
     )
 
 
 def _dimensions():
-    return [_technicals(), _sentiment()]
+    return [_technicals(), _positioning()]
 
 
 def _tier1(direction=Direction.BUY, dimensions=()):
@@ -100,11 +101,11 @@ def _tier1(direction=Direction.BUY, dimensions=()):
 
 # ---------------------------------------------------------------------------
 # Reply builders — the default run:
-#   first list:  T1 bullish (RSI), T2 bearish (close), S1 bullish, S2 bearish
-#   second list: T1/S1/S2 identical (→ covered, confirmed 2-0),
+#   first list:  T1 bullish (RSI), T2 bearish (close), P1 bullish, P2 bearish
+#   second list: T1/P1/P2 identical (→ covered, confirmed 2-0),
 #                T2 bullish (tech score, → renumbered T3),
-#                S3 bearish (→ stays S3)
-#   check round on T2/T3/S3: T2 voted invalid (→ tied), T3/S3 valid
+#                P3 bearish (→ stays P3)
+#   check round on T2/T3/P3: T2 voted invalid (→ tied), T3/P3 valid
 #   deciding round on T2: valid → counted 2-1
 #
 # Score (flat counting): initial = final = 10 × 3 bullish / 6 = 5.00 → hold
@@ -113,10 +114,6 @@ def _tier1(direction=Direction.BUY, dimensions=()):
 
 def _vlink(ref, value):
     return {"ref": ref, "value": value}
-
-
-def _slink(number):
-    return {"ref": f"citation:{number}"}
 
 
 def _item(item_id, dimension, direction, claim, links, weight=2,
@@ -145,12 +142,12 @@ LIST_1 = [
     _item("T2", "technicals", "bearish",
           "The closing price (100) is below the 105 resistance.",
           [_vlink("technicals.close", "100")]),
-    _item("S1", "sentiment", "bullish",
-          "A big deal was announced.",
-          [_slink(1)]),
-    _item("S2", "sentiment", "bearish",
-          "Doubts remain about the coverage.",
-          [_slink(2)]),
+    _item("P1", "positioning", "bullish",
+          "Institutional ownership (61.55) is a solid majority.",
+          [_vlink("positioning.ownership.institutional_pct", "61.55")]),
+    _item("P2", "positioning", "bearish",
+          "Short interest (3.10) rose against the float.",
+          [_vlink("positioning.short_interest.short_pct_of_float", "3.10")]),
 ]
 
 LIST_2 = [
@@ -160,17 +157,17 @@ LIST_2 = [
           [_vlink("technicals.score", "68")]),
     LIST_1[2],
     LIST_1[3],
-    _item("S3", "sentiment", "bearish",
-          "The deal is not closed yet.",
-          [_slink(2)]),
+    _item("P3", "positioning", "bearish",
+          "Days to cover (1.80) means shorts can exit quickly.",
+          [_vlink("positioning.short_interest.days_to_cover", "1.80")]),
 ]
 
 DEFAULT_MATCH_MAP = [
     {"own_id": "T1", "covered_by": "T1"},
     {"own_id": "T2", "covered_by": None},
-    {"own_id": "S1", "covered_by": "S1"},
-    {"own_id": "S2", "covered_by": "S2"},
-    {"own_id": "S3", "covered_by": None},
+    {"own_id": "P1", "covered_by": "P1"},
+    {"own_id": "P2", "covered_by": "P2"},
+    {"own_id": "P3", "covered_by": None},
 ]
 
 BROKEN_T2 = _item("T2", "technicals", "bearish",
@@ -205,7 +202,9 @@ def _check(votes=None):
                 "T2": _vote("invalid",
                             "A single close below one level is not a trend."),
                 "T3": _vote("valid", "The score reading is fair."),
-                "S3": _vote("valid", "Supported by the source.", [_slink(2)]),
+                "P3": _vote("valid", "The 1.80 days-to-cover backs the point.",
+                            [_vlink("positioning.short_interest.days_to_cover",
+                                    "1.80")]),
             }
         }
     )
@@ -367,9 +366,11 @@ class CeilingsTest(unittest.TestCase):
         # close, rsi_14, score, macd.signal — the macd grouping is not a leaf.
         self.assertEqual(ceilings["technicals"], 4)
 
-    def test_sentiment_ceiling_is_sources_times_two(self):
+    def test_positioning_ceiling_is_its_leaf_count(self):
         ceilings = max_items_per_dimension(_dimensions())
-        self.assertEqual(ceilings["sentiment"], 4)
+        # short_pct_of_float, days_to_cover, institutional_pct,
+        # put_call_oi_ratio — the group headings are not leaves.
+        self.assertEqual(ceilings["positioning"], 4)
 
     def test_ceiling_never_drops_below_the_floor(self):
         dims = [
@@ -398,7 +399,7 @@ class CeilingsTest(unittest.TestCase):
             LIST_1[2], LIST_1[3],
         ]
         result, fake = _run(
-            _replies(lister1=_list_reply(many)),
+            _replies(lister1=_list_reply(many)),  # 5 technicals vs ceiling 4
             retry_replies={"lister1": _list_reply(LIST_1)},
         )
         self.assertIsNotNone(result.verdict)
@@ -439,7 +440,7 @@ class ChoreographyTest(unittest.TestCase):
 
     def test_both_listed_bullets_are_confirmed_without_any_vote(self):
         result, _ = _run()
-        for item_id in ("T1", "S1", "S2"):
+        for item_id in ("T1", "P1", "P2"):
             item = _item_by_id(result, item_id)
             self.assertEqual(item["authors"], 2)
             self.assertEqual(item["votes"], [])
@@ -484,32 +485,13 @@ class ChoreographyTest(unittest.TestCase):
         votes = {
             "T2": _vote("valid", "Fair reading."),
             "T3": _vote("valid", "Fair reading."),
-            "S3": _vote("valid", "Fair reading."),
+            "P3": _vote("valid", "Fair reading."),
         }
         result, fake = _run(_replies(check=_check(votes)))
         self.assertNotIn("decider", fake.stages())
         self.assertEqual(len(fake.prompts), 5)
         for item in result.items:
             self.assertEqual(item["final_status"], "counted")
-
-    def test_model_written_source_markers_are_stripped(self):
-        # The UI appends its own [N] hyperlinks, so a literal "[2]" the
-        # model wrote in the sentence would show twice — code strips it
-        # from claims and vote reasons alike.
-        marked = _item("S3", "sentiment", "bearish",
-                       "The deal is not closed yet [2].", [_slink(2)])
-        second = [LIST_2[0], LIST_2[1], LIST_2[2], LIST_2[3], marked]
-        votes = {
-            "T2": _vote("valid", "Fair reading."),
-            "T3": _vote("valid", "Fair reading."),
-            "S3": _vote("valid", "Supported by the source [2].", [_slink(2)]),
-        }
-        result, _ = _run(
-            _replies(lister2=_list_reply(second), check=_check(votes))
-        )
-        s3 = _item_by_id(result, "S3")
-        self.assertEqual(s3["claim"], "The deal is not closed yet.")
-        self.assertEqual(s3["votes"][0]["reason"], "Supported by the source.")
 
     def test_an_opposite_direction_match_is_rejected_and_becomes_a_dispute(self):
         # The second analyst reads the same RSI as bearish; matching it to
@@ -522,9 +504,9 @@ class ChoreographyTest(unittest.TestCase):
         bad_map = [
             {"own_id": "T1", "covered_by": "T1"},
             {"own_id": "T2", "covered_by": "T1"},  # opposite direction!
-            {"own_id": "S1", "covered_by": "S1"},
-            {"own_id": "S2", "covered_by": "S2"},
-            {"own_id": "S3", "covered_by": None},
+            {"own_id": "P1", "covered_by": "P1"},
+            {"own_id": "P2", "covered_by": "P2"},
+            {"own_id": "P3", "covered_by": None},
         ]
         good_map = [dict(row) for row in bad_map]
         good_map[1] = {"own_id": "T2", "covered_by": None}
@@ -587,11 +569,11 @@ class VoteOutcomeTest(unittest.TestCase):
         # and voting every bullet down, unbreakable ties resolved against.
         votes = {
             item_id: _vote("invalid", "Flawed.")
-            for item_id in ("T1", "T2", "S1", "S2")
+            for item_id in ("T1", "T2", "P1", "P2")
         }
         deciders = {
             item_id: _vote("invalid", "The objection holds.")
-            for item_id in ("T1", "T2", "S1", "S2")
+            for item_id in ("T1", "T2", "P1", "P2")
         }
         result, _ = _run(
             _replies(
@@ -641,7 +623,7 @@ class WeightTest(unittest.TestCase):
             "T2": _vote("invalid", "A single close below one level is not a trend.",
                         weight=3),
             "T3": _vote("valid", "The score reading is fair."),
-            "S3": _vote("valid", "Supported by the source.", [_slink(2)]),
+            "P3": _vote("valid", "Fair reading."),
         }
         decider = {"T2": _vote("valid", "The bearish reading is defensible.",
                                weight=3)}
@@ -751,7 +733,7 @@ class WeightTest(unittest.TestCase):
                         "A single close below one level is not a trend.",
                         weight=4, weight_reason="Levels drive the plan."),
             "T3": _vote("valid", "The score reading is fair."),
-            "S3": _vote("valid", "Supported by the source.", [_slink(2)]),
+            "P3": _vote("valid", "Fair reading."),
         }
         result, _ = _run(_replies(check=_check(votes)))
         t2 = _item_by_id(result, "T2")
@@ -772,7 +754,7 @@ class StruckBulletTest(unittest.TestCase):
                 fix=_fix([BROKEN_T2]),
                 check=_check({
                     "T3": _vote("valid", "Fair reading."),
-                    "S3": _vote("valid", "Fair reading."),
+                    "P3": _vote("valid", "Fair reading."),
                 }),
             )
         )
@@ -791,20 +773,22 @@ class StruckBulletTest(unittest.TestCase):
         self.assertNotIn("999", merge_prompt)
         check_prompt = next(p for p in fake.prompts if stage_of(p) == "check")
         self.assertNotIn("999", check_prompt)
-        # …and never enters a pool: initial = T1, S1, S2, T3, S3.
+        # …and never enters a pool: initial = T1, P1, P2, T3, P3.
         self.assertEqual(result.verdict.pools["initial"]["total"], 5)
         # flat counting: 3 bullish of the 5 surviving bullets → 6.0
         self.assertEqual(result.verdict.initial_score, 6.0)
 
     def test_an_unfixable_second_list_bullet_is_struck_too(self):
-        broken_s3 = _item("S3", "sentiment", "bearish",
-                          "The deal is not closed yet.", [_slink(9)])
-        second = [LIST_2[0], LIST_2[1], LIST_2[2], LIST_2[3], broken_s3]
-        match_map = [row for row in DEFAULT_MATCH_MAP if row["own_id"] != "S3"]
+        broken_p3 = _item("P3", "positioning", "bearish",
+                          "Days to cover (9.99) means shorts can exit quickly.",
+                          [_vlink("positioning.short_interest.days_to_cover",
+                                  "9.99")])
+        second = [LIST_2[0], LIST_2[1], LIST_2[2], LIST_2[3], broken_p3]
+        match_map = [row for row in DEFAULT_MATCH_MAP if row["own_id"] != "P3"]
         result, fake = _run(
             _replies(
                 lister2=_list_reply(second),
-                fix=_fix([broken_s3]),
+                fix=_fix([broken_p3]),
                 merge=_merge(match_map),
                 check=_check({
                     "T2": _vote("valid", "Fair reading."),
@@ -813,10 +797,10 @@ class StruckBulletTest(unittest.TestCase):
             )
         )
         self.assertEqual(fake.stages().count("fix"), 3)
-        s3 = _item_by_id(result, "S3")  # renumbered into the tree, struck
-        self.assertTrue(s3["struck"])
-        self.assertEqual(s3["exclusion_reason"], "citation_failed")
-        self.assertEqual(s3["votes"], [])
+        p3 = _item_by_id(result, "P3")  # renumbered into the tree, struck
+        self.assertTrue(p3["struck"])
+        self.assertEqual(p3["exclusion_reason"], "citation_failed")
+        self.assertEqual(p3["votes"], [])
         self.assertEqual(result.verdict.pools["initial"]["total"], 5)
 
     def test_a_fixed_bullet_rejoins_without_a_trace(self):
@@ -857,7 +841,7 @@ class VoteCitationTest(unittest.TestCase):
         votes = {
             "T2": _vote("invalid", "The close of 100.00 tells nothing."),
             "T3": _vote("valid", "Fair reading."),
-            "S3": _vote("valid", "Fair reading."),
+            "P3": _vote("valid", "Fair reading."),
         }
         fixed = {
             "T2": _vote("invalid",
@@ -880,7 +864,7 @@ class VoteCitationTest(unittest.TestCase):
         votes = {
             "T2": bad_vote,
             "T3": _vote("valid", "Fair reading."),
-            "S3": _vote("valid", "Fair reading."),
+            "P3": _vote("valid", "Fair reading."),
         }
         result, fake = _run(
             _replies(check=_check(votes), vote_fix=_vote_fix({"T2": bad_vote}))
@@ -901,7 +885,7 @@ class VoteCitationTest(unittest.TestCase):
             "T2": _vote("invalid", "The close of 100 is neutral.",
                         [_vlink("technicals.close", "100.0")]),
             "T3": _vote("valid", "Fair reading."),
-            "S3": _vote("valid", "Fair reading."),
+            "P3": _vote("valid", "Fair reading."),
         }
         fixed = {
             "T2": _vote("invalid", "The close of 100 is neutral.",
@@ -970,7 +954,7 @@ class FailureRulesTest(unittest.TestCase):
     def test_one_list_invalid_twice_proceeds_with_the_other(self):
         votes = {
             item_id: _vote("valid", "Fair reading.")
-            for item_id in ("T1", "T2", "S1", "S2", "S3")
+            for item_id in ("T1", "T2", "P1", "P2", "P3")
         }
         result, fake = _run(
             _replies(lister1="not json", check=_check(votes))
@@ -989,7 +973,7 @@ class FailureRulesTest(unittest.TestCase):
     def test_merge_invalid_twice_drops_the_second_list(self):
         votes = {
             item_id: _vote("valid", "Fair reading.")
-            for item_id in ("T1", "T2", "S1", "S2")
+            for item_id in ("T1", "T2", "P1", "P2")
         }
         result, fake = _run(
             _replies(merge="not json", check=_check(votes))
@@ -1071,7 +1055,7 @@ class PromptContentTest(unittest.TestCase):
         _, fake = _run()
         first = next(p for p in fake.prompts if "You are the FIRST analyst" in p)
         self.assertIn("technicals: 2-4", first)
-        self.assertIn("sentiment: 2-4", first)
+        self.assertIn("positioning: 2-4", first)
         self.assertIn("room, not a quota", first)
         self.assertIn("Link rules", first)
         self.assertIn("copied EXACTLY", first)
@@ -1099,7 +1083,7 @@ class PromptContentTest(unittest.TestCase):
     def test_check_prompt_names_the_single_author_bullets_only(self):
         _, fake = _run()
         check = next(p for p in fake.prompts if "cast the second vote" in p)
-        self.assertIn("T2, T3, S3", check)
+        self.assertIn("T2, T3, P3", check)
         self.assertIn("already code-verified", check)
         self.assertIn("listed by BOTH analysts", check)  # the tree shows authorship
         self.assertIn("Vote rules", check)

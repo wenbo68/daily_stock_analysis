@@ -13,7 +13,7 @@ from typing import Callable, List, Optional
 from .base import DimensionProvider, Market
 from .fundamentals_us import FundamentalsUSProvider
 from .macro_econ import MacroEconProvider
-from .sentiment import SentimentProvider
+from .positioning import PositioningUSProvider
 from .technicals import TechnicalsProvider
 
 
@@ -36,7 +36,7 @@ def get_providers(
 
     All four dimensions are registered: technicals (all markets),
     fundamentals (US), macro_econ (all markets, shared per-day cache),
-    sentiment (all markets, LLM+search+verified citations).
+    positioning (US: short interest / ownership / insiders / options).
 
     ``bars_loader`` feeds the technicals provider (production passes the
     data_provider-backed loader; omitting it leaves the unwired default
@@ -47,10 +47,12 @@ def get_providers(
         if bars_loader is not None
         else TechnicalsProvider()
     )
+    # List order is display order on the report pages: technicals,
+    # fundamentals, positioning, then macro.
     candidates: List[DimensionProvider] = [
         technicals,
         FundamentalsUSProvider(),
+        PositioningUSProvider(),
         MacroEconProvider(),
-        SentimentProvider(),
     ]
     return [provider for provider in candidates if provider.supports(market)]

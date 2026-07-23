@@ -13,8 +13,7 @@ independently; a merge call matches the two lists; every bullet's author
 is its first valid vote (a bullet both analysts listed independently is
 confirmed 2-0 on the spot); a check round casts the second vote on
 single-author bullets; a deciding round breaks 1-1 ties. Citations are
-code's job alone — links are ``{ref, value}`` (sentiment: bare
-``{ref: citation:N}`` rendered as a trailing [N]) and every link,
+code's job alone — links are ``{ref, value}`` and every link,
 including the ones inside vote reasons, is verified mechanically with a
 fix loop. Structural rules that depend on run-time data live in the
 validator helpers at the bottom — they raise ``ValueError`` with
@@ -22,28 +21,26 @@ retry-friendly messages.
 """
 from __future__ import annotations
 
-import re
 from typing import Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 #: Tree order for the four dimension groups; also the id-prefix map.
-DIMENSIONS: Tuple[str, ...] = ("technicals", "fundamentals", "macro_econ", "sentiment")
+DIMENSIONS: Tuple[str, ...] = ("technicals", "fundamentals", "positioning", "macro_econ")
 DIMENSION_PREFIX: Dict[str, str] = {
     "technicals": "T",
     "fundamentals": "F",
+    "positioning": "P",
     "macro_econ": "E",
-    "sentiment": "S",
 }
 
 #: Every dimension that has collected data must contribute at least this
 #: many evidence items — a floor so no dimension is skipped. The ceiling is
-#: dynamic: the number of leaf fields in that dimension's report
-#: (sentiment: verified sources × 2), never below the floor — room for the
-#: whole report, not a quota.
+#: dynamic: the number of leaf fields in that dimension's report, never
+#: below the floor — room for the whole report, not a quota.
 MIN_ITEMS_PER_DIMENSION = 2
 
-Dimension = Literal["technicals", "fundamentals", "macro_econ", "sentiment"]
+Dimension = Literal["technicals", "fundamentals", "macro_econ", "positioning"]
 ItemDirection = Literal["bullish", "bearish"]
 
 #: Importance weight of one bullet, rated by each voter (owner spec
@@ -55,8 +52,6 @@ ItemDirection = Literal["bullish", "bearish"]
 Weight = Literal[1, 2, 3, 4, 5]
 DEFAULT_WEIGHT = 3
 
-_CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
-
 
 class _StageModel(BaseModel):
     # Tolerate extra keys (models love adding commentary fields); never
@@ -65,10 +60,9 @@ class _StageModel(BaseModel):
 
 
 class LinkModel(_StageModel):
-    """One citation. Payload refs carry "value" — the value copied exactly
-    as the report displays it (code verifies the copy AND that the
-    sentence contains it). Sentiment refs ("citation:N") carry nothing
-    extra — the UI renders them as trailing [N] links."""
+    """One citation: a payload ref carrying "value" — the value copied
+    exactly as the report displays it (code verifies the copy AND that
+    the sentence contains it)."""
 
     ref: str = Field(min_length=1)
     value: Optional[Union[float, str]] = None
@@ -76,9 +70,8 @@ class LinkModel(_StageModel):
     @model_validator(mode="after")
     def _payload_needs_value(self) -> "LinkModel":
         ref = self.ref.strip()
-        if not _CITATION_REF_RE.match(ref) and (
-            self.value is None
-            or (isinstance(self.value, str) and not self.value.strip())
+        if self.value is None or (
+            isinstance(self.value, str) and not self.value.strip()
         ):
             raise ValueError(
                 f'link {ref!r} must carry "value" — the value copied exactly '
@@ -184,7 +177,7 @@ def check_opening_items(
     collected evidence — the "no data" escape hatch cannot be used for
     them, and dimensions outside it may not carry items.
     ``max_per_dimension`` is the code-computed ceiling per dimension
-    (leaf-field count; sentiment sources × 2; never below the floor).
+    (leaf-field count, never below the floor).
     """
     errors: List[str] = []
     seen_ids: Dict[str, str] = {}

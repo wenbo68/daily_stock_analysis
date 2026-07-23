@@ -2,7 +2,7 @@
 """Run tiered analysis v1 for one or more symbols (production wiring).
 
 For each symbol this collects the four dimensions (technicals,
-fundamentals, macro, sentiment), runs the existing DSA analysis as tier 1,
+fundamentals, macro, positioning), runs the existing DSA analysis as tier 1,
 and records the recommendation in the decision-signal system — visible in
 the web app on the Decision Signals page.
 

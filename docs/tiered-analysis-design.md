@@ -171,27 +171,35 @@ Macro is really two different things:
 - **Regional conclusion**: **fully per-exchange**; some concepts don't port at all. Can be
   **deferred** in v1.
 
-### 2.4 Sentiment — **TEXTUAL**, highest regional coupling
+### 2.4 Positioning — **NUMERIC**, high regional coupling (disclosure regimes)
 
-- **Type**: **TEXTUAL**. Sentiment is inherently language- and platform-bound:
-  StockTwits/Reddit (US/EN), Xueqiu 雪球 / Guba 股吧 / Weibo 微博 (CN), Naver 종토방 (KR).
-  **There is no unified cross-market sentiment source.**
-- **Implementation (recommended: LLM + search + citations, not hard-coded scrapers)**:
-  - Give the LLM web search + a `read_url` tool; let it retrieve, synthesize, and **produce
-    verifiable citations**. Language-agnostic, minimal code, adapts to new sources. This is
-    exactly VT's default-research mode.
-  - **Honest caveat**: what generic search surfaces is mostly **news/blogs**, not the **real
-    retail sentiment** on Guba/Xueqiu/Naver (those sit behind JS/app walls, login walls, and
-    are poorly indexed). So this method yields **news sentiment**, not retail sentiment —
-    good enough for v1, but **not differentiation**. True native retail-sentiment sources
-    come later, market by market; done well, they would beat all three reference repos.
-- **Hard rule for citations**: a citation must be the product of a **real tool fetch**, not
-  a URL asserted by the model (LLMs fabricate plausible-looking citations and misattribute).
-  Verify the URL is reachable and the quoted text actually exists.
-- **Recommendation: extend citations to all four dimensions** — NUMERIC cites its **data
-  source** (Yahoo/FRED/filings); TEXTUAL cites **articles**. Users can self-verify; it is a
-  strong trust feature.
-- **Regional conclusion**: **fully per-market**; the heaviest per-market investment.
+> **History (2026-07-24)**: this slot originally held the TEXTUAL **news-sentiment**
+> dimension (LLM + search + verbatim-quote citation verification, provider
+> `providers/sentiment.py`, dimension id `"sentiment"`). It was retired and replaced by
+> this fully deterministic positioning dimension; the citation-ref (`citation:N`) plumbing
+> was removed from the debate/plan-review layers with it. Old stored runs still carry
+> sentiment cards and citation links — the frontend keeps rendering them.
+
+- **Type**: **NUMERIC**. Who holds the stock and who can be forced to transact — the four
+  questions a thesis defense always meets: who is on the other side, how crowded the trade
+  is, who can be squeezed, and what informed parties are doing. Every number is a published
+  disclosure; no LLM anywhere (`providers/positioning.py`, dimension id `"positioning"`).
+- **Four blocks (US, all via yfinance)**:
+  - **Short interest** — short % of float, days to cover, shares short, change vs the prior
+    report. FINRA settlement data, published twice a month with ~2 weeks' lag; the payload
+    carries `as_of` so the staleness is always visible.
+  - **Ownership** — institutional % and insider % (13F, quarterly, up to 45 days late),
+    top-10 institutional concentration, float vs shares outstanding.
+  - **Insider activity (6m)** — open-market Form 4 buys/sells counts and net notional;
+    awards/exercises/gifts excluded (only trades made with the insiders' own money count).
+  - **Options** — put/call open-interest and volume ratios plus total OI over the nearest
+    expirations (≤4 fetched); the freshest block, daily.
+- **Degradation**: each block fails independently into `warnings` (partial coverage);
+  everything failing → `unavailable`. An ok-but-empty summary is surfaced, never blanked.
+- **Regional conclusion**: **per-disclosure-regime**. US ships first. A-shares have a
+  *better* local staple (per-stock margin-trading balances 融资融券, daily via AkShare, plus
+  quarterly shareholder counts 股东户数); HK has SFC weekly short positions and HKEX daily
+  short-sell turnover. Those are separate provider designs, deferred.
 
 ### 2.5 Summary table
 
@@ -201,7 +209,7 @@ Macro is really two different things:
 | Fundamentals | NUMERIC | High (sources) | US=EDGAR/Yahoo; CN=AkShare | ❌ needs data sources |
 | Macro-econ | NUMERIC | Low | FRED/OECD (cached daily per region) | ❌ needs data sources |
 | Macro-internals | NUMERIC | High (exchange) | AkShare (CN); others deferred | ❌ never use search |
-| Sentiment | **TEXTUAL** | Highest | LLM + search + citations (generic fallback) | ✅ suitable |
+| Positioning | NUMERIC | High (disclosure) | US=FINRA/13F/Form 4/options via yfinance | ❌ never use search |
 
 ---
 
@@ -399,8 +407,9 @@ v1 shipped in full on branch `claude/trading-repos-verification-analysis-pe4qts`
   US via SEC EDGAR filings + Yahoo valuation; macro — FRED, cached per region;
   sentiment — search + LLM under the anti-fabrication citation contract (verbatim-quote
   verification, one deduped reference per source, inline `[n]` markers renumbered to the
-  deduped list and stripped when their citation is dropped); registry with market routing
-  delegating to `data_provider/base.py:_market_tag`.
+  deduped list and stripped when their citation is dropped) — **retired 2026-07-24,
+  replaced by the deterministic positioning provider (§2.4)**; registry with market
+  routing delegating to `data_provider/base.py:_market_tag`.
 - **Tier 1 synthesis + integration** (`src/tiered_analysis/integration.py`,
   `scripts/run_tiered_analysis.py`): four-dimension collection → one LLM synthesis →
   direction + price levels. Sizing slots reserved and left empty by design (v2).

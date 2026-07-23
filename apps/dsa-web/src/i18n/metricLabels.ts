@@ -214,7 +214,7 @@ const en: Record<string, MetricEntry> = {
   },
   as_of: {
     short: 'As of',
-    full: 'The date this macro data was gathered.',
+    full: 'The date this block of data describes — lagged sources (macro series, short-interest reports) carry it so stale numbers are never mistaken for today\'s.',
   },
   rates: {
     short: 'Rates',
@@ -271,6 +271,92 @@ const en: Record<string, MetricEntry> = {
   observation_dates: {
     short: 'Data dates',
     full: 'The date of each underlying data point (some series update monthly, others daily).',
+  },
+
+  // ---- positioning ----
+  short_interest: {
+    short: 'Short interest',
+    full: 'Shares sold short — bets that the price will fall. FINRA publishes this twice a month with roughly a two-week lag; see "As of" for the report date.',
+  },
+  short_pct_of_float: {
+    short: 'Short % of float',
+    full: 'Shorted shares as a percentage of the freely tradable shares (the float).\nAbove 10% is notable; above 20% is a heavily shorted, crowded-short stock.',
+  },
+  days_to_cover: {
+    short: 'Days to cover',
+    full: 'Shorted shares divided by average daily volume — how many days of normal trading short sellers would need to buy everything back.\nAbove 5 days makes a short squeeze easier.',
+  },
+  shares_short: {
+    short: 'Shares short',
+    full: 'Total number of shares currently sold short.',
+  },
+  change_vs_prior_month_pct: {
+    short: 'Change vs prior %',
+    full: 'Change in shares short versus the previous twice-monthly report — whether shorts are adding to their bets or covering.',
+  },
+  ownership: {
+    short: 'Ownership',
+    full: 'Who holds the stock — from quarterly 13F institutional filings (up to 45 days late) and the Yahoo summary.',
+  },
+  institutional_pct: {
+    short: 'Institutional %',
+    full: 'Percentage of shares held by institutions (funds, banks, insurers), per their quarterly 13F filings.\nVery high means the story is fully discovered; very low can mean undiscovered — or avoided.',
+  },
+  insider_pct: {
+    short: 'Insider %',
+    full: 'Percentage held by company insiders (executives, directors) — skin in the game, and shares locked away from daily trading.',
+  },
+  top10_institutions_pct: {
+    short: 'Top-10 holders %',
+    full: 'Combined stake of the ten largest institutional holders. A concentrated register moves hard if one big holder heads for the exit.',
+  },
+  float_shares: {
+    short: 'Float',
+    full: 'Shares actually available for public trading — total shares minus locked-up insider and strategic stakes.',
+  },
+  shares_outstanding: {
+    short: 'Shares outstanding',
+    full: 'Total number of shares the company has issued.',
+  },
+  insider_activity_6m: {
+    short: 'Insider trades (6m)',
+    full: 'Open-market buys and sells by executives and directors over the last six months, from SEC Form 4 filings. Awards, option exercises and gifts are excluded — only trades made with their own money count.',
+  },
+  buy_count: {
+    short: 'Insider buys',
+    full: 'Number of open-market insider purchases in the window.\nInsiders sell for many reasons but buy for only one — a cluster of buys is a strong signal.',
+  },
+  sell_count: {
+    short: 'Insider sells',
+    full: 'Number of open-market insider sales in the window.',
+  },
+  net_shares: {
+    short: 'Net shares',
+    full: 'Shares bought minus shares sold by insiders over the window.',
+  },
+  net_value_usd: {
+    short: 'Net value ($)',
+    full: 'Dollar value of insider buys minus sells over the window.',
+  },
+  options: {
+    short: 'Options',
+    full: 'Positioning in the options market over the nearest expirations — the freshest block here, updated daily.',
+  },
+  put_call_oi_ratio: {
+    short: 'Put/Call OI',
+    full: 'Outstanding put contracts divided by call contracts (open interest).\nAbove 1 means more downside bets than upside bets are being held.',
+  },
+  put_call_volume_ratio: {
+    short: 'Put/Call volume',
+    full: "Today's traded put volume divided by call volume — a faster-moving read than open interest.",
+  },
+  total_open_interest: {
+    short: 'Total OI',
+    full: 'Total outstanding option contracts (puts plus calls) over the covered expirations.',
+  },
+  expirations_covered: {
+    short: 'Expirations',
+    full: 'How many of the nearest option expiration dates these totals cover.',
   },
 };
 
@@ -371,7 +457,7 @@ const zh: Record<string, MetricEntry> = {
   },
   days_until_earnings: { short: '距财报天数', full: '距下一次财报的日历天数。' },
   region: { short: '地区', full: '这些数据描述的是哪个经济体。' },
-  as_of: { short: '采集日期', full: '本组宏观数据的采集日期。' },
+  as_of: { short: '数据日期', full: '本组数据对应的日期——宏观序列、空头持仓报告等滞后数据都带上它，避免把旧数据当成今天的。' },
   rates: { short: '利率', full: '由央行和债券市场决定的利率水平。' },
   fed_funds_rate_pct: {
     short: '联邦基金利率 %',
@@ -397,6 +483,77 @@ const zh: Record<string, MetricEntry> = {
   observation_dates: {
     short: '数据日期',
     full: '每个数据点各自的日期（有的按月更新，有的按日更新）。',
+  },
+
+  // ---- positioning ----
+  short_interest: {
+    short: '空头持仓',
+    full: '被卖空的股份——押注股价下跌的仓位。FINRA 每月发布两次，约有两周滞后；报告日期见「数据日期」。',
+  },
+  short_pct_of_float: {
+    short: '做空占流通比 %',
+    full: '空头股数占可自由交易股份（流通盘）的百分比。\n超过 10% 值得注意；超过 20% 属于重度做空、空头拥挤。',
+  },
+  days_to_cover: {
+    short: '回补天数',
+    full: '空头股数除以日均成交量——空头按正常成交量全部买回需要多少天。\n超过 5 天更容易发生轧空（逼空）。',
+  },
+  shares_short: { short: '空头股数', full: '当前被卖空的股份总数。' },
+  change_vs_prior_month_pct: {
+    short: '环比变化 %',
+    full: '相对上一期（半月一次）报告的空头股数变化——空头是在加仓还是回补。',
+  },
+  ownership: {
+    short: '持股结构',
+    full: '谁持有这只股票——来自季度 13F 机构申报（最多滞后 45 天）和 Yahoo 摘要。',
+  },
+  institutional_pct: {
+    short: '机构持股 %',
+    full: '机构（基金、银行、保险等）按季度 13F 申报的持股比例。\n极高说明故事已被充分发掘；极低可能是尚未被发现——也可能是被回避。',
+  },
+  insider_pct: {
+    short: '内部人持股 %',
+    full: '公司内部人（高管、董事）的持股比例——既是利益绑定，也是锁定在日常交易之外的筹码。',
+  },
+  top10_institutions_pct: {
+    short: '前十大机构 %',
+    full: '前十大机构股东的合计持股。筹码集中时，任何一家大股东离场都会带来剧烈波动。',
+  },
+  float_shares: {
+    short: '流通股',
+    full: '实际可公开交易的股份——总股本减去内部人及战略持股等锁定部分。',
+  },
+  shares_outstanding: { short: '总股本', full: '公司已发行的股份总数。' },
+  insider_activity_6m: {
+    short: '内部人交易（6个月）',
+    full: '过去六个月高管和董事在公开市场的买卖，来自 SEC Form 4 申报。不含股权授予、期权行权和赠与——只统计用自己的钱做的交易。',
+  },
+  buy_count: {
+    short: '内部人买入笔数',
+    full: '窗口期内内部人公开市场买入的笔数。\n内部人卖出的理由很多，买入的理由只有一个——集中买入是强信号。',
+  },
+  sell_count: { short: '内部人卖出笔数', full: '窗口期内内部人公开市场卖出的笔数。' },
+  net_shares: { short: '净买入股数', full: '窗口期内内部人买入股数减去卖出股数。' },
+  net_value_usd: { short: '净买入金额（$）', full: '窗口期内内部人买入金额减去卖出金额。' },
+  options: {
+    short: '期权持仓',
+    full: '最近几个到期日的期权市场持仓——本报告里最新鲜的一组数据，每日更新。',
+  },
+  put_call_oi_ratio: {
+    short: 'Put/Call 持仓比',
+    full: '未平仓认沽合约除以认购合约（持仓量）。\n大于 1 说明持有的看跌押注多于看涨押注。',
+  },
+  put_call_volume_ratio: {
+    short: 'Put/Call 成交比',
+    full: '当日认沽成交量除以认购成交量——比持仓量变化更快的读数。',
+  },
+  total_open_interest: {
+    short: '总未平仓量',
+    full: '覆盖到期日内的期权未平仓合约总数（认沽加认购）。',
+  },
+  expirations_covered: {
+    short: '覆盖到期日数',
+    full: '以上合计覆盖了最近多少个期权到期日。',
   },
 };
 

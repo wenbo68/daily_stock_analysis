@@ -18,8 +18,7 @@ Membership is a majority vote with at most three votes per bullet:
 
 Citations are code's job alone (carried over from v7): links are
 ``{ref, value}`` with the value copied exactly as the report pages
-display it (``display_value``); sentiment links are bare
-``{ref: citation:N}``, rendered by the UI as trailing [N] hyperlinks.
+display it (``display_value``).
 Code verifies every link — including the links inside vote reasons —
 and sends failures back to the same AI in up to ``MAX_FIX_ROUNDS``
 focused fix calls; bullets that cannot be fixed are STRUCK (crossed
@@ -83,7 +82,6 @@ from .llm_support import (
     display_value,
     evidence_block,
     parse_llm_json,
-    validate_evidence,
 )
 from .providers.base import DimensionResult
 from .schema import Direction, TierReport
@@ -102,8 +100,6 @@ MAX_FIX_ROUNDS = 3
 #: why); 10 = 1-3 weights, ratings only; stored format-9 runs are the
 #: same shapes minus the weight keys, with flat counting.
 DETAIL_FORMAT = 11
-
-_CITATION_REF_RE = re.compile(r"^citation:(\d+)$")
 
 #: A vote reason that states a report-style number (a decimal or a
 #: percentage) must cite it — bare integers like "above 50" are usually
@@ -195,16 +191,13 @@ def _leaf_count(node: Any) -> int:
 
 
 def max_items_per_dimension(dimensions: Sequence[DimensionResult]) -> Dict[str, int]:
-    """The dynamic ceilings: leaf-field count per numeric dimension,
-    verified sources × 2 for sentiment, never below the floor."""
+    """The dynamic ceilings: leaf-field count per dimension report,
+    never below the floor."""
     ceilings: Dict[str, int] = {}
     for dim in dimensions:
         if dim.dimension not in DIMENSIONS:
             continue
-        if dim.dimension == "sentiment":
-            ceiling = 2 * len(dim.citations or [])
-        else:
-            ceiling = _leaf_count(dim.payload) if dim.payload else 0
+        ceiling = _leaf_count(dim.payload) if dim.payload else 0
         ceilings[dim.dimension] = max(ceiling, MIN_ITEMS_PER_DIMENSION)
     return ceilings
 
@@ -281,17 +274,6 @@ def _value_in_text(value_text: str, sentence: str) -> bool:
     return bool(value_pattern(value_text).search(sentence))
 
 
-def _strip_citation_markers(text: str, links: Sequence[Any]) -> str:
-    """Remove literal "[N]" tokens for sources the links already carry —
-    the UI appends its own [N] hyperlinks, so a model-written marker
-    would show twice."""
-    for link in links:
-        match = _CITATION_REF_RE.match(link.ref.strip() if hasattr(link, "ref") else "")
-        if match:
-            text = re.sub(r"\s*\[\s*" + match.group(1) + r"\s*\]", "", text)
-    return text.strip()
-
-
 # ---------------------------------------------------------------------------
 # Prompts — one marker phrase per stage so tests can route replies.
 # ---------------------------------------------------------------------------
@@ -315,9 +297,6 @@ _LINK_RULES = """Link rules (all checked mechanically by code):
 - A "ref" must point at ONE exact value, like "technicals.rsi_14" —
   grouping paths ("technicals.macd" when it holds sub-values) are
   rejected; cite the leaf ("technicals.macd.hist").
-- Sentiment bullets cite news sources with {{"ref": "citation:N"}} and
-  no "value" — the source numbers are shown as [N] links after the
-  bullet.
 - Code verifies every link and sends failures back to you to fix;
   bullets that cannot be fixed are struck from the list.
 - Use only the evidence above; never invent facts or numbers."""
@@ -336,14 +315,13 @@ _VOTE_RULES = """Vote rules (checked mechanically by code):
 - If your reason states a number from the reports, cite it with a link
   {{"ref": the leaf field, "value": the value copied EXACTLY as the
   report displays it}} and write that exact value in your reason.
-  Reasons resting on a news source use {{"ref": "citation:N"}}.
-- The reason is a plain sentence for a human reader — never paste refs,
-  link JSON, or "citation:N" text into it; refs belong in "links" only.
+- The reason is a plain sentence for a human reader — never paste refs
+  or link JSON into it; refs belong in "links" only.
 - Code verifies every link and sends failures back to you to fix; votes
   that cannot be fixed are discarded."""
 
 _LIST_RULES = """Evidence-list rules:
-- Group bullets by dimension: technicals, fundamentals, macro_econ, sentiment.
+- Group bullets by dimension: technicals, fundamentals, positioning, macro_econ.
 - Per-dimension bullet counts (floor-ceiling, computed from the reports):
   {ceilings}. The ceiling is room, not a quota — list every field that
   genuinely leans bullish or bearish, and skip neutral metadata (bar
@@ -366,8 +344,8 @@ _LIST_RULES = """Evidence-list rules:
 - Each bullet also carries "weight_reason": ONE short plain sentence
   saying why you rated it that important. Plain words only — report
   numbers belong in the claim sentence with links, never here.
-- Bullet ids: T1, T2… for technicals, F1… for fundamentals, E1… for
-  macro_econ, S1… for sentiment."""
+- Bullet ids: T1, T2… for technicals, F1… for fundamentals, P1… for
+  positioning, E1… for macro_econ."""
 
 _ITEM_SHAPE = """{{"id": "T1", "dimension": "technicals", "direction": "bullish",
   "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
@@ -923,10 +901,6 @@ class DebateEngine:
         for link in links:
             ref = link.ref.strip()
             where = f"{where_prefix} link {ref!r}"
-            if _CITATION_REF_RE.match(ref):
-                if not validate_evidence([ref], dimensions, leaf_only=True):
-                    errors.append(f"{where}: citation number out of range")
-                continue
             resolves, actual = _payload_value(ref, dimensions)
             if not resolves:
                 errors.append(f"{where}: does not resolve to a single report value")
@@ -1122,7 +1096,7 @@ class DebateEngine:
     ) -> None:
         by_id = {item["id"]: item for item in items}
         for key, vote in votes.items():
-            reason = _strip_citation_markers(vote.reason or "", vote.links)
+            reason = (vote.reason or "").strip()
             by_id[key]["votes"].append(
                 {
                     "role": role,
@@ -1281,7 +1255,7 @@ class DebateEngine:
             "id": model.id,
             "dimension": model.dimension,
             "direction": model.direction,
-            "claim": _strip_citation_markers(model.claim, model.links),
+            "claim": model.claim.strip(),
             "links": [_link_detail(link) for link in model.links],
             "struck": struck,
             "problems": list(problems or []),
@@ -1385,12 +1359,8 @@ def _validation_text(exc: Exception) -> str:
 
 
 def _link_detail(link) -> Dict[str, Any]:
-    """The stored link shape: payload links keep their display-string
-    value; sentiment links are bare refs (the UI renders [N])."""
-    ref = link.ref.strip()
-    if _CITATION_REF_RE.match(ref):
-        return {"ref": ref, "value": None}
-    return {"ref": ref, "value": _link_value_text(link.value)}
+    """The stored link shape: the ref plus its display-string value."""
+    return {"ref": link.ref.strip(), "value": _link_value_text(link.value)}
 
 
 def _items_json(items: Sequence[EvidenceItemModel]) -> str:

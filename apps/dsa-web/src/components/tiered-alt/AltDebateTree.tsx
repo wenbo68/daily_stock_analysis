@@ -43,12 +43,15 @@ const STEPS = [
   { n: 4, labelKey: 'tiered.tree.step.judge' },
 ] as const;
 
-const DIMENSION_ORDER = ['technicals', 'fundamentals', 'macro_econ', 'sentiment'];
+// "sentiment" stays for old stored runs that still carry the retired
+// news-sentiment dimension.
+const DIMENSION_ORDER = ['technicals', 'fundamentals', 'positioning', 'macro_econ', 'sentiment'];
 
 const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
   technicals: 'tiered.dimension.technicals',
   fundamentals: 'tiered.dimension.fundamentals',
   macro_econ: 'tiered.dimension.macro_econ',
+  positioning: 'tiered.dimension.positioning',
   sentiment: 'tiered.dimension.sentiment',
 };
 

@@ -34,6 +34,18 @@ class TestProviderRouting(unittest.TestCase):
             dimensions = [p.dimension for p in providers]
             self.assertIn("technicals", dimensions)
 
+    def test_us_gets_all_four_dimensions(self):
+        dimensions = [p.dimension for p in get_providers(Market.US)]
+        self.assertEqual(
+            sorted(dimensions),
+            ["fundamentals", "macro_econ", "positioning", "technicals"],
+        )
+
+    def test_positioning_is_us_only(self):
+        for market in (Market.CN, Market.HK, Market.JP, Market.KR, Market.TW):
+            dimensions = [p.dimension for p in get_providers(market)]
+            self.assertNotIn("positioning", dimensions)
+
     def test_registered_providers_declare_kind(self):
         for provider in get_providers(Market.US):
             self.assertIn(provider.kind, (SourceKind.NUMERIC, SourceKind.TEXTUAL))

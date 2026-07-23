@@ -54,12 +54,10 @@ from .levels import (
 )
 from .llm_support import (
     LlmConfigError,
-    _CITATION_REF_RE,
     default_summarizer,
     display_value,
     evidence_block,
     parse_llm_json,
-    validate_evidence,
 )
 from .providers.base import DimensionResult, Market
 from .schema import Direction, SizingSlots, SniperLevels
@@ -326,8 +324,7 @@ checked mechanically by code):
   keep stop_loss < entry < take_profit.
 - Each text must state every report number it relies on EXACTLY as the
   report above displays it, each cited in that entry's "links" with
-  {{"ref": the leaf field, "value": the displayed value}}; claims resting
-  on a news source cite {{"ref": "citation:N"}} with no value. Plain
+  {{"ref": the leaf field, "value": the displayed value}}. Plain
   sentences only — never paste refs or link JSON into the text.
 - Never point at a report metric by name alone: write its name AND its
   displayed value, cited in "links" (e.g. "the 52-week high (461.62)").
@@ -394,10 +391,6 @@ def _link_errors(
         ref = str(link.get("ref", "")).strip()
         if not ref:
             errors.append(f"{where}: link without a ref")
-            continue
-        if _CITATION_REF_RE.match(ref):
-            if not validate_evidence([ref], dimensions, leaf_only=True):
-                errors.append(f"{where} link {ref!r}: citation number out of range")
             continue
         resolves, actual = _payload_value(ref, dimensions)
         if not resolves:

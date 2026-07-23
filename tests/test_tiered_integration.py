@@ -319,8 +319,9 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
         self.assertEqual(outcome.final_report.tier, 2)
         self.assertEqual(outcome.final_report.direction, Direction.BUY)
         self.assertEqual(debate_engine.calls, ["AAPL"])
-        # the foundation report says why it has no verdict of its own
-        self.assertTrue(any("skipped" in w for w in outcome.report.warnings))
+        # Skipping the blob is the documented depth-2 contract, not a data
+        # problem — the foundation report must NOT warn about it.
+        self.assertFalse(any("skipped" in w for w in outcome.report.warnings))
         # the ledger gets the deepest tier, with the evidence attached
         self.assertEqual(logged[0].tier, 2)
         self.assertTrue(logged[0].dimensions)

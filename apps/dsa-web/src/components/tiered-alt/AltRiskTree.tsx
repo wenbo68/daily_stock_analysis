@@ -13,12 +13,15 @@ import { AltFold, AltModal, AltSectionLabel, MODAL_BODY } from './AltUi';
 // code-owned count → multiplier mapping. Risks have no bullish/bearish
 // word — every bullet IS a risk.
 
-const GROUP_ORDER = ['technicals', 'fundamentals', 'macro_econ', 'sentiment', 'plan'];
+// "sentiment" stays for old stored runs that still carry the retired
+// news-sentiment dimension.
+const GROUP_ORDER = ['technicals', 'fundamentals', 'positioning', 'macro_econ', 'sentiment', 'plan'];
 
 const GROUP_LABEL_KEYS: Record<string, UiTextKey> = {
   technicals: 'tiered.dimension.technicals',
   fundamentals: 'tiered.dimension.fundamentals',
   macro_econ: 'tiered.dimension.macro_econ',
+  positioning: 'tiered.dimension.positioning',
   sentiment: 'tiered.dimension.sentiment',
   plan: 'tiered.dimension.plan',
 };

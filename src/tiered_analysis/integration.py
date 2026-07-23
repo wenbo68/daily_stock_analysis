@@ -346,7 +346,8 @@ def run_tiered_analysis(
         else:
             # Depth 2 skips the one-blob call entirely: the debate is the
             # judge, so the foundation report is the data layer + levels
-            # with no verdict of its own.
+            # with no verdict of its own. That is the documented depth-2
+            # contract, not a data problem — so no warning for it.
             report = TierReport(
                 tier=1,
                 symbol=symbol,
@@ -356,8 +357,7 @@ def run_tiered_analysis(
                 levels=levels,
                 levels_detail=levels_detail,
                 dimensions=dimensions,
-                warnings=extra_warnings
-                + ["tier-1 one-blob verdict skipped — the tier-2 vote is the judge"],
+                warnings=extra_warnings,
             )
         state.reports[1] = report
         state.dimensions = list(dimensions)
