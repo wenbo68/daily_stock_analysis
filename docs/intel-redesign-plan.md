@@ -138,6 +138,13 @@ Post-processing (deterministic):
 1. Drop items citing unknown/unread source ids.
 2. Per-item verbatim quote check against stored page text (case/whitespace
    insensitive, same normalization as current `_verify_citations`).
+2.5. Claim-support check (`QUALITATIVE_CLAIM_CHECK`, default true): ONE
+   batched LLM call over all surviving (item text, quote) pairs — "does the
+   quote support the claim?" — drop unsupported items individually with a
+   logged warning. Note: this is probabilistic (a model judging a model);
+   it catches sloppy claim/quote mismatches that the deterministic string
+   check cannot, but is not a guarantee, and may rarely false-drop. Counts
+   as one extra LLM call outside the round budget.
 3. Renumber surviving sources 1..N; rewrite `[n]` markers in item texts.
 4. All sections empty → `Coverage.UNAVAILABLE`; some empty → keep, with an
    honest note (e.g. "no meaningful social discussion found").
@@ -168,6 +175,7 @@ Post-processing (deterministic):
 # QUALITATIVE_MAX_SEARCHES=8
 # QUALITATIVE_MAX_SECONDS=180
 # QUALITATIVE_PAGE_CHAR_LIMIT=15000
+# QUALITATIVE_CLAIM_CHECK=true
 ```
 
 Defaults must make it work with zero new configuration.
