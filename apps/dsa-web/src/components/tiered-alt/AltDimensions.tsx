@@ -112,9 +112,13 @@ interface MetricRowProps {
   value: unknown;
   /** The value's observation date, shown dimmed after it (macro rows). */
   date?: unknown;
+  /** The date's own payload path — it stays a citable evidence target
+      (macro_econ.observation_dates.*), so it keeps its anchor id even
+      though it no longer has a row of its own. */
+  dateAnchorPath?: string;
 }
 
-const MetricRow = ({ anchorPath, term, value, date }: MetricRowProps) => (
+const MetricRow = ({ anchorPath, term, value, date, dateAnchorPath }: MetricRowProps) => (
   <div
     id={metricAnchorId(anchorPath)}
     className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
@@ -124,7 +128,19 @@ const MetricRow = ({ anchorPath, term, value, date }: MetricRowProps) => (
     </dt>
     <dd className="text-xs tabular-nums text-gray-300">
       {formatValue(value)}
-      {typeof date === 'string' ? <span className="ml-2 text-gray-500">{date}</span> : null}
+      {typeof date === 'string' ? (
+        // The leading {' '} is a real space so copied text reads
+        // "16.64 2026-07-22", not "16.642026-07-22" (owner report).
+        <>
+          {' '}
+          <span
+            id={dateAnchorPath ? metricAnchorId(dateAnchorPath) : undefined}
+            className="ml-1 scroll-mt-24 text-gray-500"
+          >
+            {date}
+          </span>
+        </>
+      ) : null}
     </dd>
   </div>
 );
@@ -170,6 +186,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
                     term={subKey}
                     value={value}
                     date={dates?.[subKey]}
+                    dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${subKey}`}
                   />
                 ))
               ) : (
@@ -179,6 +196,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
                   term={key}
                   value={values}
                   date={dates?.[key]}
+                  dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${key}`}
                 />
               ),
             )}

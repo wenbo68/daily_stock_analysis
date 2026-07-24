@@ -987,6 +987,25 @@ describe('AltResult', () => {
     expect(items[1]).not.toHaveTextContent('SEC EDGAR companyfacts');
   });
 
+  it('inlines each macro observation date beside its value, keeping the date anchor', () => {
+    const result = makeV1Result();
+    result.dimensions[2].payload = {
+      region: 'us',
+      as_of: '2026-07-24',
+      markets: { vix: 16.64 },
+      observation_dates: { vix: '2026-07-22' },
+    };
+    renderResult(result);
+    // The value row carries its date, and the date keeps the citable
+    // anchor id (macro_econ.observation_dates.vix) evidence links jump to
+    // — the dates group no longer renders as a section of its own.
+    const row = document.getElementById('tiered-metric-macro_econ-markets-vix');
+    expect(row).toHaveTextContent('16.64 2026-07-22');
+    const date = document.getElementById('tiered-metric-macro_econ-observation_dates-vix');
+    expect(date).toHaveTextContent('2026-07-22');
+    expect(row?.contains(date)).toBe(true);
+  });
+
   it('shows verdict, size, stop loss and score as plain Label: value facts', () => {
     renderResult(makeDeepResult());
     const tier3 = screen.getByTestId('alt-tier3');
