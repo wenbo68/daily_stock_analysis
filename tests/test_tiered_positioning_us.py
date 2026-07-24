@@ -238,6 +238,17 @@ class ProviderTest(unittest.TestCase):
         )
         self.assertTrue(any("no ownership fields" in w for w in result.warnings))
 
+    def test_empty_insider_table_is_blank_with_a_warning_not_zeros(self):
+        # An empty table could be a Yahoo outage — never claim "0 buys,
+        # 0 sells" from it (owner rule 2026-07-24). Zeros stay real only
+        # when computed from actual rows.
+        result = _provider(insider_loader=lambda symbol: []).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.PARTIAL)
+        self.assertNotIn("insider_activity_6m", result.payload)
+        self.assertTrue(
+            any("no insider transaction rows" in w for w in result.warnings)
+        )
+
     def test_holders_failure_only_degrades_concentration(self):
         result = _provider(holders_loader=_boom).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)

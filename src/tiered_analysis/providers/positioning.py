@@ -4,8 +4,8 @@
 Who holds the stock and who can be forced to transact — the four
 questions a trade thesis always has to answer: who is on the other side,
 how crowded the trade is, who can be squeezed, and what the informed
-parties are doing. Every number is a published figure fetched through
-yfinance; no LLM anywhere in this dimension:
+parties are doing. Every number is a published figure (yfinance for the
+disclosure blocks, CBOE for options); no LLM anywhere in this dimension:
 
 - **Short interest** — FINRA/exchange settlement data (published twice a
   month with roughly a two-week lag; ``as_of`` carries the report date).
@@ -15,7 +15,8 @@ yfinance; no LLM anywhere in this dimension:
   trailing six months. Awards, option exercises and gifts are excluded:
   only open-market trades carry conviction.
 - **Options positioning** — put/call open interest and volume summed
-  over the nearest expirations (daily data, the freshest block here).
+  over the nearest expirations, from CBOE's delayed-quotes feed (the
+  exchange's own data; Yahoo's intraday chains proved to carry no OI).
 
 Each block failing degrades coverage explicitly (partial/unavailable
 with warnings) — an ok-but-empty response is treated as missing, never
@@ -24,6 +25,7 @@ never mistakes a two-week-old short-interest print for today's.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -198,11 +200,11 @@ def options_metrics(
     chains: Sequence[Mapping[str, Any]],
 ) -> Tuple[Dict[str, Any], List[str]]:
     """(metrics, warnings): put/call ratios over the fetched expirations'
-    summed totals. Yahoo's intraday chains often carry zero/absent open
-    interest (they populate it overnight) — a zero side is indistinguishable
-    from missing data, so a ratio is computed only when BOTH sides are
-    positive; otherwise the fields stay blank (None) and a warning says
-    why. No default values on bad data (owner decision 2026-07-24)."""
+    summed totals. A zero side is indistinguishable from a source that
+    failed to publish the field, so a ratio is computed only when BOTH
+    sides are positive; otherwise the fields stay blank (None) and a
+    warning says why. No default values on bad data (owner decision
+    2026-07-24)."""
     call_oi = _sum_side(chains, "call_oi")
     put_oi = _sum_side(chains, "put_oi")
     call_volume = _sum_side(chains, "call_volume")
@@ -212,7 +214,7 @@ def options_metrics(
     oi_usable = bool(call_oi and put_oi and call_oi > 0 and put_oi > 0)
     if not oi_usable:
         warnings.append(
-            "options open interest from Yahoo is missing or zero — "
+            "options open interest missing or zero at the source — "
             "put/call OI ratio and total omitted"
         )
     volume_usable = bool(
@@ -220,7 +222,7 @@ def options_metrics(
     )
     if not volume_usable:
         warnings.append(
-            "options volume from Yahoo is missing or zero — "
+            "options volume missing or zero at the source — "
             "put/call volume ratio omitted"
         )
     metrics = {
@@ -285,35 +287,59 @@ def _default_insider_loader(symbol: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def _frame_column_sum(frame: Any, column: str) -> Optional[float]:
-    """Sum a chain column; None (not 0) when the column is absent or all
-    empty — missing data must never masquerade as a real zero."""
-    try:
-        series = frame[column]
-    except (KeyError, TypeError):
-        return None
-    present = series.dropna()
-    if present.empty:
-        return None
-    return float(present.sum())
+#: CBOE's free delayed-quotes feed: every listed contract with its
+#: exchange-published open interest — replacing Yahoo for the options
+#: block (owner decision 2026-07-24: Yahoo's intraday chains carry
+#: zero/absent OI until their overnight update, which a real NVDA run
+#: surfaced as a bogus "put/call OI ratio 0").
+CBOE_OPTIONS_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
+CBOE_QUOTE_PAGE = "https://www.cboe.com/delayed_quotes/{symbol}/quote_table"
+_CBOE_TIMEOUT_SECONDS = 20
+
+#: OCC option symbol: root + YYMMDD expiration + C/P + strike×1000.
+_OPTION_SYMBOL_RE = re.compile(r"^[A-Z.]+(\d{6})([CP])\d{8}$")
+
+_CBOE_SIDE_KEYS = {"C": ("call_oi", "call_volume"), "P": ("put_oi", "put_volume")}
 
 
 def _default_options_loader(symbol: str) -> List[Dict[str, Any]]:
-    import yfinance as yf
+    """Per-expiration OI/volume totals from CBOE, nearest expirations
+    first. A side's key is present only when at least one contract
+    carried the field — absent data stays absent, never 0."""
+    import requests
 
-    ticker = yf.Ticker(symbol)
+    response = requests.get(
+        CBOE_OPTIONS_URL.format(symbol=symbol.upper()),
+        timeout=_CBOE_TIMEOUT_SECONDS,
+        headers={"User-Agent": "daily-stock-analysis"},
+    )
+    response.raise_for_status()
+    contracts = (response.json().get("data") or {}).get("options") or []
+
+    sums: Dict[str, Dict[str, float]] = {}
+    counts: Dict[str, Dict[str, int]] = {}
+    for contract in contracts:
+        match = _OPTION_SYMBOL_RE.match(str(contract.get("option") or ""))
+        if not match:
+            continue
+        expiration, side = match.groups()
+        oi_key, volume_key = _CBOE_SIDE_KEYS[side]
+        expiration_sums = sums.setdefault(expiration, {})
+        expiration_counts = counts.setdefault(expiration, {})
+        for key, value in (
+            (oi_key, _to_float(contract.get("open_interest"))),
+            (volume_key, _to_float(contract.get("volume"))),
+        ):
+            if value is None:
+                continue
+            expiration_sums[key] = expiration_sums.get(key, 0.0) + value
+            expiration_counts[key] = expiration_counts.get(key, 0) + 1
+
     chains: List[Dict[str, Any]] = []
-    for expiration in list(ticker.options or ())[:MAX_OPTION_EXPIRATIONS]:
-        chain = ticker.option_chain(expiration)
-        chains.append(
-            {
-                "expiration": expiration,
-                "call_oi": _frame_column_sum(chain.calls, "openInterest"),
-                "put_oi": _frame_column_sum(chain.puts, "openInterest"),
-                "call_volume": _frame_column_sum(chain.calls, "volume"),
-                "put_volume": _frame_column_sum(chain.puts, "volume"),
-            }
-        )
+    for expiration in sorted(sums)[:MAX_OPTION_EXPIRATIONS]:
+        entry: Dict[str, Any] = {"expiration": expiration}
+        entry.update(sums[expiration])
+        chains.append(entry)
     return chains
 
 
@@ -450,7 +476,16 @@ class PositioningUSProvider(DimensionProvider):
         except Exception as exc:
             warnings.append(f"insider transactions failed for {symbol}: {exc}")
             return False
-        payload["insider_activity_6m"] = insider_metrics(rows or [], self._today())
+        if not rows:
+            # An empty table is indistinguishable from a source outage —
+            # zero counts are only real when computed from actual rows
+            # (no defaults on missing data, owner rule 2026-07-24).
+            warnings.append(
+                f"Yahoo returned no insider transaction rows for {symbol} — "
+                "insider activity omitted"
+            )
+            return False
+        payload["insider_activity_6m"] = insider_metrics(rows, self._today())
         citations.append(
             Citation(
                 source_name="SEC Form 4 insider transactions via Yahoo Finance (yfinance)",
@@ -479,8 +514,8 @@ class PositioningUSProvider(DimensionProvider):
         warnings.extend(option_warnings)
         citations.append(
             Citation(
-                source_name="Yahoo Finance options chain (yfinance)",
-                url=f"{YAHOO_QUOTE_URL.format(symbol=symbol)}/options",
+                source_name="CBOE delayed quotes (options chain)",
+                url=CBOE_QUOTE_PAGE.format(symbol=symbol.lower()),
             )
         )
         return True

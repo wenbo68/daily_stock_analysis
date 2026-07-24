@@ -115,14 +115,20 @@ const NOTE_RULES: NoteRule[] = [
     toText: (m, t) => t('tiered.note.macroUnavailable', { series: m[1] }),
   },
   {
-    pattern: /^options open interest from Yahoo is missing or zero/,
+    // Both the retired "from Yahoo" wording and the source-neutral one.
+    pattern: /^options open interest (?:from Yahoo is )?missing or zero/,
     keywordKey: KEY.missingData,
     toText: (_m, t) => t('tiered.note.optionsOiMissing'),
   },
   {
-    pattern: /^options volume from Yahoo is missing or zero/,
+    pattern: /^options volume (?:from Yahoo is )?missing or zero/,
     keywordKey: KEY.missingData,
     toText: (_m, t) => t('tiered.note.optionsVolumeMissing'),
+  },
+  {
+    pattern: /^Yahoo returned no insider transaction rows/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.insiderRowsMissing'),
   },
   {
     pattern: /^LLM sentiment output unparseable or empty$/,

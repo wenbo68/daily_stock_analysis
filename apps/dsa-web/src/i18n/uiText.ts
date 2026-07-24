@@ -850,9 +850,11 @@ const zh = {
   'tiered.note.summaryLinksDropped':
     '总结中有引用经多次修正仍未通过代码校验——相关数值仍然展示，但没有链接。',
   'tiered.note.optionsOiMissing':
-    'Yahoo 返回的期权未平仓量缺失或为零（盘中数据常见）——Put/Call 未平仓比和总未平仓量留空，不显示误导性的 0。',
+    '数据源返回的期权未平仓量缺失或为零——Put/Call 未平仓比和总未平仓量留空，不显示误导性的 0。',
   'tiered.note.optionsVolumeMissing':
-    'Yahoo 返回的期权成交量缺失或为零——Put/Call 成交量比留空，不显示误导性的 0。',
+    '数据源返回的期权成交量缺失或为零——Put/Call 成交量比留空，不显示误导性的 0。',
+  'tiered.note.insiderRowsMissing':
+    'Yahoo 没有返回任何内部人交易记录——无法区分“确实没人交易”和“数据缺失”，因此内部人板块留空。',
   'tiered.group.trend': '价格与趋势',
   'tiered.group.momentum': '动量',
   'tiered.group.volatility': '波动与区间',
@@ -2298,9 +2300,11 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.summaryLinksDropped':
     'Some summary citations failed the code checks even after fixes — those values still show, but without links.',
   'tiered.note.optionsOiMissing':
-    'Options open interest from Yahoo came back missing or zero (common intraday) — the put/call OI ratio and total are left blank rather than showing a misleading 0.',
+    'Options open interest came back missing or zero at the source — the put/call OI ratio and total are left blank rather than showing a misleading 0.',
   'tiered.note.optionsVolumeMissing':
-    'Options volume from Yahoo came back missing or zero — the put/call volume ratio is left blank rather than showing a misleading 0.',
+    'Options volume came back missing or zero at the source — the put/call volume ratio is left blank rather than showing a misleading 0.',
+  'tiered.note.insiderRowsMissing':
+    'Yahoo returned no insider transaction rows at all — that is indistinguishable from a data outage, so the insider block is left blank instead of claiming zero activity.',
   'tiered.group.trend': 'Price & trend',
   'tiered.group.momentum': 'Momentum',
   'tiered.group.volatility': 'Volatility & range',
