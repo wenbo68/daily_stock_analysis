@@ -155,12 +155,22 @@ class VoteRoundModel(_StageModel):
     votes: Dict[str, VoteModel] = Field(default_factory=dict)
 
 
-class SummaryBulletModel(_StageModel):
-    """One report bullet: a short plain sentence, with optional
-    sub-bullets one level deep."""
+class SummaryChildModel(_StageModel):
+    """One sub-bullet: same citation contract as its parent — any report
+    number in the sentence carries a code-verified {ref, value} link."""
 
     text: str = Field(min_length=1)
-    children: List[str] = Field(default_factory=list)
+    links: List[LinkModel] = Field(default_factory=list)
+
+
+class SummaryBulletModel(_StageModel):
+    """One report bullet: a short plain sentence whose cited report
+    values carry code-verified links, with optional sub-bullets one
+    level deep."""
+
+    text: str = Field(min_length=1)
+    links: List[LinkModel] = Field(default_factory=list)
+    children: List[SummaryChildModel] = Field(default_factory=list)
 
 
 class StructuredSummaryModel(_StageModel):

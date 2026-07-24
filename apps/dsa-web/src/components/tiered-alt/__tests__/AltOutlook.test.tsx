@@ -497,12 +497,27 @@ describe('AltResult v10 weighted vote tree', () => {
           verdict: {
             ...makeWeightedDebate().verdict!,
             summary_structure: {
-              summary: [{ text: 'The outlook is neutral.', children: [] }],
+              summary: [{ text: 'The outlook is neutral.', links: [], children: [] }],
               technicals: [
-                { text: 'Momentum is mixed.', children: ['RSI sits mid-range.'] },
+                {
+                  text: 'Momentum is mixed.',
+                  links: [],
+                  children: [{ text: 'RSI sits mid-range.', links: [] }],
+                },
               ],
               fundamentals: [],
-              positioning: [{ text: 'Short interest is modest.', children: [] }],
+              positioning: [
+                {
+                  text: 'Short interest is low at 3.10% of float.',
+                  links: [
+                    {
+                      ref: 'positioning.short_interest.short_pct_of_float',
+                      value: '3.10',
+                    },
+                  ],
+                  children: [],
+                },
+              ],
               macro_econ: [],
             },
           },
@@ -521,6 +536,10 @@ describe('AltResult v10 weighted vote tree', () => {
     expect(outline).not.toHaveTextContent('flat text fallback');
     // The flat paragraph does not render alongside the outline.
     expect(screen.queryByText('Summary: flat text fallback.')).not.toBeInTheDocument();
+    // A cited value renders as a jump link — the same claim contract as
+    // the evidence bullets in the details fold.
+    const valueLink = within(outline).getByRole('button', { name: '3.10' });
+    expect(valueLink.className).toContain('text-blue-300');
   });
 
   it('the header score opens the weighted formula in a modal', () => {

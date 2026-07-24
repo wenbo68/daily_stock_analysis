@@ -1,12 +1,14 @@
 import type { TieredSummaryStructure } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
+import { LinkedClaimV7 } from './AltDebateTree';
 
 // The deep-analysis report as its fixed outline (owner decision
 // 2026-07-24): the group set and order never change run to run —
 // summary first, then the four dimensions in report order. The backend
 // enforces the shape (StructuredSummaryModel); groups a run left empty
-// are skipped, never reordered.
+// are skipped, never reordered. Bullets carry the evidence-list link
+// contract, so cited values render as jumps to their report row.
 const GROUPS: { key: keyof TieredSummaryStructure; labelKey: UiTextKey }[] = [
   { key: 'summary', labelKey: 'tiered.alt.summaryGroup' },
   { key: 'technicals', labelKey: 'tiered.dimension.technicals' },
@@ -37,11 +39,21 @@ export const AltSummaryOutline = ({ structure }: AltSummaryOutlineProps) => {
             <ul className="list-[circle] pl-4">
               {bullets.map((bullet, index) => (
                 <li key={index}>
-                  {bullet.text}
+                  <LinkedClaimV7
+                    claim={bullet.text}
+                    links={bullet.links ?? []}
+                    struck={false}
+                  />
                   {bullet.children && bullet.children.length > 0 ? (
                     <ul className="list-[square] pl-4 text-gray-400">
                       {bullet.children.map((child, childIndex) => (
-                        <li key={childIndex}>{child}</li>
+                        <li key={childIndex}>
+                          <LinkedClaimV7
+                            claim={child.text}
+                            links={child.links ?? []}
+                            struck={false}
+                          />
+                        </li>
                       ))}
                     </ul>
                   ) : null}

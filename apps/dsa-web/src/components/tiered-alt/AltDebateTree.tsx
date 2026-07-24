@@ -157,7 +157,9 @@ const valuePattern = (valueText: string): RegExp => {
 // v7 claims: each payload link underlines exactly its cited display
 // value inside the sentence; sentiment links underline their words.
 // Links are located left to right, consuming the claim as they go.
-const LinkedClaimV7 = ({
+// Exported: the structured summary outline renders its bullets under
+// the same contract.
+export const LinkedClaimV7 = ({
   claim,
   links,
   struck,

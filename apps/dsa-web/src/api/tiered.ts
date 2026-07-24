@@ -252,9 +252,19 @@ export type TieredDebatePool = {
 
 // Bull/bear debate audit trail (tier-2 section). Four generations coexist
 // in stored runs: the v2 judged shape (confidence, reasons, would_change_
-// One bullet of the structured deep-analysis report; children are
-// sub-bullets one level deep.
-export type TieredSummaryBullet = { text: string; children?: string[] | null };
+// One bullet of the structured deep-analysis report. Bullets carry the
+// same code-verified {ref, value} links as the evidence list — cited
+// values render as jumps to their report row. Children are sub-bullets
+// one level deep with the same contract.
+export type TieredSummaryChild = {
+  text: string;
+  links?: TieredDebateLink[] | null;
+};
+export type TieredSummaryBullet = {
+  text: string;
+  links?: TieredDebateLink[] | null;
+  children?: TieredSummaryChild[] | null;
+};
 
 // The fixed report outline (owner decision 2026-07-24): the group set
 // and order never change run to run — the AI only fills the bullets.

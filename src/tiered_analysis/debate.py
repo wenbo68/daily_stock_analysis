@@ -66,6 +66,7 @@ from .debate_models import (
     DIMENSION_PREFIX,
     DIMENSIONS,
     EvidenceItemModel,
+    LinkModel,
     ListModel,
     MergeModel,
     MIN_ITEMS_PER_DIMENSION,
@@ -514,8 +515,10 @@ bullet's weight is the median of its voters' 1-5 ratings):
 Write the user-facing report as a fixed bullet outline. Reply with JSON
 only. Never use the words "verdict", "buy", "hold" or "sell" — describe
 the outlook as bullish, neutral or bearish:
-{{"summary": [{{"text": "one short plain sentence", "children": []}}],
- "technicals": [{{"text": "...", "children": ["optional supporting detail"]}}],
+{{"summary": [{{"text": "one short plain sentence", "links": [], "children": []}}],
+ "technicals": [{{"text": "The 14-day RSI (56.28) is above 50.",
+   "links": [{{"ref": "technicals.rsi_14", "value": "56.28"}}],
+   "children": [{{"text": "optional supporting detail", "links": []}}]}}],
  "fundamentals": [], "positioning": [], "macro_econ": []}}
 
 Rules:
@@ -525,6 +528,12 @@ Rules:
 - "children" holds supporting detail one level deep; keep it [] when a
   bullet needs none.
 - Every "text" and every child is one short plain sentence.
+- If a sentence states a number from the reports, write the value copied
+  EXACTLY as the report above displays it and cite it in that bullet's
+  "links" as {{"ref": the leaf field, "value": that exact value}} — the
+  same link rules as the evidence list, checked mechanically by code.
+  Code sends failures back to you to fix; links that cannot be fixed
+  are dropped from the report.
 - Support the computed outlook; if little evidence survived, say plainly
   that the case is weak.
 - Use only the evidence above; do not invent facts."""
@@ -550,7 +559,7 @@ def _flatten_summary(model: StructuredSummaryModel) -> str:
         sentences: List[str] = []
         for bullet in bullets:
             sentences.append(bullet.text.strip())
-            sentences.extend(child.strip() for child in bullet.children)
+            sentences.extend(child.text.strip() for child in bullet.children)
         lines.append(f"{_SUMMARY_GROUP_TITLES[group]}: " + " ".join(sentences))
     return "\n".join(lines)
 
@@ -748,7 +757,8 @@ class DebateEngine:
 
         # Step 5 — the user-facing report; its failure never voids anything.
         summary, summary_structure = self._summary(
-            context, items, final, pools, direction, data_dimensions, warnings
+            context, items, final, pools, direction, data_dimensions,
+            dimensions, warnings,
         )
 
         verdict = DebateVerdict(
@@ -1195,6 +1205,59 @@ class DebateEngine:
 
     # -- step 5 ------------------------------------------------------------
 
+    def _summary_link_errors(
+        self,
+        model: StructuredSummaryModel,
+        dimensions: Sequence[DimensionResult],
+    ) -> Dict[str, List[str]]:
+        """The evidence-list citation contract, applied to every report
+        sentence: links verify mechanically, and a sentence that states a
+        report-style number must carry one."""
+        errors: Dict[str, List[str]] = {}
+
+        def check(where: str, text: str, links: Sequence[LinkModel]) -> None:
+            sentence_errors = self._text_link_errors(links, text, where, dimensions)
+            if _NUMERIC_REASON_RE.search(text) and not links:
+                sentence_errors.append(
+                    f"{where}: the sentence states a number — cite it with a link"
+                )
+            if sentence_errors:
+                errors[where] = sentence_errors
+
+        for group in ("summary",) + DIMENSIONS:
+            for index, bullet in enumerate(getattr(model, group)):
+                where = f"{group}[{index}]"
+                check(where, bullet.text, bullet.links)
+                for child_index, child in enumerate(bullet.children):
+                    check(f"{where}.child[{child_index}]", child.text, child.links)
+        return errors
+
+    @staticmethod
+    def _prune_summary_links(
+        model: StructuredSummaryModel,
+        keep: Callable[[str, Sequence[LinkModel]], List[LinkModel]],
+    ) -> StructuredSummaryModel:
+        """A copy with each sentence's links filtered through ``keep``."""
+        update: Dict[str, Any] = {}
+        for group in ("summary",) + DIMENSIONS:
+            bullets = []
+            for bullet in getattr(model, group):
+                bullets.append(
+                    bullet.model_copy(
+                        update={
+                            "links": keep(bullet.text, bullet.links),
+                            "children": [
+                                child.model_copy(
+                                    update={"links": keep(child.text, child.links)}
+                                )
+                                for child in bullet.children
+                            ],
+                        }
+                    )
+                )
+            update[group] = bullets
+        return model.model_copy(update=update)
+
     def _summary(
         self,
         context: str,
@@ -1203,6 +1266,7 @@ class DebateEngine:
         pools: Dict[str, Any],
         direction: Direction,
         data_dimensions: Sequence[str],
+        dimensions: Sequence[DimensionResult],
         warnings: List[str],
     ) -> Tuple[str, Optional[Dict[str, Any]]]:
         """(flat text for legacy consumers, fixed-outline dump) — both
@@ -1231,16 +1295,61 @@ class DebateEngine:
             model, stage_warnings = self._call_validated(
                 prompt, parse, "report outline"
             )
+            if model is None:
+                # Keep the long-standing wording (and its friendly gloss)
+                # instead of the stage's voided-sounding warnings — a
+                # summary failure never voids the computed verdict.
+                warnings.append("judge summary unparseable — computed verdict stands")
+                return "", None
+            warnings.extend(stage_warnings)
+
+            # The citation fix loop, same mechanics as bullets and votes:
+            # broken links go back to the AI; links still broken after
+            # the rounds are dropped (the sentence stays, unlinked).
+            errors = self._summary_link_errors(model, dimensions)
+            rounds = 0
+            while errors and rounds < MAX_FIX_ROUNDS:
+                rounds += 1
+                fix_prompt = (
+                    f"{prompt}\n\nYour previous summary failed the code's "
+                    "citation check:\n"
+                    + "\n".join(
+                        f"- {where}: {'; '.join(sentence_errors)}"
+                        for where, sentence_errors in errors.items()
+                    )
+                    + "\nReply again with the FULL corrected JSON, same shape. "
+                    "JSON only."
+                )
+                parsed = parse_llm_json(self._summarize(fix_prompt))
+                if parsed is None:
+                    warnings.append(
+                        "summary citation-fix reply invalid — fix round lost"
+                    )
+                    continue
+                try:
+                    model = parse(parsed)
+                except (ValidationError, ValueError):
+                    warnings.append(
+                        "summary citation-fix reply invalid — fix round lost"
+                    )
+                    continue
+                errors = self._summary_link_errors(model, dimensions)
+            if errors:
+                model = self._prune_summary_links(
+                    model,
+                    lambda text, links: [
+                        link
+                        for link in links
+                        if not self._text_link_errors([link], text, "x", dimensions)
+                    ],
+                )
+                warnings.append(
+                    "summary citations unfixable — those values are shown "
+                    "without links"
+                )
         except Exception as exc:
             warnings.append(f"summary LLM call failed: {exc} — computed verdict stands")
             return "", None
-        if model is None:
-            # Keep the long-standing wording (and its friendly gloss)
-            # instead of the stage's voided-sounding warnings — a summary
-            # failure never voids the computed verdict.
-            warnings.append("judge summary unparseable — computed verdict stands")
-            return "", None
-        warnings.extend(stage_warnings)
         return _flatten_summary(model), model.model_dump()
 
     # -- shared plumbing ---------------------------------------------------

@@ -232,7 +232,7 @@ def _summary():
         ],
         "technicals": [
             {"text": "Trend and momentum point in opposite directions.",
-             "children": ["RSI is neutral."]},
+             "children": [{"text": "RSI is neutral.", "links": []}]},
         ],
         "fundamentals": [],
         "positioning": [
@@ -261,6 +261,7 @@ def _replies(**overrides):
 MARKERS = [
     ("votes failed the code's citation check", "vote_fix"),
     ("bullets failed the code's citation check", "fix"),
+    ("summary failed the code's citation check", "summary_fix"),
     ("You are the FIRST analyst", "lister1"),
     ("You are the SECOND analyst", "lister2"),
     ("Match the two evidence lists", "merge"),
@@ -449,7 +450,8 @@ class ChoreographyTest(unittest.TestCase):
         )
         self.assertEqual(
             verdict.summary_structure["summary"],
-            [{"text": "The evidence splits down the middle.", "children": []}],
+            [{"text": "The evidence splits down the middle.",
+              "links": [], "children": []}],
         )
         self.assertEqual(verdict.summary_structure["fundamentals"], [])
         self.assertEqual(
@@ -1034,6 +1036,64 @@ class FailureRulesTest(unittest.TestCase):
         result, _ = _run(_replies(merge=RuntimeError("llm down")))
         self.assertIsNone(result.verdict)
         self.assertTrue(any("debate LLM call failed" in w for w in result.warnings))
+
+    def test_summary_number_without_a_link_goes_through_the_fix_loop(self):
+        # First summary states 71.20 with no link → the code check fails →
+        # one fix round returns the same sentence properly linked.
+        broken = json.dumps({
+            "summary": [{"text": "The outlook is neutral.", "links": [],
+                         "children": []}],
+            "technicals": [{"text": "The 14-day RSI (71.20) runs hot.",
+                            "links": [], "children": []}],
+            "fundamentals": [],
+            "positioning": [{"text": "Short interest is modest.",
+                             "links": [], "children": []}],
+            "macro_econ": [],
+        })
+        fixed = json.dumps({
+            "summary": [{"text": "The outlook is neutral.", "links": [],
+                         "children": []}],
+            "technicals": [{"text": "The 14-day RSI (71.20) runs hot.",
+                            "links": [{"ref": "technicals.rsi_14",
+                                       "value": "71.20"}],
+                            "children": []}],
+            "fundamentals": [],
+            "positioning": [{"text": "Short interest is modest.",
+                             "links": [], "children": []}],
+            "macro_econ": [],
+        })
+        result, fake = _run(_replies(summary=broken, summary_fix=fixed))
+        self.assertIn("summary_fix", fake.stages())
+        bullet = result.verdict.summary_structure["technicals"][0]
+        self.assertEqual(bullet["links"],
+                         [{"ref": "technicals.rsi_14", "value": "71.20"}])
+        self.assertFalse(
+            any("summary citations unfixable" in w for w in result.warnings)
+        )
+
+    def test_unfixable_summary_links_are_dropped_not_voiding(self):
+        # A link pointing at a grouping path never verifies; after the fix
+        # rounds it is dropped, the sentence stays, and the verdict stands.
+        broken = json.dumps({
+            "summary": [{"text": "The outlook is neutral.", "links": [],
+                         "children": []}],
+            "technicals": [{"text": "MACD looks fine.",
+                            "links": [{"ref": "technicals.macd",
+                                       "value": "1.20"}],
+                            "children": []}],
+            "fundamentals": [],
+            "positioning": [{"text": "Short interest is modest.",
+                             "links": [], "children": []}],
+            "macro_econ": [],
+        })
+        result, _ = _run(_replies(summary=broken, summary_fix=broken))
+        self.assertIsNotNone(result.verdict)
+        self.assertEqual(
+            result.verdict.summary_structure["technicals"][0]["links"], []
+        )
+        self.assertTrue(
+            any("summary citations unfixable" in w for w in result.warnings)
+        )
 
 
 class UsageTrackingTest(unittest.TestCase):

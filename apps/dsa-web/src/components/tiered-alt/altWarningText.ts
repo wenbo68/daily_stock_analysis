@@ -251,6 +251,11 @@ const NOTE_RULES: NoteRule[] = [
     keywordKey: KEY.citations,
     toText: (_m, t) => t('tiered.note.fixRoundLost'),
   },
+  {
+    pattern: /^summary citations unfixable — those values are shown without links$/,
+    keywordKey: KEY.citations,
+    toText: (_m, t) => t('tiered.note.summaryLinksDropped'),
+  },
   // --- v6 tree-debate notes ---
   {
     pattern: /citation check failed mechanically$/,

@@ -847,6 +847,8 @@ const zh = {
   'tiered.alt.summaryGroup': '总结',
   'tiered.note.downtrend': '收盘价已到 60 日均线或以下——逆势低吸的下行风险更高。',
   'tiered.note.trendCheckSkipped': '缺少 60 日均线数据，趋势检查已跳过。',
+  'tiered.note.summaryLinksDropped':
+    '总结中有引用经多次修正仍未通过代码校验——相关数值仍然展示，但没有链接。',
   'tiered.group.trend': '价格与趋势',
   'tiered.group.momentum': '动量',
   'tiered.group.volatility': '波动与区间',
@@ -2289,6 +2291,8 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.downtrend':
     'The close is at or below its 60-day average — a pullback buy against the trend carries extra downside risk.',
   'tiered.note.trendCheckSkipped': 'The 60-day average was unavailable, so the trend check was skipped.',
+  'tiered.note.summaryLinksDropped':
+    'Some summary citations failed the code checks even after fixes — those values still show, but without links.',
   'tiered.group.trend': 'Price & trend',
   'tiered.group.momentum': 'Momentum',
   'tiered.group.volatility': 'Volatility & range',
