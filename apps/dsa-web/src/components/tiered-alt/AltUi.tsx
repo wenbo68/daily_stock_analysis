@@ -24,7 +24,8 @@ export const AltCard = ({ children, className, testId }: AltCardProps) => (
 
 interface AltModalProps {
   isOpen: boolean;
-  title: ReactNode;
+  /** Omit for a title-less popup (the data-notes modal): just the ✕. */
+  title?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   /** Overrides the panel's width classes (e.g. fit-to-content for formulas). */
@@ -91,12 +92,12 @@ export const AltModal = ({ isOpen, title, onClose, children, panelClassName }: A
             equals every other gap in the popup (owner report 2026-07-21:
             the space above the divider read wider than below it). */}
         <div className="mb-2 flex items-start justify-between gap-3">
-          <h3 className="font-semibold text-gray-300">{title}</h3>
+          {title != null ? <h3 className="font-semibold text-gray-300">{title}</h3> : null}
           <button
             type="button"
             aria-label="Close"
             onClick={onClose}
-            className="cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
+            className="ml-auto cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
           >
             <X className="h-4 w-4" />
           </button>
@@ -115,10 +116,11 @@ interface AltNotesButtonProps {
 
 // The card's only data-quality signal. Full data and nothing to report →
 // no mark at all. Something to report → a small amber exclamation mark
-// (or a red X when the data was entirely unavailable) that opens a modal
-// listing each note in plain English (altWarningText.ts) with the
-// original technical message underneath. Notes whose shape we don't
-// recognize render as-is rather than get a made-up gloss.
+// (or a red X when the data was entirely unavailable) that opens a
+// title-less modal listing each note as "keyword: plain-English sentence"
+// (altWarningText.ts) — same shape as the plan-warnings modal, raw
+// backend text no longer shown. Notes whose shape we don't recognize
+// render as-is with no keyword rather than get a made-up gloss.
 export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps) => {
   const { t } = useUiLanguage();
   const [isOpen, setIsOpen] = useState(false);
@@ -142,26 +144,28 @@ export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps
       >
         <Icon className="h-4 w-4" />
       </button>
-      <AltModal isOpen={isOpen} title={t('tiered.dataNotes')} onClose={() => setIsOpen(false)}>
-        {/* No explainer line, regular body color, numbered entries
-            (owner decision 2026-07-22) — the amber lives on the trigger
-            icon only. */}
+      <AltModal isOpen={isOpen} onClose={() => setIsOpen(false)}>
+        {/* No title, no explainer line (owner decision 2026-07-24) — the
+            amber lives on the trigger icon only. Entries are disc bullets
+            in the plan-warnings modal's "keyword: sentence" shape. */}
         {notes.length === 0 ? <p className="text-sm text-gray-300">{t('tiered.note.none')}</p> : null}
-        <ol className="flex list-decimal flex-col gap-4 pl-5 text-gray-300">
+        <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>
           {notes.map((raw, index) => {
             const friendly = friendlyWarning(raw, t);
             return (
-              <li key={index} className="text-sm leading-relaxed">
-                {friendly ?? raw}
+              <li key={index}>
                 {friendly ? (
-                  <span className="mt-1 block font-mono text-[11px] leading-relaxed text-gray-500">
-                    {raw}
-                  </span>
-                ) : null}
+                  <>
+                    <span className={MODAL_STRONG}>{friendly.keyword}: </span>
+                    {friendly.text}
+                  </>
+                ) : (
+                  raw
+                )}
               </li>
             );
           })}
-        </ol>
+        </ul>
       </AltModal>
     </>
   );

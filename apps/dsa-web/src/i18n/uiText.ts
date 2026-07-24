@@ -831,6 +831,19 @@ const zh = {
   // 仅旧版 /tiered 页仍内联展示；alt 页弹窗不再显示这行说明。
   'tiered.dataNotesHint': '记录数据受限之处，以及系统的替代做法。\n保留展示，让你判断这份报告有多扎实。',
   'tiered.note.none': '这一部分没有可用数据，但没有记录更具体的原因。',
+  // 数据说明弹窗的固定关键词表（2026-07-24）：每条说明以其中一个开头，
+  // 由 altWarningText.ts 按规则确定，不由 AI 生成。盈亏比一条复用
+  // 交易计划警告弹窗的 'tiered.alt.warnKey.reward_below_goal'。
+  'tiered.note.key.missingData': '数据缺失',
+  'tiered.note.key.fetchFailed': '抓取失败',
+  'tiered.note.key.citations': '引用核查',
+  'tiered.note.key.aiReply': 'AI 回复',
+  'tiered.note.key.levels': '价格参考位',
+  'tiered.note.key.verdict': '结论',
+  'tiered.note.key.vote': '投票',
+  'tiered.note.key.debate': '辩论',
+  'tiered.note.key.riskCheck': '风险压测',
+  'tiered.note.key.settings': '设置',
   'tiered.group.trend': '价格与趋势',
   'tiered.group.momentum': '动量',
   'tiered.group.volatility': '波动与区间',
@@ -2255,6 +2268,20 @@ const en: Record<UiTextKey, string> = {
     'Where data fell short, and what the system did instead.\nShown so you can judge how solid this report is.',
   'tiered.note.none':
     'This section had no usable data, but no specific reason was recorded.',
+  // The data-notes modal's fixed keyword list (2026-07-24): every note
+  // leads with one of these, picked per rule in altWarningText.ts —
+  // never AI-generated. The reward-ratio note reuses the plan-warnings
+  // keyword 'tiered.alt.warnKey.reward_below_goal'.
+  'tiered.note.key.missingData': 'Missing data',
+  'tiered.note.key.fetchFailed': 'Fetch failed',
+  'tiered.note.key.citations': 'Citation check',
+  'tiered.note.key.aiReply': 'AI reply',
+  'tiered.note.key.levels': 'Price levels',
+  'tiered.note.key.verdict': 'Verdict',
+  'tiered.note.key.vote': 'Vote',
+  'tiered.note.key.debate': 'Debate',
+  'tiered.note.key.riskCheck': 'Risk check',
+  'tiered.note.key.settings': 'Settings',
   'tiered.group.trend': 'Price & trend',
   'tiered.group.momentum': 'Momentum',
   'tiered.group.volatility': 'Volatility & range',

@@ -1025,9 +1025,12 @@ describe('AltResult', () => {
     // Nothing inline — the notes only exist behind the mark.
     expect(screen.queryByText(/left blank|留空/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('alt-notes-button'));
-    // Known shape → the friendly sentence (raw text shown beneath it).
+    // Known shape → fixed keyword + friendly sentence; the raw backend
+    // text is no longer shown (owner decision 2026-07-24).
+    expect(screen.getByText(/Price levels|价格参考位/)).toBeInTheDocument();
     expect(screen.getByText(/left blank|留空/)).toBeInTheDocument();
-    // Unknown shape → raw text unchanged (never an invented gloss).
+    expect(screen.queryByText(/unparseable sniper level/)).not.toBeInTheDocument();
+    // Unknown shape → raw text unchanged, no keyword (never an invented gloss).
     expect(
       screen.getByText('some brand-new warning shape the frontend has never seen'),
     ).toBeInTheDocument();
