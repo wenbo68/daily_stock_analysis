@@ -844,6 +844,7 @@ const zh = {
   'tiered.note.key.debate': '辩论',
   'tiered.note.key.riskCheck': '风险压测',
   'tiered.note.key.settings': '设置',
+  'tiered.alt.summaryGroup': '总结',
   'tiered.note.downtrend': '收盘价已到 60 日均线或以下——逆势低吸的下行风险更高。',
   'tiered.note.trendCheckSkipped': '缺少 60 日均线数据，趋势检查已跳过。',
   'tiered.group.trend': '价格与趋势',
@@ -2284,6 +2285,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.key.debate': 'Debate',
   'tiered.note.key.riskCheck': 'Risk check',
   'tiered.note.key.settings': 'Settings',
+  'tiered.alt.summaryGroup': 'Summary',
   'tiered.note.downtrend':
     'The close is at or below its 60-day average — a pullback buy against the trend carries extra downside risk.',
   'tiered.note.trendCheckSkipped': 'The 60-day average was unavailable, so the trend check was skipped.',

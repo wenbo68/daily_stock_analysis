@@ -224,7 +224,22 @@ def _decider(votes=None):
 
 
 def _summary():
-    return json.dumps({"summary": "The evidence splits down the middle."})
+    # The fixed five-group outline; the fixture's data dimensions are
+    # technicals + positioning, so only those groups carry bullets.
+    return json.dumps({
+        "summary": [
+            {"text": "The evidence splits down the middle.", "children": []},
+        ],
+        "technicals": [
+            {"text": "Trend and momentum point in opposite directions.",
+             "children": ["RSI is neutral."]},
+        ],
+        "fundamentals": [],
+        "positioning": [
+            {"text": "Short interest is modest.", "children": []},
+        ],
+        "macro_econ": [],
+    })
 
 
 def _replies(**overrides):
@@ -423,7 +438,20 @@ class ChoreographyTest(unittest.TestCase):
         self.assertEqual(verdict.initial_score, 5.0)
         self.assertEqual(verdict.final_score, 5.0)
         self.assertEqual(verdict.direction, Direction.HOLD)
-        self.assertEqual(verdict.summary, "The evidence splits down the middle.")
+        # The flat text renders the outline one line per non-empty group;
+        # the outline itself rides in summary_structure.
+        self.assertEqual(
+            verdict.summary,
+            "Summary: The evidence splits down the middle.\n"
+            "Technicals: Trend and momentum point in opposite directions. "
+            "RSI is neutral.\n"
+            "Positioning: Short interest is modest.",
+        )
+        self.assertEqual(
+            verdict.summary_structure["summary"],
+            [{"text": "The evidence splits down the middle.", "children": []}],
+        )
+        self.assertEqual(verdict.summary_structure["fundamentals"], [])
         self.assertEqual(
             verdict.pools["initial"]["dimensions"]["technicals"],
             {"bullish": 2, "bearish": 1, "total": 3,

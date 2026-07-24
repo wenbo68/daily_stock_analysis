@@ -252,6 +252,20 @@ export type TieredDebatePool = {
 
 // Bull/bear debate audit trail (tier-2 section). Four generations coexist
 // in stored runs: the v2 judged shape (confidence, reasons, would_change_
+// One bullet of the structured deep-analysis report; children are
+// sub-bullets one level deep.
+export type TieredSummaryBullet = { text: string; children?: string[] | null };
+
+// The fixed report outline (owner decision 2026-07-24): the group set
+// and order never change run to run — the AI only fills the bullets.
+export type TieredSummaryStructure = {
+  summary?: TieredSummaryBullet[] | null;
+  technicals?: TieredSummaryBullet[] | null;
+  fundamentals?: TieredSummaryBullet[] | null;
+  positioning?: TieredSummaryBullet[] | null;
+  macro_econ?: TieredSummaryBullet[] | null;
+};
+
 // mind), the v3 scored shape (final_score, scoring, corrected bull/bear
 // summaries), the v4 threaded shape (turn kinds, axis-grade comments),
 // and the v5 tree (format: 5, items, weight ledger) — every
@@ -273,6 +287,10 @@ export type TieredDebateDetail = {
   verdict: {
     direction: string;
     summary: string;
+    // v11+ structured report: the fixed five-group outline the summary
+    // stage fills (summary + one group per dimension); `summary` above
+    // is its flat-text rendering for older readers.
+    summary_structure?: TieredSummaryStructure | null;
     // v2 judged shape
     confidence?: number | null;
     reasons_for?: TieredAnchoredReason[];

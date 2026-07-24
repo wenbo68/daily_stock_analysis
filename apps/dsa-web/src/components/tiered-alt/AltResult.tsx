@@ -23,6 +23,7 @@ import {
   AltSectionLabel,
 } from './AltUi';
 import { AltDebateScoring } from './AltDebateScoring';
+import { AltSummaryOutline } from './AltSummaryOutline';
 import { AltDebateTree, DebateScores } from './AltDebateTree';
 import { AltRiskTree } from './AltRiskTree';
 import { AltDimensions } from './AltDimensions';
@@ -401,7 +402,13 @@ const AltDebate = ({ section, citations }: AltTierSectionProps) => {
             ) : null
           }
         />
-        {section.narrative ? (
+        {verdict?.summary_structure ? (
+          // v11+ runs carry the fixed-outline report; older runs keep
+          // their flat paragraph.
+          <div className="mb-2">
+            <AltSummaryOutline structure={verdict.summary_structure} />
+          </div>
+        ) : section.narrative ? (
           <p className="mb-2 text-sm leading-relaxed">{section.narrative}</p>
         ) : null}
         {!verdict ? (

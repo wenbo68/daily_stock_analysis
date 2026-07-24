@@ -155,6 +155,28 @@ class VoteRoundModel(_StageModel):
     votes: Dict[str, VoteModel] = Field(default_factory=dict)
 
 
+class SummaryBulletModel(_StageModel):
+    """One report bullet: a short plain sentence, with optional
+    sub-bullets one level deep."""
+
+    text: str = Field(min_length=1)
+    children: List[str] = Field(default_factory=list)
+
+
+class StructuredSummaryModel(_StageModel):
+    """Step 5: the user-facing report as a fixed outline (owner decision
+    2026-07-24) — the group set and order never change run to run; the
+    AI only fills the bullets. ``summary`` states the outlook and the
+    decisive reasons; each dimension group covers what its surviving
+    evidence says."""
+
+    summary: List[SummaryBulletModel] = Field(min_length=1)
+    technicals: List[SummaryBulletModel] = Field(default_factory=list)
+    fundamentals: List[SummaryBulletModel] = Field(default_factory=list)
+    positioning: List[SummaryBulletModel] = Field(default_factory=list)
+    macro_econ: List[SummaryBulletModel] = Field(default_factory=list)
+
+
 class VoteFixModel(_StageModel):
     """A vote citation-fix round's reply: corrected votes, same keys."""
 
@@ -209,6 +231,27 @@ def check_opening_items(
             errors.append(
                 f"dimension {dimension!r} has {count} items — "
                 f"the maximum is {ceiling}"
+            )
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
+def check_summary_groups(
+    model: StructuredSummaryModel, data_dimensions: Sequence[str]
+) -> None:
+    """Every dimension that contributed evidence must get bullets; a
+    dimension with no collected data must stay empty (nothing to report
+    means nothing to invent)."""
+    errors: List[str] = []
+    for dimension in DIMENSIONS:
+        bullets = getattr(model, dimension)
+        if dimension in data_dimensions and not bullets:
+            errors.append(
+                f'"{dimension}" has evidence above but no bullets — write at least one'
+            )
+        if dimension not in data_dimensions and bullets:
+            errors.append(
+                f'"{dimension}" has no collected data — its group must be []'
             )
     if errors:
         raise ValueError("; ".join(errors))

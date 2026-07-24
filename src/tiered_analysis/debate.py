@@ -69,12 +69,14 @@ from .debate_models import (
     ListModel,
     MergeModel,
     MIN_ITEMS_PER_DIMENSION,
+    StructuredSummaryModel,
     VoteFixModel,
     VoteModel,
     VoteRoundModel,
     check_exact_keys,
     check_match_map,
     check_opening_items,
+    check_summary_groups,
 )
 from .llm_support import (
     active_tracker,
@@ -136,6 +138,10 @@ class DebateVerdict:
     #: Per-pool audit: {initial|final: {dimensions, bullish, bearish,
     #: total, score}}.
     pools: Dict[str, Any] = field(default_factory=dict)
+    #: The report as the fixed five-group outline (StructuredSummaryModel
+    #: dump); ``summary`` above is its flat-text rendering for legacy
+    #: consumers. None when the summary stage failed.
+    summary_structure: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -156,6 +162,7 @@ class DebateResult:
                 # Legacy header field: the nearest whole number.
                 "final_score_rounded": int(v.final_score + 0.5),
                 "summary": v.summary,
+                "summary_structure": v.summary_structure,
                 "initial_score": v.initial_score,
                 "pools": v.pools,
                 # Legacy keys kept so pre-v8 readers never crash.
@@ -504,15 +511,48 @@ bullet's weight is the median of its voters' 1-5 ratings):
   of {final_total_weight} total)
 - outlook: {outlook} (below 4 bearish, 4-6 neutral, above 6 bullish)
 
-Write the user-facing report. Reply with JSON only. Never use the words
-"verdict", "buy", "hold" or "sell" — describe the outlook as bullish,
-neutral or bearish:
-{{"summary": "one plain-language paragraph explaining why the computed outlook is what it is"}}
+Write the user-facing report as a fixed bullet outline. Reply with JSON
+only. Never use the words "verdict", "buy", "hold" or "sell" — describe
+the outlook as bullish, neutral or bearish:
+{{"summary": [{{"text": "one short plain sentence", "children": []}}],
+ "technicals": [{{"text": "...", "children": ["optional supporting detail"]}}],
+ "fundamentals": [], "positioning": [], "macro_econ": []}}
 
 Rules:
+- "summary": 2-4 bullets stating the outlook and the decisive reasons.
+- Fill exactly these dimension groups (the others stay []): {fill_groups}.
+  Each filled group: 1-4 bullets on what its surviving evidence says.
+- "children" holds supporting detail one level deep; keep it [] when a
+  bullet needs none.
+- Every "text" and every child is one short plain sentence.
 - Support the computed outlook; if little evidence survived, say plainly
   that the case is weak.
 - Use only the evidence above; do not invent facts."""
+
+#: Flat-text group titles for the legacy narrative rendering.
+_SUMMARY_GROUP_TITLES = {
+    "summary": "Summary",
+    "technicals": "Technicals",
+    "fundamentals": "Fundamentals",
+    "positioning": "Positioning",
+    "macro_econ": "Macro economy",
+}
+
+
+def _flatten_summary(model: StructuredSummaryModel) -> str:
+    """The outline as plain text, one line per non-empty group — what the
+    legacy narrative consumers (main page, stored summaries) keep."""
+    lines: List[str] = []
+    for group in ("summary",) + DIMENSIONS:
+        bullets = getattr(model, group)
+        if not bullets:
+            continue
+        sentences: List[str] = []
+        for bullet in bullets:
+            sentences.append(bullet.text.strip())
+            sentences.extend(child.strip() for child in bullet.children)
+        lines.append(f"{_SUMMARY_GROUP_TITLES[group]}: " + " ".join(sentences))
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -706,8 +746,10 @@ class DebateEngine:
             )
         direction = direction_from_final(final)
 
-        # Step 5 — the user-facing prose; its failure never voids anything.
-        summary = self._summary(context, items, final, pools, direction, warnings)
+        # Step 5 — the user-facing report; its failure never voids anything.
+        summary, summary_structure = self._summary(
+            context, items, final, pools, direction, data_dimensions, warnings
+        )
 
         verdict = DebateVerdict(
             direction=direction,
@@ -715,6 +757,7 @@ class DebateEngine:
             summary=summary,
             initial_score=initial_score,
             pools=pools,
+            summary_structure=summary_structure,
         )
         return DebateResult(items=items, verdict=verdict, warnings=warnings)
 
@@ -1159,8 +1202,11 @@ class DebateEngine:
         final: float,
         pools: Dict[str, Any],
         direction: Direction,
+        data_dimensions: Sequence[str],
         warnings: List[str],
-    ) -> str:
+    ) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """(flat text for legacy consumers, fixed-outline dump) — both
+        empty/None when the stage failed; the computed verdict stands."""
         prompt = _SUMMARY_TEMPLATE.format(
             context=context,
             tree=_tree_text(items),
@@ -1171,20 +1217,31 @@ class DebateEngine:
             final_bullish_weight=pools["final"]["bullish_weight"],
             final_total_weight=pools["final"]["total_weight"],
             outlook=_OUTLOOK_WORD.get(direction, "neutral"),
+            fill_groups=", ".join(
+                dim for dim in DIMENSIONS if dim in data_dimensions
+            ) or "none",
         )
+
+        def parse(parsed: dict) -> StructuredSummaryModel:
+            model = StructuredSummaryModel.model_validate(parsed)
+            check_summary_groups(model, data_dimensions)
+            return model
+
         try:
-            raw = self._summarize(prompt)
+            model, stage_warnings = self._call_validated(
+                prompt, parse, "report outline"
+            )
         except Exception as exc:
             warnings.append(f"summary LLM call failed: {exc} — computed verdict stands")
-            return ""
-        parsed = parse_llm_json(raw)
-        if parsed is None:
+            return "", None
+        if model is None:
+            # Keep the long-standing wording (and its friendly gloss)
+            # instead of the stage's voided-sounding warnings — a summary
+            # failure never voids the computed verdict.
             warnings.append("judge summary unparseable — computed verdict stands")
-            return ""
-        summary = str(parsed.get("summary") or "").strip()
-        if not summary:
-            warnings.append("judge gave no summary")
-        return summary
+            return "", None
+        warnings.extend(stage_warnings)
+        return _flatten_summary(model), model.model_dump()
 
     # -- shared plumbing ---------------------------------------------------
 

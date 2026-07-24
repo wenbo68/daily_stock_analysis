@@ -480,6 +480,49 @@ describe('AltResult v10 weighted vote tree', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent(/重要性评分：2|importance rating: 2/);
   });
 
+  it('renders a structured summary as the fixed outline instead of the paragraph', () => {
+    const result = makeOutlookResult({
+      depth: 2,
+      tier2: {
+        tier: 2,
+        coverage: 'full',
+        direction: 'hold',
+        confidence: null,
+        score: null,
+        levels: LEVELS,
+        narrative: 'Summary: flat text fallback.',
+        warnings: [],
+        debate_detail: {
+          ...makeWeightedDebate(),
+          verdict: {
+            ...makeWeightedDebate().verdict!,
+            summary_structure: {
+              summary: [{ text: 'The outlook is neutral.', children: [] }],
+              technicals: [
+                { text: 'Momentum is mixed.', children: ['RSI sits mid-range.'] },
+              ],
+              fundamentals: [],
+              positioning: [{ text: 'Short interest is modest.', children: [] }],
+              macro_econ: [],
+            },
+          },
+        },
+      },
+    });
+    renderResult(result);
+    const outline = screen.getByTestId('alt-summary-outline');
+    // Groups render in the fixed order; empty groups are skipped.
+    const groupLabels = within(outline)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent ?? '');
+    expect(outline).toHaveTextContent(/Summary|总结/);
+    expect(groupLabels.join(' ')).toContain('The outlook is neutral.');
+    expect(outline).toHaveTextContent('RSI sits mid-range.');
+    expect(outline).not.toHaveTextContent('flat text fallback');
+    // The flat paragraph does not render alongside the outline.
+    expect(screen.queryByText('Summary: flat text fallback.')).not.toBeInTheDocument();
+  });
+
   it('the header score opens the weighted formula in a modal', () => {
     renderWeighted();
     // The arithmetic no longer sits inside the transcript fold.
