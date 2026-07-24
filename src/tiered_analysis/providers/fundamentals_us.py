@@ -38,6 +38,11 @@ REVENUE_CONCEPTS = (
 EPS_CONCEPTS = ("EarningsPerShareDiluted", "EarningsPerShareBasic")
 
 EDGAR_COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
+
+#: The Yahoo Finance page showing the cited valuation ratios: yfinance
+#: itself has no per-request page, but the same figures are published on
+#: the key-statistics subpage — cited so readers can verify at the source.
+YAHOO_KEY_STATISTICS_URL = "https://finance.yahoo.com/quote/{symbol}/key-statistics"
 EDGAR_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _EDGAR_TIMEOUT_SECONDS = 15
 
@@ -390,5 +395,10 @@ class FundamentalsUSProvider(DimensionProvider):
             return False
 
         payload["valuation"] = valuation
-        citations.append(Citation(source_name="Yahoo Finance summary (yfinance)"))
+        citations.append(
+            Citation(
+                source_name="Yahoo Finance summary (yfinance)",
+                url=YAHOO_KEY_STATISTICS_URL.format(symbol=symbol),
+            )
+        )
         return True

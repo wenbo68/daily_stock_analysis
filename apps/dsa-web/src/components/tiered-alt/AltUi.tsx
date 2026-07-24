@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CircleAlert, CircleX, X } from 'lucide-react';
+import { CircleAlert, CircleX } from 'lucide-react';
 import type { TieredCitation, TieredCoverage } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import { cn } from '../../utils/cn';
@@ -24,7 +24,7 @@ export const AltCard = ({ children, className, testId }: AltCardProps) => (
 
 interface AltModalProps {
   isOpen: boolean;
-  /** Omit for a title-less popup (the data-notes modal): just the ✕. */
+  /** Omit for a title-less popup (the data-notes modal). */
   title?: ReactNode;
   onClose: () => void;
   children: ReactNode;
@@ -88,20 +88,13 @@ export const AltModal = ({ isOpen, title, onClose, children, panelClassName }: A
         )}
         onClick={(event) => event.stopPropagation()}
       >
-        {/* mb-2 matches MODAL_BODY's gap-2, so the title-to-body gap
-            equals every other gap in the popup (owner report 2026-07-21:
-            the space above the divider read wider than below it). */}
-        <div className="mb-2 flex items-start justify-between gap-3">
-          {title != null ? <h3 className="font-semibold text-gray-300">{title}</h3> : null}
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="ml-auto cursor-pointer rounded p-1 text-gray-500 hover:bg-gray-700 hover:text-gray-300"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        {/* No ✕ button (owner decision 2026-07-24): clicking the backdrop
+            or pressing Escape closes every popup. mb-2 matches MODAL_BODY's
+            gap-2, so the title-to-body gap equals every other gap in the
+            popup (owner report 2026-07-21). Title-less popups (the
+            data-notes modal) start straight at the body — no leftover
+            header spacing. */}
+        {title != null ? <h3 className="mb-2 font-semibold text-gray-300">{title}</h3> : null}
         {children}
       </div>
     </div>,

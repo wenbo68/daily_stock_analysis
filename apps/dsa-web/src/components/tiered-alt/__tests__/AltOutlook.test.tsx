@@ -408,6 +408,41 @@ describe('AltResult reward warning on the plan', () => {
   });
 });
 
+describe('AltResult plan-card data notes vs the warnings row', () => {
+  it('drops notes the structured warnings row already carries, keeps the rest', () => {
+    const staleReward =
+      "reward below goal: overhead resistance at 106 caps the plan's " +
+      'reward-to-risk at 1.67, below your 2× goal';
+    const trendNote =
+      'trend warning: close 100 is at or below the 60-day average 102 ' +
+      '(downtrend) — a pullback buy against the trend carries extra downside risk';
+    renderResult(
+      makeOutlookResult({
+        warnings: [staleReward, trendNote, 'sniper points missing from tier-1 result'],
+        plan_warnings: {
+          entry: [{ id: 'downtrend', values: { close: 100, sma_60: 102 } }],
+          stop_loss: [],
+          take_profit: [
+            {
+              id: 'reward_below_goal',
+              values: { entry: 96, stop_loss: 90, take_profit: 98, ratio: 0.33, goal: 2 },
+            },
+          ],
+          shares: [],
+        },
+      }),
+    );
+    fireEvent.click(within(screen.getByTestId('alt-plan')).getByTestId('alt-notes-button'));
+    const dialog = screen.getByRole('dialog');
+    // The row's facts (reward shortfall, downtrend) don't repeat as notes —
+    // the row recomputes them from the final levels, so the note copy is stale.
+    expect(dialog).not.toHaveTextContent(/1\.67/);
+    expect(dialog).not.toHaveTextContent(/downtrend|逆势低吸/);
+    // Unrelated notes stay.
+    expect(dialog).toHaveTextContent(/price levels|价格参考位/i);
+  });
+});
+
 describe('AltResult v10 weighted vote tree', () => {
   function renderWeighted() {
     const result = makeOutlookResult({

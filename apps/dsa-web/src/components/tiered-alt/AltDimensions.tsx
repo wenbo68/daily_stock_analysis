@@ -110,9 +110,11 @@ interface MetricRowProps {
   anchorPath: string;
   term: string;
   value: unknown;
+  /** The value's observation date, shown dimmed after it (macro rows). */
+  date?: unknown;
 }
 
-const MetricRow = ({ anchorPath, term, value }: MetricRowProps) => (
+const MetricRow = ({ anchorPath, term, value, date }: MetricRowProps) => (
   <div
     id={metricAnchorId(anchorPath)}
     className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
@@ -120,7 +122,10 @@ const MetricRow = ({ anchorPath, term, value }: MetricRowProps) => (
     <dt className="text-xs">
       <MetricTerm term={term} underline={false} />
     </dt>
-    <dd className="text-xs tabular-nums text-gray-300">{formatValue(value)}</dd>
+    <dd className="text-xs tabular-nums text-gray-300">
+      {formatValue(value)}
+      {typeof date === 'string' ? <span className="ml-2 text-gray-500">{date}</span> : null}
+    </dd>
   </div>
 );
 
@@ -129,12 +134,24 @@ interface AltPayloadTableProps {
   payload: Record<string, unknown>;
 }
 
+// The macro payload's per-series observation dates: not a display group
+// of its own (owner decision 2026-07-24) — each date renders dimmed
+// beside its metric's value instead ("value date").
+const OBSERVATION_DATES_KEY = 'observation_dates';
+
 // Every metric sits in a titled section; a hairline separates sections.
 // Rows keep the same anchor ids as the main page so evidence links and
 // formula inputs can scroll straight to their source here too.
 const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
   const { t } = useUiLanguage();
-  const sections = buildSections(dimension, payload, t);
+  const rawDates = payload[OBSERVATION_DATES_KEY];
+  const dates = isGroup(rawDates) ? rawDates : null;
+  const shownPayload = dates
+    ? Object.fromEntries(
+        Object.entries(payload).filter(([key]) => key !== OBSERVATION_DATES_KEY),
+      )
+    : payload;
+  const sections = buildSections(dimension, shownPayload, t);
 
   return (
     <div className="flex flex-col divide-y divide-gray-700/60">
@@ -152,10 +169,17 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
                     anchorPath={`${dimension}.${key}.${subKey}`}
                     term={subKey}
                     value={value}
+                    date={dates?.[subKey]}
                   />
                 ))
               ) : (
-                <MetricRow key={key} anchorPath={`${dimension}.${key}`} term={key} value={values} />
+                <MetricRow
+                  key={key}
+                  anchorPath={`${dimension}.${key}`}
+                  term={key}
+                  value={values}
+                  date={dates?.[key]}
+                />
               ),
             )}
           </dl>
@@ -221,13 +245,18 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
                   <span className="shrink-0 text-gray-500">[{number}]</span>
                 ) : null}
                 {citation.url ? (
+                  // News articles (they carry a headline) list as their URL
+                  // — a link's destination stays visible, never hidden
+                  // behind an AI-echoed headline. Backend-named sources
+                  // (no headline) list as their descriptive name; the URL
+                  // lives behind the link (owner decision 2026-07-24).
                   <a
                     href={citation.url}
                     target="_blank"
                     rel="noreferrer"
                     className={`truncate ${ALT_LINK}`}
                   >
-                    {citation.url}
+                    {citation.title === null ? citation.source_name : citation.url}
                   </a>
                 ) : (
                   <span className="truncate">{citation.source_name}</span>

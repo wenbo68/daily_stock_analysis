@@ -36,6 +36,11 @@ from .base import (
     SourceKind,
 )
 
+#: The Yahoo Finance page showing each block's numbers: yfinance itself
+#: has no per-request page, but every block's figures are published on a
+#: quote subpage — cited so readers can verify the data at the source.
+YAHOO_QUOTE_URL = "https://finance.yahoo.com/quote/{symbol}"
+
 #: Near-dated expirations are where positioning information concentrates;
 #: walking the whole board would cost one request per expiration.
 MAX_OPTION_EXPIRATIONS = 4
@@ -358,7 +363,10 @@ class PositioningUSProvider(DimensionProvider):
             return False
         payload["short_interest"] = metrics
         citations.append(
-            Citation(source_name="FINRA short interest via Yahoo Finance (yfinance)")
+            Citation(
+                source_name="FINRA short interest via Yahoo Finance (yfinance)",
+                url=f"{YAHOO_QUOTE_URL.format(symbol=symbol)}/key-statistics",
+            )
         )
         return True
 
@@ -384,7 +392,10 @@ class PositioningUSProvider(DimensionProvider):
             return False
         payload["ownership"] = metrics
         citations.append(
-            Citation(source_name="13F institutional holdings via Yahoo Finance (yfinance)")
+            Citation(
+                source_name="13F institutional holdings via Yahoo Finance (yfinance)",
+                url=f"{YAHOO_QUOTE_URL.format(symbol=symbol)}/holders",
+            )
         )
         return True
 
@@ -403,7 +414,8 @@ class PositioningUSProvider(DimensionProvider):
         payload["insider_activity_6m"] = insider_metrics(rows or [], self._today())
         citations.append(
             Citation(
-                source_name="SEC Form 4 insider transactions via Yahoo Finance (yfinance)"
+                source_name="SEC Form 4 insider transactions via Yahoo Finance (yfinance)",
+                url=f"{YAHOO_QUOTE_URL.format(symbol=symbol)}/insider-transactions",
             )
         )
         return True
@@ -424,5 +436,10 @@ class PositioningUSProvider(DimensionProvider):
             warnings.append(f"no listed options found for {symbol}")
             return False
         payload["options"] = options_metrics(chains)
-        citations.append(Citation(source_name="Yahoo Finance options chain (yfinance)"))
+        citations.append(
+            Citation(
+                source_name="Yahoo Finance options chain (yfinance)",
+                url=f"{YAHOO_QUOTE_URL.format(symbol=symbol)}/options",
+            )
+        )
         return True

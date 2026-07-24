@@ -22,9 +22,10 @@ const KEY = {
   debate: 'tiered.note.key.debate',
   riskCheck: 'tiered.note.key.riskCheck',
   settings: 'tiered.note.key.settings',
-  // The plan card's warnings row shows this same fact under this same
-  // keyword — the notes list must not word it differently.
+  // The plan card's warnings row shows these same facts under these same
+  // keywords — the notes list must not word them differently.
   rewardRatio: 'tiered.alt.warnKey.reward_below_goal',
+  downtrend: 'tiered.alt.warnKey.downtrend',
 } as const satisfies Record<string, UiTextKey>;
 
 // Backend sniper-level source names → the level labels users already know.
@@ -63,6 +64,16 @@ const NOTE_RULES: NoteRule[] = [
     keywordKey: KEY.rewardRatio,
     toText: (m, t) =>
       t('tiered.alt.rewardBelowGoal', { ratio: m[1], goal: m[2] }),
+  },
+  {
+    pattern: /^trend warning: close .* is at or below the 60-day average/,
+    keywordKey: KEY.downtrend,
+    toText: (_m, t) => t('tiered.note.downtrend'),
+  },
+  {
+    pattern: /^sma_60 unavailable — trend check skipped$/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.trendCheckSkipped'),
   },
   {
     pattern: /^unparseable sniper level (\w+)='?(.*?)'?$/,

@@ -277,13 +277,38 @@ const AltTierOneVerdict = ({ result }: { result: TieredResult }) => (
   </AltCard>
 );
 
+// Backend note strings whose fact the plan table's structured warnings
+// row already carries under these ids — the row recomputes its numbers
+// from the FINAL (post-review) levels, so the note's stale copy must not
+// show beside it (owner decision 2026-07-24).
+const NOTE_RE_BY_PLAN_WARNING_ID: Record<string, RegExp> = {
+  downtrend: /^trend warning: /,
+  reward_below_goal: /^reward below goal: /,
+};
+
+// The plan card's data notes: the run warnings minus anything the plan's
+// own warnings row already states.
+const planCardNotes = (result: TieredResult): string[] => {
+  const shownIds = new Set(
+    Object.values(result.plan_warnings ?? {})
+      .flat()
+      .map((warning) => warning.id),
+  );
+  return (result.warnings ?? []).filter(
+    (raw) =>
+      !Object.entries(NOTE_RE_BY_PLAN_WARNING_ID).some(
+        ([id, pattern]) => shownIds.has(id) && pattern.test(raw),
+      ),
+  );
+};
+
 // The trade plan in its own card, under the analysis (owner order,
 // 2026-07-22). The data-notes mark floats in the card's top-right corner
 // so it never occupies a line of its own.
 const AltPlanCard = ({ result, citations, action, taskId }: AltTierOneProps) => (
   <AltCard testId="alt-plan" className="relative">
     <span className="absolute right-5 top-5">
-      <AltNotesButton notes={result.warnings ?? []} coverage={result.coverage} />
+      <AltNotesButton notes={planCardNotes(result)} coverage={result.coverage} />
     </span>
     <PlanBody result={result} citations={citations} action={action} taskId={taskId} />
   </AltCard>
