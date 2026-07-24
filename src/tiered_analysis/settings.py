@@ -87,6 +87,28 @@ def load_sizing_settings(env: Optional[Mapping[str, str]] = None) -> SizingSetti
     )
 
 
+#: Every run sizes (owner decision 2026-07-24): when neither the request
+#: nor the saved .env settings provide capital/risk, these — the web
+#: form's own defaults (100k capital, 1% risk) — fill in, so the API and
+#: scripted runs behave like a form submission. Precedence stays:
+#: per-run override > saved .env setting > this fallback.
+FALLBACK_CAPITAL = 100_000.0
+FALLBACK_RISK_FRACTION = 0.01
+
+
+def with_fallback_defaults(settings: SizingSettings) -> SizingSettings:
+    """A copy with the web-form fallback filling any missing sizing input."""
+    return replace(
+        settings,
+        capital=settings.capital if settings.capital is not None else FALLBACK_CAPITAL,
+        risk_fraction=(
+            settings.risk_fraction
+            if settings.risk_fraction is not None
+            else FALLBACK_RISK_FRACTION
+        ),
+    )
+
+
 def merge_overrides(
     settings: SizingSettings,
     capital: Optional[float] = None,

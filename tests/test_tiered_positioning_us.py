@@ -134,17 +134,41 @@ class InsiderMetricsTest(unittest.TestCase):
 
 class OptionsMetricsTest(unittest.TestCase):
     def test_ratios_are_summed_over_all_fetched_expirations(self):
-        metrics = options_metrics(_CHAINS)
+        metrics, warnings = options_metrics(_CHAINS)
         self.assertAlmostEqual(metrics["put_call_oi_ratio"], 1380.0 / 1500.0)
         self.assertAlmostEqual(metrics["put_call_volume_ratio"], 1.2)
         self.assertEqual(metrics["total_open_interest"], 2880.0)
         self.assertEqual(metrics["expirations_covered"], 2)
+        self.assertEqual(warnings, [])
 
-    def test_zero_call_side_yields_none_not_a_crash(self):
+    def test_zero_call_side_yields_none_with_warnings_not_a_crash(self):
         chains = [{"call_oi": 0, "put_oi": 10, "call_volume": 0, "put_volume": 5}]
-        metrics = options_metrics(chains)
+        metrics, warnings = options_metrics(chains)
         self.assertIsNone(metrics["put_call_oi_ratio"])
         self.assertIsNone(metrics["put_call_volume_ratio"])
+        self.assertIsNone(metrics["total_open_interest"])
+        self.assertEqual(len(warnings), 2)
+
+    def test_zero_put_side_is_blank_not_a_misleading_zero(self):
+        # Yahoo intraday chains often carry no open interest; a zero put
+        # side must never surface as "put/call OI ratio 0" (owner report
+        # 2026-07-24 — a real NVDA run showed exactly that).
+        chains = [
+            {"call_oi": 25, "put_oi": 0, "call_volume": 1000, "put_volume": 550},
+        ]
+        metrics, warnings = options_metrics(chains)
+        self.assertIsNone(metrics["put_call_oi_ratio"])
+        self.assertIsNone(metrics["total_open_interest"])
+        self.assertAlmostEqual(metrics["put_call_volume_ratio"], 0.55)
+        self.assertTrue(any("open interest" in w for w in warnings))
+        self.assertFalse(any("volume" in w for w in warnings))
+
+    def test_missing_oi_columns_are_blank_not_zero(self):
+        chains = [{"call_volume": 1000, "put_volume": 550}]
+        metrics, warnings = options_metrics(chains)
+        self.assertIsNone(metrics["put_call_oi_ratio"])
+        self.assertIsNone(metrics["total_open_interest"])
+        self.assertTrue(any("open interest" in w for w in warnings))
 
 
 def _provider(**overrides):

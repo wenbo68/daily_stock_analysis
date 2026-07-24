@@ -25,7 +25,7 @@ never mistakes a two-week-old short-interest print for today's.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .base import (
     Citation,
@@ -186,18 +186,52 @@ def insider_metrics(
     }
 
 
-def options_metrics(chains: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
-    """Put/call ratios over the fetched expirations' summed totals."""
-    call_oi = sum(_to_float(chain.get("call_oi")) or 0.0 for chain in chains)
-    put_oi = sum(_to_float(chain.get("put_oi")) or 0.0 for chain in chains)
-    call_volume = sum(_to_float(chain.get("call_volume")) or 0.0 for chain in chains)
-    put_volume = sum(_to_float(chain.get("put_volume")) or 0.0 for chain in chains)
-    return {
-        "put_call_oi_ratio": put_oi / call_oi if call_oi else None,
-        "put_call_volume_ratio": put_volume / call_volume if call_volume else None,
-        "total_open_interest": call_oi + put_oi,
+def _sum_side(chains: Sequence[Mapping[str, Any]], key: str) -> Optional[float]:
+    """Sum one side's per-expiration totals; None when no chain carried
+    the field at all (missing data must never masquerade as 0)."""
+    values = [_to_float(chain.get(key)) for chain in chains]
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
+def options_metrics(
+    chains: Sequence[Mapping[str, Any]],
+) -> Tuple[Dict[str, Any], List[str]]:
+    """(metrics, warnings): put/call ratios over the fetched expirations'
+    summed totals. Yahoo's intraday chains often carry zero/absent open
+    interest (they populate it overnight) — a zero side is indistinguishable
+    from missing data, so a ratio is computed only when BOTH sides are
+    positive; otherwise the fields stay blank (None) and a warning says
+    why. No default values on bad data (owner decision 2026-07-24)."""
+    call_oi = _sum_side(chains, "call_oi")
+    put_oi = _sum_side(chains, "put_oi")
+    call_volume = _sum_side(chains, "call_volume")
+    put_volume = _sum_side(chains, "put_volume")
+
+    warnings: List[str] = []
+    oi_usable = bool(call_oi and put_oi and call_oi > 0 and put_oi > 0)
+    if not oi_usable:
+        warnings.append(
+            "options open interest from Yahoo is missing or zero — "
+            "put/call OI ratio and total omitted"
+        )
+    volume_usable = bool(
+        call_volume and put_volume and call_volume > 0 and put_volume > 0
+    )
+    if not volume_usable:
+        warnings.append(
+            "options volume from Yahoo is missing or zero — "
+            "put/call volume ratio omitted"
+        )
+    metrics = {
+        "put_call_oi_ratio": put_oi / call_oi if oi_usable else None,
+        "put_call_volume_ratio": (
+            put_volume / call_volume if volume_usable else None
+        ),
+        "total_open_interest": call_oi + put_oi if oi_usable else None,
         "expirations_covered": len(chains),
     }
+    return metrics, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -251,12 +285,17 @@ def _default_insider_loader(symbol: str) -> List[Dict[str, Any]]:
     return rows
 
 
-def _frame_column_sum(frame: Any, column: str) -> float:
+def _frame_column_sum(frame: Any, column: str) -> Optional[float]:
+    """Sum a chain column; None (not 0) when the column is absent or all
+    empty — missing data must never masquerade as a real zero."""
     try:
         series = frame[column]
     except (KeyError, TypeError):
-        return 0.0
-    return float(series.fillna(0).sum())
+        return None
+    present = series.dropna()
+    if present.empty:
+        return None
+    return float(present.sum())
 
 
 def _default_options_loader(symbol: str) -> List[Dict[str, Any]]:
@@ -435,7 +474,9 @@ class PositioningUSProvider(DimensionProvider):
         if not chains:
             warnings.append(f"no listed options found for {symbol}")
             return False
-        payload["options"] = options_metrics(chains)
+        metrics, option_warnings = options_metrics(chains)
+        payload["options"] = metrics
+        warnings.extend(option_warnings)
         citations.append(
             Citation(
                 source_name="Yahoo Finance options chain (yfinance)",

@@ -339,11 +339,15 @@ class TestDepthRoutingAndSizing(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self._run(depth=depth)
 
-    def test_sizing_off_by_default_with_explicit_refusal(self):
+    def test_missing_sizing_falls_back_to_the_form_defaults(self):
+        # Owner decision 2026-07-24: every run sizes. With no settings and
+        # no overrides, the web form's defaults fill in (100k capital, 1%
+        # risk) — entry 96, stop 90 → loss/share 6 → floor(1000/6) = 166.
         outcome, _, _, _ = self._run()
-        self.assertFalse(outcome.sizing["enabled"])
-        self.assertEqual(outcome.sizing["reason_code"], "sizing_off")
-        self.assertTrue(outcome.final_report.sizing.is_empty)
+        self.assertTrue(outcome.sizing["enabled"])
+        self.assertEqual(outcome.sizing["inputs"]["capital"], 100000.0)
+        self.assertEqual(outcome.sizing["inputs"]["risk_fraction"], 0.01)
+        self.assertEqual(outcome.sizing["shares"], 166)
 
     def test_enabled_sizing_computes_shares_from_final_levels(self):
         from src.tiered_analysis.settings import SizingSettings

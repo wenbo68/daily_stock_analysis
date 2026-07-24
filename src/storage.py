@@ -1115,6 +1115,10 @@ class TieredRunRecord(Base):
     stock_code = Column(String(16), nullable=False, index=True)
     status = Column(String(16), nullable=False, default='running', index=True)
     result_json = Column(Text)
+    #: The run's inputs (tier, capital, risk_fraction, reward_risk) as
+    #: JSON, recorded at creation so history rows can show them while the
+    #: run is still in flight (owner decision 2026-07-24).
+    inputs_json = Column(Text)
     error = Column(Text)
     created_at = Column(DateTime, default=utc_naive_now, index=True)
     updated_at = Column(DateTime, default=utc_naive_now, onupdate=utc_naive_now, index=True)
@@ -1201,6 +1205,7 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
             # 创建所有表
             Base.metadata.create_all(self._engine)
             self._ensure_llm_usage_telemetry_columns()
+            self._ensure_tiered_run_inputs_column()
             self._ensure_intelligence_item_scope_values()
             self._ensure_schema_migration_record()
             self._ensure_intelligence_items_unique_index()
@@ -1401,6 +1406,30 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                             time.sleep(delay)
                         continue
                     raise
+
+    def _ensure_tiered_run_inputs_column(self) -> None:
+        """Best-effort backfill of tiered_runs.inputs_json on databases
+        created before the column existed (create_all never alters
+        existing tables). A failure only degrades the history rows'
+        while-running inputs display, never startup."""
+        try:
+            existing = {
+                column["name"]
+                for column in inspect(self._engine).get_columns(
+                    TieredRunRecord.__tablename__
+                )
+            }
+            if "inputs_json" in existing:
+                return
+            with self._engine.begin() as connection:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE {TieredRunRecord.__tablename__} "
+                    "ADD COLUMN inputs_json TEXT"
+                )
+        except Exception as exc:
+            logger.warning(
+                "tiered_runs.inputs_json backfill skipped: %s", exc
+            )
 
     def _ensure_intelligence_item_scope_values(self) -> None:
         """Backfill nullable intelligence item scopes so SQLite unique keys work."""

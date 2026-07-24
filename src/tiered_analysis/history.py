@@ -26,7 +26,14 @@ def _session():
     return DatabaseManager.get_instance().get_session()
 
 
-def create_run(task_id: str, stock_code: str) -> None:
+def create_run(
+    task_id: str,
+    stock_code: str,
+    inputs: Optional[Dict[str, Any]] = None,
+) -> None:
+    """``inputs`` are the run's effective settings (tier, capital,
+    risk_fraction, reward_risk) — recorded at creation so the history row
+    shows them while the run is still in flight."""
     from src.storage import TieredRunRecord
 
     with _session() as session:
@@ -34,6 +41,7 @@ def create_run(task_id: str, stock_code: str) -> None:
             task_id=task_id,
             stock_code=stock_code,
             status="running",
+            inputs_json=json.dumps(inputs) if inputs else None,
         ))
         session.commit()
 
@@ -93,6 +101,10 @@ def _result_digest(row: Any) -> Dict[str, Any]:
         "risk_fraction": None,
         "reward_risk": None,
     }
+    # The inputs recorded at creation show while the run is in flight (and
+    # stand as fallback on failed runs); a finished report's own values
+    # overwrite them below.
+    digest.update(_inputs_digest(row))
     if row.status != "done" or not row.result_json:
         return digest
     try:
@@ -123,10 +135,31 @@ def _result_digest(row: Any) -> Dict[str, Any]:
             break
     if isinstance(sizing, dict) and isinstance(sizing.get("inputs"), dict):
         inputs = sizing["inputs"]
-        digest["capital"] = inputs.get("capital")
-        digest["risk_fraction"] = inputs.get("risk_fraction")
-        digest["reward_risk"] = inputs.get("reward_risk")
+        for key in ("capital", "risk_fraction", "reward_risk"):
+            # The report's own values win, but never None-overwrite the
+            # inputs recorded at creation.
+            if inputs.get(key) is not None:
+                digest[key] = inputs[key]
     return digest
+
+
+def _inputs_digest(row: Any) -> Dict[str, Any]:
+    """The creation-time inputs (tier/capital/risk_fraction/reward_risk),
+    or {} when absent/unreadable — old rows never break the list."""
+    raw = getattr(row, "inputs_json", None)
+    if not raw:
+        return {}
+    try:
+        inputs = json.loads(raw)
+    except ValueError:
+        return {}
+    if not isinstance(inputs, dict):
+        return {}
+    return {
+        key: inputs[key]
+        for key in ("tier", "capital", "risk_fraction", "reward_risk")
+        if inputs.get(key) is not None
+    }
 
 
 def list_runs(limit: int = DEFAULT_LIST_LIMIT) -> List[Dict[str, Any]]:

@@ -849,6 +849,10 @@ const zh = {
   'tiered.note.trendCheckSkipped': '缺少 60 日均线数据，趋势检查已跳过。',
   'tiered.note.summaryLinksDropped':
     '总结中有引用经多次修正仍未通过代码校验——相关数值仍然展示，但没有链接。',
+  'tiered.note.optionsOiMissing':
+    'Yahoo 返回的期权未平仓量缺失或为零（盘中数据常见）——Put/Call 未平仓比和总未平仓量留空，不显示误导性的 0。',
+  'tiered.note.optionsVolumeMissing':
+    'Yahoo 返回的期权成交量缺失或为零——Put/Call 成交量比留空，不显示误导性的 0。',
   'tiered.group.trend': '价格与趋势',
   'tiered.group.momentum': '动量',
   'tiered.group.volatility': '波动与区间',
@@ -2293,6 +2297,10 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.trendCheckSkipped': 'The 60-day average was unavailable, so the trend check was skipped.',
   'tiered.note.summaryLinksDropped':
     'Some summary citations failed the code checks even after fixes — those values still show, but without links.',
+  'tiered.note.optionsOiMissing':
+    'Options open interest from Yahoo came back missing or zero (common intraday) — the put/call OI ratio and total are left blank rather than showing a misleading 0.',
+  'tiered.note.optionsVolumeMissing':
+    'Options volume from Yahoo came back missing or zero — the put/call volume ratio is left blank rather than showing a misleading 0.',
   'tiered.group.trend': 'Price & trend',
   'tiered.group.momentum': 'Momentum',
   'tiered.group.volatility': 'Volatility & range',

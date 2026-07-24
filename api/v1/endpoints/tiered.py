@@ -182,11 +182,39 @@ def _run_task(task_id: str, stock_code: str, depth: int = 1,
         history.mark_failed(task_id, str(exc))
 
 
+def _effective_run_inputs(request: TieredAnalyzeRequest) -> Dict[str, Any]:
+    """The settings the run will actually use — request overrides on top
+    of saved .env values, with the web-form fallbacks underneath (the
+    same resolution run_tiered_analysis performs) — recorded on the run
+    row so history shows them while the run is still in flight."""
+    from src.tiered_analysis.settings import (
+        load_sizing_settings,
+        merge_overrides,
+        with_fallback_defaults,
+    )
+
+    sizing = request.sizing
+    settings = with_fallback_defaults(merge_overrides(
+        load_sizing_settings(),
+        capital=sizing.capital if sizing else None,
+        risk_fraction=sizing.risk_fraction if sizing else None,
+        ownership=sizing.ownership if sizing else None,
+        reward_risk=sizing.reward_risk if sizing else None,
+    ))
+    return {
+        "tier": request.depth,
+        "capital": settings.capital,
+        "risk_fraction": settings.risk_fraction,
+        "reward_risk": settings.reward_risk,
+    }
+
+
 @router.post("/analyze", status_code=202)
 def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
     """Kick off a tiered run in the background; returns a pollable task."""
     task_id = uuid.uuid4().hex
-    history.create_run(task_id, request.stock_code)
+    history.create_run(task_id, request.stock_code,
+                       inputs=_effective_run_inputs(request))
     sizing_overrides: Optional[Dict[str, float]] = None
     if request.sizing is not None:
         sizing_overrides = request.sizing.model_dump(exclude_none=True) or None

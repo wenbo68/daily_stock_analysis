@@ -108,6 +108,38 @@ class TestTieredRunHistory:
         assert runs["task-2"]["risk_fraction"] is None
         assert runs["task-2"]["reward_risk"] is None
 
+    def test_running_rows_show_the_inputs_recorded_at_creation(self, isolated_db):
+        # Owner decision 2026-07-24: capital/risk/reward/tier are visible
+        # on the history row while the run is still in flight.
+        create_run("task-1", "NVDA", inputs={
+            "tier": 2, "capital": 100000,
+            "risk_fraction": 0.01, "reward_risk": 2.0,
+        })
+        runs = {r["task_id"]: r for r in list_runs()}
+        row = runs["task-1"]
+        assert row["status"] == "running"
+        assert row["tier"] == 2
+        assert row["capital"] == 100000
+        assert row["risk_fraction"] == 0.01
+        assert row["reward_risk"] == 2.0
+
+    def test_finished_report_values_beat_the_creation_inputs(self, isolated_db):
+        create_run("task-1", "NVDA", inputs={
+            "tier": 2, "capital": 100000,
+            "risk_fraction": 0.01, "reward_risk": 2.0,
+        })
+        mark_done("task-1", {**RESULT,
+                             "depth": 2,
+                             "final": {"direction": "buy", "tier": 2},
+                             "sizing": {"shares": 51,
+                                        "inputs": {"capital": 50000,
+                                                   "risk_fraction": 0.02,
+                                                   "reward_risk": 3.0}}})
+        row = {r["task_id"]: r for r in list_runs()}["task-1"]
+        assert row["capital"] == 50000
+        assert row["risk_fraction"] == 0.02
+        assert row["reward_risk"] == 3.0
+
     def test_list_digest_degrades_on_old_or_refused_runs(self, isolated_db):
         # v1 result: no final/sizing/depth -> top-level direction, dash
         # shares, and the top-level tier (v1 runs were tier 1 only)

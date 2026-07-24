@@ -115,6 +115,16 @@ const NOTE_RULES: NoteRule[] = [
     toText: (m, t) => t('tiered.note.macroUnavailable', { series: m[1] }),
   },
   {
+    pattern: /^options open interest from Yahoo is missing or zero/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.optionsOiMissing'),
+  },
+  {
+    pattern: /^options volume from Yahoo is missing or zero/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.optionsVolumeMissing'),
+  },
+  {
     pattern: /^LLM sentiment output unparseable or empty$/,
     keywordKey: KEY.aiReply,
     toText: (_m, t) => t('tiered.note.sentimentUnreadable'),

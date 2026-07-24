@@ -53,7 +53,12 @@ from .schema import (
     TierReport,
     derive_action,
 )
-from .settings import SizingSettings, load_sizing_settings, merge_overrides
+from .settings import (
+    SizingSettings,
+    load_sizing_settings,
+    merge_overrides,
+    with_fallback_defaults,
+)
 from .signal_log import SignalLogResult, log_tier_report
 from .sizing import SizingInputs, size_position
 from .tiers import Tier1Stage, Tier2Stage, TierState
@@ -306,6 +311,9 @@ def run_tiered_analysis(
             ownership=sizing_overrides.get("ownership"),
             reward_risk=sizing_overrides.get("reward_risk"),
         )
+    # Every run sizes (owner decision 2026-07-24): missing capital/risk
+    # fall back to the web form's defaults instead of disabling sizing.
+    sizing_settings = with_fallback_defaults(sizing_settings)
     tracker = LlmUsageTracker()
     with tracker.activate():
         dimensions = _collect_dimensions(providers, symbol)
