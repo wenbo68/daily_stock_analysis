@@ -1,0 +1,12 @@
+- backtesting to verify how good the runs are
+  - if good enough, we can connect our system to real trading platforms to automate transactions
+- allow users to enter their entire portfolio for portfolio level decisions
+- agent that has access to all system apis so that it can read from and write to the system
+- currently the system only really support swing (and maybe position) trading
+  - holding times for different trades
+    - scalping: seconds to minutes
+    - day: within a day
+    - swing: days to weeks
+    - position: weeks to months
+    - investing: years
+  - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
