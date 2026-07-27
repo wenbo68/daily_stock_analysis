@@ -103,6 +103,9 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
             "coverage": dim.coverage.value,
             "is_actionable": dim.is_actionable,
             "payload": dim.payload,
+            # UI formula receipts for derived metrics (technicals v2);
+            # None on other dimensions and old runs.
+            "formulas": dim.formulas,
             "narrative": dim.narrative,
             "warnings": list(dim.warnings),
             "citations": [

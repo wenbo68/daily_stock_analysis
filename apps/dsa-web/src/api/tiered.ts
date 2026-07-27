@@ -9,12 +9,24 @@ export type TieredCitation = {
   snippet: string | null;
 };
 
+// Technicals v2 UI receipt (2026-07-28): how a derived payload metric was
+// computed — formula words whose variable tokens match `inputs` keys, the
+// same shape as TieredLevelDetail's formula/inputs pair. Keyed by
+// "group.key" (e.g. "daily.rsi_14"). Words-only receipts (aggregates over
+// a whole series, like a 50-close average) ship empty inputs.
+export type TieredMetricFormula = {
+  formula: string;
+  inputs: Record<string, number>;
+};
+
 export type TieredDimension = {
   dimension: string;
   kind: 'numeric' | 'textual';
   coverage: 'full' | 'partial' | 'unavailable';
   is_actionable: boolean;
   payload: Record<string, unknown> | null;
+  /** Absent on non-technicals dimensions and old stored runs. */
+  formulas?: Record<string, TieredMetricFormula> | null;
   narrative: string | null;
   warnings: string[];
   citations: TieredCitation[];

@@ -66,6 +66,13 @@ class DimensionResult:
     narrative: Optional[str] = None
     citations: List[Citation] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    #: UI receipts for derived payload metrics, keyed "group.key":
+    #: {"formula": words, "inputs": {var: number}} — the same shape the
+    #: trade-plan levels ship. Deliberately OUTSIDE payload: the payload
+    #: is dumped verbatim into LLM prompts and its envelope shape
+    #: ({name, explanation, value}) is a contract; receipts are for the
+    #: report page only.
+    formulas: Optional[Dict[str, Any]] = None
 
     @property
     def is_actionable(self) -> bool:

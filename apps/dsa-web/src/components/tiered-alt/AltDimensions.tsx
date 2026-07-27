@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { TieredCoverage, TieredDimension } from '../../api/tiered';
+import type { TieredCoverage, TieredDimension, TieredMetricFormula } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import {
@@ -10,6 +10,7 @@ import {
   metricValue,
 } from '../tiered/termHelpers';
 import { MetricTerm } from '../tiered/terms';
+import { AltMetricValue } from './AltMetricFormula';
 import { ALT_LINK } from './altStyles';
 import { AltCard, AltNarrative, AltNotesButton } from './AltUi';
 
@@ -132,6 +133,9 @@ interface MetricRowProps {
   anchorPath: string;
   term: string;
   value: unknown;
+  /** How this number was computed (technicals v2 runs) — when present,
+      the value is a button opening the formula receipt. */
+  formula?: TieredMetricFormula | null;
   /** The value's observation date, shown dimmed after it (macro rows). */
   date?: unknown;
   /** The date's own payload path — it stays a citable evidence target
@@ -140,7 +144,7 @@ interface MetricRowProps {
   dateAnchorPath?: string;
 }
 
-const MetricRow = ({ anchorPath, term, value, date, dateAnchorPath }: MetricRowProps) => (
+const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: MetricRowProps) => (
   <div
     id={metricAnchorId(anchorPath)}
     className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
@@ -149,7 +153,11 @@ const MetricRow = ({ anchorPath, term, value, date, dateAnchorPath }: MetricRowP
       <MetricTerm term={term} underline={false} />
     </dt>
     <dd className="text-xs tabular-nums text-gray-300">
-      {formatValue(value)}
+      {formula ? (
+        <AltMetricValue term={term} value={value} formula={formula} />
+      ) : (
+        formatValue(value)
+      )}
       {typeof date === 'string' ? (
         // The leading {' '} is a real space so copied text reads
         // "16.64 2026-07-22", not "16.642026-07-22" (owner report).
@@ -170,6 +178,8 @@ const MetricRow = ({ anchorPath, term, value, date, dateAnchorPath }: MetricRowP
 interface AltPayloadTableProps {
   dimension: string;
   payload: Record<string, unknown>;
+  /** "group.key" → receipt (technicals v2 runs); null elsewhere. */
+  formulas: Record<string, TieredMetricFormula> | null;
 }
 
 // The macro payload's per-series observation dates: not a display group
@@ -180,7 +190,7 @@ const OBSERVATION_DATES_KEY = 'observation_dates';
 // Every metric sits in a titled section; a hairline separates sections.
 // Rows keep the same anchor ids as the main page so evidence links and
 // formula inputs can scroll straight to their source here too.
-const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
+const AltPayloadTable = ({ dimension, payload, formulas }: AltPayloadTableProps) => {
   const { t } = useUiLanguage();
   const rawDates = payload[OBSERVATION_DATES_KEY];
   const dates = isGroup(rawDates) ? rawDates : null;
@@ -209,6 +219,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
                     anchorPath={`${dimension}.${key}.${subKey}`}
                     term={subKey}
                     value={metricValue(value)}
+                    formula={formulas?.[`${key}.${subKey}`] ?? null}
                     date={dates?.[subKey]}
                     dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${subKey}`}
                   />
@@ -219,6 +230,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
                   anchorPath={`${dimension}.${key}`}
                   term={key}
                   value={metricValue(values)}
+                  formula={formulas?.[key] ?? null}
                   date={dates?.[key]}
                   dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${key}`}
                 />
@@ -265,7 +277,11 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
       ) : null}
 
       {dimension.payload ? (
-        <AltPayloadTable dimension={dimension.dimension} payload={dimension.payload} />
+        <AltPayloadTable
+          dimension={dimension.dimension}
+          payload={dimension.payload}
+          formulas={dimension.formulas ?? null}
+        />
       ) : null}
 
       {listedCitations.length > 0 ? (

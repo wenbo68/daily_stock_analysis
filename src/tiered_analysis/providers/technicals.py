@@ -204,11 +204,11 @@ def compute_ema(closes: List[float], period: int) -> Optional[float]:
     return series[-1] if series else None
 
 
-def compute_wilder_rsi(closes: List[float], period: int = RSI_PERIOD) -> Optional[float]:
-    """RSI with Wilder smoothing; needs ``period + 1`` closes.
-
-    A series with zero average gain and zero average loss is neutral (50).
-    """
+def wilder_averages(
+    closes: List[float], period: int = RSI_PERIOD
+) -> Optional[Tuple[float, float]]:
+    """Wilder's smoothed (average gain, average loss) — the two numbers
+    the RSI formula divides; exposed so the UI receipt can plug them in."""
     if period <= 0 or len(closes) < period + 1:
         return None
     changes = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
@@ -219,6 +219,18 @@ def compute_wilder_rsi(closes: List[float], period: int = RSI_PERIOD) -> Optiona
     for i in range(period, len(changes)):
         avg_gain = (avg_gain * (period - 1) + gains[i]) / period
         avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+    return avg_gain, avg_loss
+
+
+def compute_wilder_rsi(closes: List[float], period: int = RSI_PERIOD) -> Optional[float]:
+    """RSI with Wilder smoothing; needs ``period + 1`` closes.
+
+    A series with zero average gain and zero average loss is neutral (50).
+    """
+    averages = wilder_averages(closes, period)
+    if averages is None:
+        return None
+    avg_gain, avg_loss = averages
     if avg_loss == 0.0 and avg_gain == 0.0:
         return 50.0
     if avg_loss == 0.0:
@@ -323,19 +335,29 @@ def compute_worst_day_pct_1y(
     2026-07-26). Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer
     observations the extreme is noise, so None (loud) beats a fake number.
     """
+    detail = worst_day_detail(closes, lookback)
+    return detail[0] if detail is not None else None
+
+
+def worst_day_detail(
+    closes: List[float], lookback: int = YEAR_BARS
+) -> Optional[Tuple[float, float, float]]:
+    """(worst-day percent, close the day before, close that day) — the
+    ingredients the UI receipt plugs into the worst-day formula."""
     if lookback <= 0:
         return None
     window = closes[-(lookback + 1):]
     if len(window) < MIN_RETURNS_FOR_TAIL + 1:
         return None
-    returns = [
-        window[i] / window[i - 1] - 1.0
+    days = [
+        (window[i] / window[i - 1] - 1.0, window[i - 1], window[i])
         for i in range(1, len(window))
         if window[i - 1] > 0
     ]
-    if len(returns) < MIN_RETURNS_FOR_TAIL:
+    if len(days) < MIN_RETURNS_FOR_TAIL:
         return None
-    return round(min(returns) * 100.0, 2)
+    worst = min(days, key=lambda day: day[0])
+    return round(worst[0] * 100.0, 2), worst[1], worst[2]
 
 
 def pct_change(closes: List[float], bars_back: int) -> Optional[float]:
@@ -713,7 +735,7 @@ class TechnicalsProvider(DimensionProvider):
             )
 
         warnings: List[str] = []
-        payload = self._build_payload(bars, warnings)
+        payload, formulas = self._build_payload(bars, warnings)
 
         missing = [
             f"{group}.{key}"
@@ -734,13 +756,14 @@ class TechnicalsProvider(DimensionProvider):
             payload=payload,
             citations=[Citation(source_name=self._source_name)],
             warnings=warnings,
+            formulas=formulas or None,
         )
 
     # -- payload assembly ---------------------------------------------------
 
     def _build_payload(
         self, bars: List[Bar], warnings: List[str]
-    ) -> Dict[str, Dict[str, Any]]:
+    ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         closes = [bar.close for bar in bars]
         close = closes[-1]
         weekly_bars = resample_weekly(bars)
@@ -818,7 +841,16 @@ class TechnicalsProvider(DimensionProvider):
         resistance = nearest_resistance(daily_highs, close)
         pullback = typical_pullback_atr(daily_highs, daily_lows, atr)
 
-        regime, rs_3m, rs_label = self._benchmark_fields(closes, warnings)
+        regime, rs_3m, rs_label, rs_inputs = self._benchmark_fields(
+            closes, warnings
+        )
+
+        # Receipt ingredients (UI formulas): values the formulas divide
+        # that are not payload fields themselves.
+        close_5d_ago = closes[-6] if len(closes) >= 6 else None
+        rsi_parts = wilder_averages(closes)
+        worst_detail = worst_day_detail(closes)
+        worst_day = worst_detail[0] if worst_detail is not None else None
 
         weekly_tail = (
             " Daily signals should only generate trades in this direction;"
@@ -1016,17 +1048,174 @@ class TechnicalsProvider(DimensionProvider):
                     "Worst close-to-close daily return of the last year, "
                     "in %. Gap risk: how far an overnight surprise has "
                     "actually blown through this stock's stops.",
-                    compute_worst_day_pct_1y(closes),
+                    worst_day,
                 ),
             },
         }
-        return payload
+
+        formulas = self._build_formulas(
+            payload,
+            close_5d_ago=close_5d_ago,
+            low_1y=low_1y,
+            high_1y=high_1y,
+            sma_10w=sma_fast_w,
+            rsi_parts=rsi_parts,
+            avg_vol_5=avg_vol_5,
+            avg_vol_60=avg_vol_60,
+            worst_detail=worst_detail,
+            rs_inputs=rs_inputs,
+        )
+        return payload, formulas
+
+    @staticmethod
+    def _build_formulas(
+        payload: Dict[str, Dict[str, Any]],
+        *,
+        close_5d_ago: Optional[float],
+        low_1y: Optional[float],
+        high_1y: Optional[float],
+        sma_10w: Optional[float],
+        rsi_parts: Optional[Tuple[float, float]],
+        avg_vol_5: Optional[float],
+        avg_vol_60: Optional[float],
+        worst_detail: Optional[Tuple[float, float, float]],
+        rs_inputs: Optional[Dict[str, float]],
+    ) -> Dict[str, Any]:
+        """UI receipts, keyed "group.key": formula words + this run's
+        plugged-in inputs (variable tokens in the words match input keys,
+        so the frontend can split and link them — the levels-table
+        pattern). Aggregate fields whose ingredients are whole series
+        (a 50-close average) get words only, no inputs. A receipt is
+        published only when its metric has a value and every input is
+        present — a partial receipt would show broken arithmetic."""
+        formulas: Dict[str, Any] = {}
+
+        def add(
+            path: str,
+            formula: str,
+            inputs: Optional[Dict[str, Optional[float]]] = None,
+            digits: int = 2,
+        ) -> None:
+            group, key = path.split(".")
+            if metric_value(payload.get(group, {}).get(key)) is None:
+                return
+            plugged: Dict[str, float] = {}
+            for var, value in (inputs or {}).items():
+                if value is None:
+                    return
+                plugged[var] = round(value, digits)
+            formulas[path] = {"formula": formula, "inputs": plugged}
+
+        if rs_inputs is not None:
+            add(
+                "relative_strength.rs_3m",
+                "stock_return_3m − index_return_3m",
+                rs_inputs,
+            )
+        close = read_metric(payload, "price", "close")
+        atr = read_metric(payload, "volatility", "atr_14")
+        sma_50 = read_metric(payload, "daily", "sma_50")
+        add(
+            "price.chg_5d_pct",
+            "(close − close_5d_ago) / close_5d_ago × 100",
+            {"close": close, "close_5d_ago": close_5d_ago},
+        )
+        add(
+            "price.range_pct_1y",
+            "(close − low_1y) / (high_1y − low_1y) × 100",
+            {"close": close, "low_1y": low_1y, "high_1y": high_1y},
+        )
+        add(
+            "price.high_1y",
+            f"the highest traded price of the last {YEAR_BARS} daily bars",
+        )
+        add(
+            "weekly.stretch_10w_atr",
+            "(close − sma_10w) / (atr_14 × √5)",
+            {"close": close, "sma_10w": sma_10w, "atr_14": atr},
+        )
+        add(
+            "daily.sma_50",
+            f"the sum of the last {DAILY_SMA_MID} daily closes"
+            f" / {DAILY_SMA_MID}",
+        )
+        add(
+            "daily.stretch_50d_atr",
+            "(close − sma_50) / atr_14",
+            {"close": close, "sma_50": sma_50, "atr_14": atr},
+        )
+        add(
+            "daily.sma_200",
+            f"the sum of the last {DAILY_SMA_LONG} daily closes"
+            f" / {DAILY_SMA_LONG}",
+        )
+        if rsi_parts is not None and rsi_parts[1] > 0:
+            add(
+                "daily.rsi_14",
+                "100 − 100 / (1 + avg_gain_14 / avg_loss_14)",
+                {"avg_gain_14": rsi_parts[0], "avg_loss_14": rsi_parts[1]},
+                digits=4,
+            )
+        add(
+            "volatility.atr_14",
+            f"the Wilder-smoothed average of the last {ATR_PERIOD} daily "
+            "true ranges (a day's true range = its high − low, widened to "
+            "include any gap from the previous close)",
+        )
+        add(
+            "volatility.atr_pct",
+            "atr_14 / close × 100",
+            {"atr_14": atr, "close": close},
+        )
+        add(
+            "volume.avg_vol_60d",
+            f"the sum of the last {VOLUME_BASE_BARS} daily volumes"
+            f" / {VOLUME_BASE_BARS}",
+        )
+        add(
+            "volume.vol_ratio_5_60",
+            "avg_vol_5 / avg_vol_60d",
+            {"avg_vol_5": avg_vol_5, "avg_vol_60d": avg_vol_60},
+            digits=0,
+        )
+        add(
+            "levels.support_1",
+            "the highest pivot low below the close, scanning the last "
+            f"{DAILY_PIVOT_LOOKBACK} days (a pivot low = a day whose low "
+            f"undercuts the {PIVOT_FRINGE} days on each side)",
+        )
+        add(
+            "levels.resistance_1",
+            "the lowest pivot high above the close, scanning the last "
+            f"{DAILY_PIVOT_LOOKBACK} days (a pivot high = a day whose "
+            f"high tops the {PIVOT_FRINGE} days on each side)",
+        )
+        add(
+            "levels.typical_pullback_atr",
+            "median depth of the last completed pullbacks "
+            "(each pivot high − the next pivot low) / atr_14",
+            {"atr_14": atr},
+        )
+        if worst_detail is not None:
+            add(
+                "risk.worst_day_pct_1y",
+                "(worst_close − prev_close) / prev_close × 100",
+                {"worst_close": worst_detail[2],
+                 "prev_close": worst_detail[1]},
+                digits=4,
+            )
+        return formulas
 
     def _benchmark_fields(
         self, closes: List[float], warnings: List[str]
-    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-        """(regime, rs_3m, rs_label) envelopes; None values + a warning
-        when the benchmark is unwired or its fetch fails."""
+    ) -> Tuple[
+        Dict[str, Any], Dict[str, Any], Dict[str, Any],
+        Optional[Dict[str, float]],
+    ]:
+        """(regime, rs_3m, rs_label, rs receipt inputs) — envelopes with
+        None values + a warning when the benchmark is unwired or its
+        fetch fails; the fourth element carries the stock/index 3-month
+        returns the rs_3m receipt subtracts, or None."""
         regime_name = "market regime"
         rs_name = "relative strength vs benchmark (3m)"
         rs_label_name = "relative strength label"
@@ -1042,7 +1231,7 @@ class TechnicalsProvider(DimensionProvider):
             "catalyst from the other reports."
         )
 
-        def _absent(reason: str) -> Tuple[Dict[str, Any], ...]:
+        def _absent(reason: str) -> Tuple[Any, ...]:
             warnings.append(reason)
             return (
                 make_metric(
@@ -1052,6 +1241,7 @@ class TechnicalsProvider(DimensionProvider):
                 ),
                 make_metric(rs_name, rs_explanation, None),
                 make_metric(rs_label_name, label_explanation, None),
+                None,
             )
 
         if self._index_bars_loader is None:
@@ -1091,6 +1281,14 @@ class TechnicalsProvider(DimensionProvider):
                 "short for the 200-day regime read.",
                 None,
             )
+        stock_return_3m = pct_change(closes, RS_WINDOW_3M)
+        index_return_3m = pct_change(index_closes, RS_WINDOW_3M)
+        rs_inputs = (
+            {"stock_return_3m": stock_return_3m,
+             "index_return_3m": index_return_3m}
+            if stock_return_3m is not None and index_return_3m is not None
+            else None
+        )
         return (
             regime_env,
             make_metric(rs_name, rs_explanation, rs_3m),
@@ -1099,4 +1297,5 @@ class TechnicalsProvider(DimensionProvider):
                 label_explanation,
                 relative_strength_label(rs_1m, rs_3m),
             ),
+            rs_inputs,
         )

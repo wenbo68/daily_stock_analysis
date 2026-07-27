@@ -39,6 +39,8 @@ from src.tiered_analysis.providers.technicals import (
     relative_strength_pct,
     resample_weekly,
     typical_pullback_atr,
+    wilder_averages,
+    worst_day_detail,
 )
 
 # Classic 14-period RSI walkthrough dataset (Wilder's method, as popularized
@@ -541,6 +543,92 @@ class TestTechnicalsProvider(unittest.TestCase):
         self.assertAlmostEqual(
             payload["price"]["high_1y"]["value"], round(expected, 2)
         )
+
+
+class TestFormulaReceipts(unittest.TestCase):
+    """UI receipts (DimensionResult.formulas): formula words + this run's
+    plugged-in inputs, living OUTSIDE the payload so the LLM prompt and
+    the envelope contract stay untouched."""
+
+    def _result(self):
+        bars = _wave_bars(320)
+        index = [Bar(high=1, low=1, close=1000 * (1.0007 ** i))
+                 for i in range(320)]
+        return _full_provider(bars, index).collect("AAPL")
+
+    def test_payload_stays_free_of_formula_keys(self):
+        result = self._result()
+        for group, metrics in result.payload.items():
+            for key, node in metrics.items():
+                self.assertTrue(is_envelope(node), f"{group}.{key}")
+
+    def test_receipt_arithmetic_reproduces_the_published_value(self):
+        result = self._result()
+        cases = {
+            "daily.stretch_50d_atr": lambda i: (
+                (i["close"] - i["sma_50"]) / i["atr_14"]
+            ),
+            "volatility.atr_pct": lambda i: i["atr_14"] / i["close"] * 100,
+            "price.range_pct_1y": lambda i: (
+                (i["close"] - i["low_1y"])
+                / (i["high_1y"] - i["low_1y"]) * 100
+            ),
+            "daily.rsi_14": lambda i: (
+                100 - 100 / (1 + i["avg_gain_14"] / i["avg_loss_14"])
+            ),
+            "risk.worst_day_pct_1y": lambda i: (
+                (i["worst_close"] - i["prev_close"]) / i["prev_close"] * 100
+            ),
+            "relative_strength.rs_3m": lambda i: (
+                i["stock_return_3m"] - i["index_return_3m"]
+            ),
+        }
+        for path, compute in cases.items():
+            receipt = result.formulas[path]
+            group, key = path.split(".")
+            published = metric_value(result.payload[group][key])
+            self.assertAlmostEqual(
+                compute(receipt["inputs"]), published, places=1,
+                msg=path,
+            )
+
+    def test_every_receipt_targets_a_published_metric(self):
+        result = self._result()
+        for path, receipt in result.formulas.items():
+            group, key = path.split(".")
+            self.assertIsNotNone(
+                metric_value(result.payload[group][key]), path
+            )
+            self.assertTrue(receipt["formula"], path)
+            for var, value in receipt["inputs"].items():
+                self.assertIsInstance(value, float, f"{path}:{var}")
+
+    def test_labels_and_meta_get_no_receipt(self):
+        result = self._result()
+        for path in ("weekly.trend", "daily.trend", "daily.momentum",
+                     "regime.regime", "relative_strength.rs_label",
+                     "volatility.atr_trend", "meta.bars_daily",
+                     "price.close"):
+            self.assertNotIn(path, result.formulas)
+
+    def test_no_benchmark_means_no_rs_receipt_not_a_crash(self):
+        result = _full_provider(_wave_bars(320)).collect("AAPL")
+        self.assertNotIn("relative_strength.rs_3m", result.formulas)
+        self.assertIn("daily.stretch_50d_atr", result.formulas)
+
+    def test_wilder_averages_match_the_rsi(self):
+        avg_gain, avg_loss = wilder_averages(WILDER_CLOSES)
+        rsi = 100 - 100 / (1 + avg_gain / avg_loss)
+        self.assertAlmostEqual(rsi, compute_wilder_rsi(WILDER_CLOSES))
+
+    def test_worst_day_detail_names_the_two_closes(self):
+        closes = [100.0]
+        for _ in range(30):
+            closes.append(closes[-1] * 1.01)
+        closes.append(closes[-1] * 0.90)
+        pct, prev_close, worst_close = worst_day_detail(closes)
+        self.assertAlmostEqual(pct, -10.0)
+        self.assertAlmostEqual(worst_close / prev_close - 1.0, -0.10)
 
 
 if __name__ == "__main__":
