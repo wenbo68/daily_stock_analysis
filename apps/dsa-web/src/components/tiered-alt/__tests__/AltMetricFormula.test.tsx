@@ -36,15 +36,25 @@ function makeTechnicals(): TieredDimension {
     },
     formulas: {
       'regime.regime': {
-        formula:
-          'bullish if index_close > index_sma_200 and index_range_pct > 50; '
-          + 'bearish if index_close < index_sma_200 and index_range_pct < 50; else mixed',
+        branches: [
+          { label: 'bullish', condition: 'index_close > index_sma_200 && index_range_pct > 50' },
+          { label: 'bearish', condition: 'index_close < index_sma_200 && index_range_pct < 50' },
+          { label: 'mixed', condition: null },
+        ],
         inputs: { index_close: 6234.5, index_sma_200: 5890.2, index_range_pct: 78 },
       },
       'daily.trend': {
-        formula:
-          'the moving-average check and the pivot structure must agree: '
-          + 'both pointing up → bullish; both pointing down → bearish; else neutral',
+        branches: [
+          {
+            label: 'bullish',
+            condition: 'moving-average check = up && pivot structure = higher highs and lows',
+          },
+          {
+            label: 'bearish',
+            condition: 'moving-average check = down && pivot structure = lower highs and lows',
+          },
+          { label: 'neutral', condition: null },
+        ],
         inputs: { ma_stack: 'mixed', pivot_structure: 'sideways' },
       },
       'daily.rsi_14': {
@@ -114,11 +124,20 @@ describe('AltMetricFormula', () => {
     expect(screen.queryByTestId('alt-metric-formula-as_of')).toBeNull();
   });
 
-  it('substitutes numbers into a numeric rule (regime)', () => {
+  it('renders a numeric rule as one line per outcome, twice (regime)', () => {
     renderTechnicals();
     fireEvent.click(screen.getByTestId('alt-metric-formula-regime'));
     const modal = screen.getByTestId('alt-metric-formula-modal');
-    // Plugged line: the rule with the index numbers in place.
+    // Branch labels appear in the words section AND the plugged section.
+    expect(within(modal).getAllByText('bullish')).toHaveLength(2);
+    expect(within(modal).getAllByText('bearish')).toHaveLength(2);
+    expect(within(modal).getAllByText('mixed')).toHaveLength(2);
+    expect(
+      within(modal).getAllByText(
+        (_, element) => element?.tagName === 'P' && element.textContent === 'mixed: else',
+      ),
+    ).toHaveLength(2);
+    // Plugged lines: the index numbers in place (bullish + bearish rows).
     expect(within(modal).getAllByText('6234.5')).toHaveLength(2);
     expect(within(modal).getAllByText('5890.2')).toHaveLength(2);
     expect(within(modal).getByText('= bullish')).toBeInTheDocument();
@@ -128,9 +147,17 @@ describe('AltMetricFormula', () => {
     renderTechnicals();
     fireEvent.click(screen.getByTestId('alt-metric-formula-trend'));
     const modal = screen.getByTestId('alt-metric-formula-modal');
-    // Rule in words, then "ingredient = value" pairs, then the label.
+    // One line per outcome in words, then "ingredient = value" pairs.
     expect(
-      within(modal).getByText(/must agree/),
+      within(modal).getByText(/moving-average check = up/),
+    ).toBeInTheDocument();
+    expect(
+      within(modal).getByText(/moving-average check = down/),
+    ).toBeInTheDocument();
+    expect(
+      within(modal).getByText(
+        (_, element) => element?.tagName === 'P' && element.textContent === 'neutral: else',
+      ),
     ).toBeInTheDocument();
     expect(within(modal).getByText('moving-average check')).toBeInTheDocument();
     expect(within(modal).getByText('mixed')).toBeInTheDocument();

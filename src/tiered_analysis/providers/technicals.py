@@ -1113,22 +1113,27 @@ class TechnicalsProvider(DimensionProvider):
         atr_then: Optional[float],
     ) -> Dict[str, Any]:
         """UI receipts, keyed "group.key": formula words + this run's
-        plugged-in inputs — the levels-table pattern. Two styles the
-        frontend picks between by inspecting the words: when every input
-        token appears in the words, the plugged line substitutes the
-        numbers in place; otherwise (label rules whose ingredients are
-        words themselves) the plugged line lists "ingredient = value"
-        pairs. Aggregate fields whose ingredients are whole series (a
-        50-close average) get words only, no inputs. A receipt is
-        published only when its metric has a value and every input is
-        present — a partial receipt would show broken arithmetic."""
+        plugged-in inputs — the levels-table pattern. One-outcome
+        formulas ship a "formula" string; rules with several possible
+        outcomes ship "branches" instead — one {label, condition} per
+        outcome, the catch-all with condition None — so the UI renders
+        one line per outcome (owner format 2026-07-28). The frontend
+        picks the plugged-line style by inspecting the words: when every
+        input token appears, numbers substitute in place; otherwise
+        (rules whose ingredients are words themselves) it lists
+        "ingredient = value" pairs. Aggregate fields whose ingredients
+        are whole series (a 50-close average) get words only, no inputs.
+        A receipt is published only when its metric has a value and
+        every input is present — a partial receipt would show broken
+        arithmetic."""
         formulas: Dict[str, Any] = {}
 
         def add(
             path: str,
-            formula: str,
+            formula: Optional[str] = None,
             inputs: Optional[Dict[str, Any]] = None,
             digits: int = 2,
+            branches: Optional[List[Dict[str, Optional[str]]]] = None,
         ) -> None:
             group, key = path.split(".")
             if metric_value(payload.get(group, {}).get(key)) is None:
@@ -1142,14 +1147,25 @@ class TechnicalsProvider(DimensionProvider):
                     if isinstance(value, (int, float))
                     else value
                 )
-            formulas[path] = {"formula": formula, "inputs": plugged}
+            entry: Dict[str, Any] = {"inputs": plugged}
+            if formula is not None:
+                entry["formula"] = formula
+            if branches is not None:
+                entry["branches"] = branches
+            formulas[path] = entry
 
         add(
             "regime.regime",
-            "bullish if index_close > index_sma_200 and "
-            "index_range_pct > 50; bearish if index_close < "
-            "index_sma_200 and index_range_pct < 50; else mixed",
-            bench_receipts.get("regime"),
+            inputs=bench_receipts.get("regime"),
+            branches=[
+                {"label": "bullish",
+                 "condition": "index_close > index_sma_200 && "
+                              "index_range_pct > 50"},
+                {"label": "bearish",
+                 "condition": "index_close < index_sma_200 && "
+                              "index_range_pct < 50"},
+                {"label": "mixed", "condition": None},
+            ],
         )
         add(
             "relative_strength.rs_3m",
@@ -1158,9 +1174,14 @@ class TechnicalsProvider(DimensionProvider):
         )
         add(
             "relative_strength.rs_label",
-            "leader if rs_1m > 0 and rs_3m > 0; "
-            "laggard if rs_1m < 0 and rs_3m < 0; else neutral",
-            bench_receipts.get("rs_label"),
+            inputs=bench_receipts.get("rs_label"),
+            branches=[
+                {"label": "leader",
+                 "condition": "rs_1m > 0 && rs_3m > 0"},
+                {"label": "laggard",
+                 "condition": "rs_1m < 0 && rs_3m < 0"},
+                {"label": "neutral", "condition": None},
+            ],
         )
         close = read_metric(payload, "price", "close")
         atr = read_metric(payload, "volatility", "atr_14")
@@ -1179,15 +1200,20 @@ class TechnicalsProvider(DimensionProvider):
             "price.high_1y",
             f"the highest traded price of the last {YEAR_BARS} daily bars",
         )
-        trend_rule = (
-            "the moving-average check and the pivot structure must "
-            "agree: both pointing up → bullish; both pointing down → "
-            "bearish; else neutral"
-        )
+        trend_branches = [
+            {"label": "bullish",
+             "condition": "moving-average check = up && "
+                          "pivot structure = higher highs and lows"},
+            {"label": "bearish",
+             "condition": "moving-average check = down && "
+                          "pivot structure = lower highs and lows"},
+            {"label": "neutral", "condition": None},
+        ]
         add(
             "weekly.trend",
-            trend_rule,
-            {"ma_stack": weekly_stack, "pivot_structure": weekly_struct},
+            inputs={"ma_stack": weekly_stack,
+                    "pivot_structure": weekly_struct},
+            branches=trend_branches,
         )
         add(
             "weekly.stretch_10w_atr",
@@ -1196,8 +1222,9 @@ class TechnicalsProvider(DimensionProvider):
         )
         add(
             "daily.trend",
-            trend_rule,
-            {"ma_stack": daily_stack, "pivot_structure": daily_struct},
+            inputs={"ma_stack": daily_stack,
+                    "pivot_structure": daily_struct},
+            branches=trend_branches,
         )
         add(
             "daily.sma_50",
@@ -1216,16 +1243,26 @@ class TechnicalsProvider(DimensionProvider):
         )
         add(
             "daily.momentum",
-            f"strong = RSI above {MOMENTUM_RSI_STRONG} with the MACD "
-            "histogram rising and the MACD line above zero; weak = the "
-            f"mirror; fading = RSI above {MOMENTUM_RSI_STRONG} but the "
-            f"histogram falling; basing = RSI below {MOMENTUM_RSI_WEAK} "
-            "but the histogram rising; else neutral",
-            {
+            inputs={
                 "rsi_14": read_metric(payload, "daily", "rsi_14"),
                 "macd_hist": macd_hist_direction,
                 "macd_line": macd_line,
             },
+            branches=[
+                {"label": "strong",
+                 "condition": f"RSI > {MOMENTUM_RSI_STRONG} && "
+                              "MACD histogram rising && MACD line > 0"},
+                {"label": "weak",
+                 "condition": f"RSI < {MOMENTUM_RSI_WEAK} && "
+                              "MACD histogram falling && MACD line < 0"},
+                {"label": "fading",
+                 "condition": f"RSI > {MOMENTUM_RSI_STRONG} && "
+                              "MACD histogram falling"},
+                {"label": "basing",
+                 "condition": f"RSI < {MOMENTUM_RSI_WEAK} && "
+                              "MACD histogram rising"},
+                {"label": "neutral", "condition": None},
+            ],
         )
         if rsi_parts is not None and rsi_parts[1] > 0:
             add(
@@ -1247,10 +1284,16 @@ class TechnicalsProvider(DimensionProvider):
         )
         add(
             "volatility.atr_trend",
-            f"expanding if atr_14 > {1 + ATR_TREND_BAND:.2f} × "
-            f"atr_20_bars_ago; contracting if atr_14 < "
-            f"{1 - ATR_TREND_BAND:.2f} × atr_20_bars_ago; else stable",
-            {"atr_14": atr, "atr_20_bars_ago": atr_then},
+            inputs={"atr_14": atr, "atr_20_bars_ago": atr_then},
+            branches=[
+                {"label": "expanding",
+                 "condition": f"atr_14 > {1 + ATR_TREND_BAND:.2f} × "
+                              "atr_20_bars_ago"},
+                {"label": "contracting",
+                 "condition": f"atr_14 < {1 - ATR_TREND_BAND:.2f} × "
+                              "atr_20_bars_ago"},
+                {"label": "stable", "condition": None},
+            ],
         )
         add(
             "volume.avg_vol_60d",

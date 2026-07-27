@@ -10,15 +10,23 @@ export type TieredCitation = {
 };
 
 // Technicals v2 UI receipt (2026-07-28): how a derived payload metric was
-// computed — formula words plus this run's inputs, the same shape as
-// TieredLevelDetail's formula/inputs pair. Keyed by "group.key" (e.g.
-// "daily.rsi_14"). Three sub-shapes, told apart by inspecting the words:
-// every input token appears in the words → substitution style (numbers
-// plug in place); tokens absent → listed style ("ingredient = value"
-// pairs — label rules whose ingredients are words, like ma_stack = up);
-// empty inputs → words-only (aggregates over a whole series).
+// computed, keyed by "group.key" (e.g. "daily.rsi_14"). One-outcome
+// formulas carry a `formula` string; rules with several possible outcomes
+// carry `branches` — one {label, condition} line per outcome, the
+// catch-all with condition null. The plugged-line style is told apart by
+// inspecting the words: every input token appears → substitution (numbers
+// plug in place); tokens absent → listed ("ingredient = value" pairs —
+// rules whose ingredients are words, like ma_stack = up); empty inputs →
+// words-only (aggregates over a whole series).
+export type TieredMetricBranch = {
+  label: string;
+  /** null = the catch-all ("else") branch. */
+  condition: string | null;
+};
+
 export type TieredMetricFormula = {
-  formula: string;
+  formula?: string | null;
+  branches?: TieredMetricBranch[] | null;
   inputs: Record<string, number | string>;
 };
 

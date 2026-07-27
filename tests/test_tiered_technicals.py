@@ -599,9 +599,34 @@ class TestFormulaReceipts(unittest.TestCase):
             self.assertIsNotNone(
                 metric_value(result.payload[group][key]), path
             )
-            self.assertTrue(receipt["formula"], path)
+            self.assertTrue(
+                receipt.get("formula") or receipt.get("branches"), path
+            )
             for var, value in receipt["inputs"].items():
                 self.assertIsInstance(value, (float, str), f"{path}:{var}")
+
+    def test_multi_outcome_rules_ship_branches(self):
+        # Owner format 2026-07-28: rules with several possible outcomes
+        # render one line per outcome — the receipt ships them as
+        # {label, condition} branches, catch-all (condition None) last,
+        # and the published label is always one of the branch labels.
+        result = self._result()
+        for path in ("regime.regime", "relative_strength.rs_label",
+                     "weekly.trend", "daily.trend", "daily.momentum",
+                     "volatility.atr_trend"):
+            receipt = result.formulas[path]
+            branches = receipt["branches"]
+            self.assertNotIn("formula", receipt, path)
+            self.assertGreaterEqual(len(branches), 3, path)
+            self.assertIsNone(branches[-1]["condition"], path)
+            for branch in branches[:-1]:
+                self.assertTrue(branch["condition"], path)
+            group, key = path.split(".")
+            self.assertIn(
+                metric_value(result.payload[group][key]),
+                [branch["label"] for branch in branches],
+                path,
+            )
 
     def test_raw_facts_and_meta_get_no_receipt(self):
         result = self._result()
