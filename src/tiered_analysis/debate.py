@@ -87,6 +87,7 @@ from .llm_support import (
     parse_llm_json,
 )
 from .providers.base import DimensionResult
+from .providers.technicals import is_envelope
 from .schema import Direction, TierReport
 
 #: Verdict bands on the 2-decimal final score (owner spec).
@@ -193,6 +194,10 @@ class DebateResult:
 
 
 def _leaf_count(node: Any) -> int:
+    # A {name, explanation, value} envelope is ONE citable fact, not
+    # three: its prose keys must not inflate the per-dimension ceilings.
+    if is_envelope(node):
+        return 1
     if isinstance(node, dict):
         return sum(_leaf_count(value) for value in node.values())
     return 1
@@ -211,7 +216,12 @@ def max_items_per_dimension(dimensions: Sequence[DimensionResult]) -> Dict[str, 
 
 
 def _payload_value(ref: str, dimensions: Sequence[DimensionResult]) -> Tuple[bool, Any]:
-    """(resolves-to-a-leaf, value) for a ``dimension.key[.subkey…]`` ref."""
+    """(resolves-to-a-leaf, value) for a ``dimension.key[.subkey…]`` ref.
+
+    A ref that lands on a {name, explanation, value} envelope resolves to
+    its ``value`` — the envelope path IS the citable leaf; its prose keys
+    are documentation, not separately citable facts.
+    """
     parts = ref.split(".")
     if len(parts) < 2:
         return False, None
@@ -225,6 +235,8 @@ def _payload_value(ref: str, dimensions: Sequence[DimensionResult]) -> Tuple[boo
                 node = None
                 break
             node = node[segment]
+        if is_envelope(node):
+            node = node.get("value")
         if node is not None and not isinstance(node, dict):
             return True, node
     return False, None
@@ -302,9 +314,11 @@ _LINK_RULES = """Link rules (all checked mechanically by code):
   displayed string exactly: if the report shows 56.28, write 56.28,
   never 56.3 or 56.280. Write values as plain numbers in the sentence —
   do not wrap them in quotation marks.
-- A "ref" must point at ONE exact value, like "technicals.rsi_14" —
-  grouping paths ("technicals.macd" when it holds sub-values) are
-  rejected; cite the leaf ("technicals.macd.hist").
+- A "ref" must point at ONE exact value, like "technicals.daily.rsi_14"
+  — grouping paths ("technicals.daily" when it holds sub-fields) are
+  rejected; cite the field ("technicals.daily.rsi_14"). A technicals
+  field is {"name", "explanation", "value"}: cite the FIELD path, never
+  ".value"/".name" — the ref resolves to the value automatically.
 - Code verifies every link and sends failures back to you to fix;
   bullets that cannot be fixed are struck from the list.
 - Use only the evidence above; never invent facts or numbers."""
@@ -357,7 +371,7 @@ _LIST_RULES = """Evidence-list rules:
 
 _ITEM_SHAPE = """{{"id": "T1", "dimension": "technicals", "direction": "bullish",
   "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
-  "links": [{{"ref": "technicals.rsi_14", "value": "56.28"}}],
+  "links": [{{"ref": "technicals.daily.rsi_14", "value": "56.28"}}],
   "weight": 3, "weight_reason": "Momentum backs the trend but rarely drives it alone."}}"""
 
 _LISTER1_TEMPLATE = """{context}
@@ -470,7 +484,7 @@ Vote on the bullet in front of you, not on the stock.
 {vote_rules}
 
 Reply with JSON only:
-{{"votes": {{"T2": {{"verdict": "invalid", "reason": "why it is flawed", "links": [{{"ref": "technicals.close", "value": "100"}}], "weight": 3, "weight_reason": "why it matters this much"}}}}}}
+{{"votes": {{"T2": {{"verdict": "invalid", "reason": "why it is flawed", "links": [{{"ref": "technicals.price.close", "value": "100"}}], "weight": 3, "weight_reason": "why it matters this much"}}}}}}
 "votes" must cover exactly these bullet ids: {check_ids}."""
 
 _DECIDER_TEMPLATE = """{context}
@@ -517,7 +531,7 @@ only. Never use the words "verdict", "buy", "hold" or "sell" — describe
 the outlook as bullish, neutral or bearish:
 {{"summary": [{{"text": "one short plain sentence", "links": [], "children": []}}],
  "technicals": [{{"text": "The 14-day RSI (56.28) is above 50.",
-   "links": [{{"ref": "technicals.rsi_14", "value": "56.28"}}],
+   "links": [{{"ref": "technicals.daily.rsi_14", "value": "56.28"}}],
    "children": [{{"text": "optional supporting detail", "links": []}}]}}],
  "fundamentals": [], "positioning": [], "macro_econ": []}}
 

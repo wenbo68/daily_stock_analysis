@@ -86,3 +86,32 @@ export function flashElement(id: string): boolean {
 export function jumpToMetric(refPath: string): boolean {
   return flashElement(metricAnchorId(refPath));
 }
+
+// Jump to the first path that exists on the page. Warning sentences use
+// this to point at a metric whose payload path moved across payload
+// versions (e.g. technicals.atr_14 → technicals.volatility.atr_14): the
+// stored run decides which row exists, so trying in order is exact.
+export function jumpToMetricFirst(refPaths: string[]): boolean {
+  return refPaths.some((refPath) => jumpToMetric(refPath));
+}
+
+// The technicals v2 payload wraps every metric as {name, explanation,
+// value} so the LLM and API consumers read what a number means. The UI
+// unwraps to the value and keeps its own i18n labels (metricLabels).
+export interface MetricEnvelope {
+  name: string;
+  explanation: string;
+  value: unknown;
+}
+
+export function isMetricEnvelope(node: unknown): node is MetricEnvelope {
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+    return false;
+  }
+  const keys = Object.keys(node as Record<string, unknown>).sort();
+  return keys.length === 3 && keys[0] === 'explanation' && keys[1] === 'name' && keys[2] === 'value';
+}
+
+export function metricValue(node: unknown): unknown {
+  return isMetricEnvelope(node) ? node.value : node;
+}

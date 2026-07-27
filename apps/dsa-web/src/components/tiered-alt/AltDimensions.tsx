@@ -2,7 +2,13 @@ import type { ReactNode } from 'react';
 import type { TieredCoverage, TieredDimension } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
-import { dedupeCitations, formatValue, metricAnchorId } from '../tiered/termHelpers';
+import {
+  dedupeCitations,
+  formatValue,
+  isMetricEnvelope,
+  metricAnchorId,
+  metricValue,
+} from '../tiered/termHelpers';
 import { MetricTerm } from '../tiered/terms';
 import { ALT_LINK } from './altStyles';
 import { AltCard, AltNarrative, AltNotesButton } from './AltUi';
@@ -17,10 +23,11 @@ const DIMENSION_LABEL_KEYS: Record<string, UiTextKey> = {
 };
 
 // Named sections for payloads the backend sends (partly) flat, so every
-// number sits under a heading. Every current technicals key is mapped
-// (owner decision 2026-07-21: no "Other" group on real data) — the
-// trailing Other section survives only as a crash-guard for future keys
-// the backend adds before this map learns them.
+// number sits under a heading. The technicals map now serves STORED
+// runs only: v2 runs (2026-07-27) ship nested groups of envelopes, so
+// every v2 key flows through the nested-group path below and takes its
+// section title from its own group key. The trailing Other section
+// survives only as a crash-guard for future keys.
 const DIMENSION_SECTIONS: Record<string, { titleKey: UiTextKey; keys: string[] }[]> = {
   technicals: [
     {
@@ -62,8 +69,15 @@ const DIMENSION_SECTIONS: Record<string, { titleKey: UiTextKey; keys: string[] }
   ],
 };
 
+// A nested display group — but never a v2 metric envelope, which is one
+// metric (rendered as a single row), not a group of three.
 function isGroup(values: unknown): values is Record<string, unknown> {
-  return values !== null && typeof values === 'object' && !Array.isArray(values);
+  return (
+    values !== null &&
+    typeof values === 'object' &&
+    !Array.isArray(values) &&
+    !isMetricEnvelope(values)
+  );
 }
 
 interface PayloadSection {
@@ -187,12 +201,14 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
           <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
             {section.entries.map(([key, values]) =>
               isGroup(values) ? (
+                // v2 envelope leaves unwrap to their value; the anchor id
+                // stays the envelope path (what citations reference).
                 Object.entries(values).map(([subKey, value]) => (
                   <MetricRow
                     key={`${key}.${subKey}`}
                     anchorPath={`${dimension}.${key}.${subKey}`}
                     term={subKey}
-                    value={value}
+                    value={metricValue(value)}
                     date={dates?.[subKey]}
                     dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${subKey}`}
                   />
@@ -202,7 +218,7 @@ const AltPayloadTable = ({ dimension, payload }: AltPayloadTableProps) => {
                   key={key}
                   anchorPath={`${dimension}.${key}`}
                   term={key}
-                  value={values}
+                  value={metricValue(values)}
                   date={dates?.[key]}
                   dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${key}`}
                 />

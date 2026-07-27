@@ -4,11 +4,13 @@
 Formulas under test are documented in docs/tiered-analysis-formulas.md:
 ideal entry = min(close, max(support candidates)); stop = ideal - 2*ATR;
 target = min(ideal + R*(ideal - stop), nearest overhead resistance) with
-R the user's chosen reward-to-risk ratio (default 2). The trend gate
-(close must sit above sma_60) voids the plan; a resistance-capped ratio
-below R only warns — the old 1.5 room gate no longer voids anything
-(owner decision 2026-07-22: always give a plan). The backup entry is
-retired. AI adjustments must stay within +/-1 ATR and keep ordering.
+R the user's chosen reward-to-risk ratio (default 2). v2 anchors
+(technicals redesign 2026-07-27): supports are sma_50 / sma_200 /
+support_1 (nearest pivot low), resistances are resistance_1 / high_1y,
+and the trend warning compares the close to the 50-day average. A
+resistance-capped ratio below R only warns (owner decision 2026-07-22:
+always give a plan). AI adjustments must stay within +/-1 ATR and keep
+ordering.
 """
 from __future__ import annotations
 
@@ -31,8 +33,28 @@ from src.tiered_analysis.providers.base import (
 )
 
 
+def _env(value):
+    return {"name": "n", "explanation": "e", "value": value}
+
+
+def _v2_payload(**overrides):
+    """A minimal v2 technicals payload with the level anchors."""
+    values = dict(close=100.0, sma_50=96.0, sma_200=90.0, support_1=94.0,
+                  atr_14=3.0, resistance_1=None, high_1y=None)
+    values.update(overrides)
+    return {
+        "price": {"close": _env(values["close"]),
+                  "high_1y": _env(values["high_1y"])},
+        "daily": {"sma_50": _env(values["sma_50"]),
+                  "sma_200": _env(values["sma_200"])},
+        "volatility": {"atr_14": _env(values["atr_14"])},
+        "levels": {"support_1": _env(values["support_1"]),
+                   "resistance_1": _env(values["resistance_1"])},
+    }
+
+
 def _bases(**overrides):
-    inputs = dict(close=100.0, sma_20=96.0, sma_60=90.0, swing_low=94.0, atr=3.0)
+    inputs = dict(close=100.0, sma_50=96.0, sma_200=90.0, support_1=94.0, atr=3.0)
     inputs.update(overrides)
     return compute_base_levels(**inputs)
 
@@ -55,15 +77,15 @@ class TestComputeBaseLevels(unittest.TestCase):
         bases = _bases()
         self.assertIn("support candidates", bases.entry.formula)
         self.assertAlmostEqual(bases.entry.inputs["close"], 100.0)
-        self.assertAlmostEqual(bases.entry.inputs["sma_20"], 96.0)
+        self.assertAlmostEqual(bases.entry.inputs["sma_50"], 96.0)
         self.assertAlmostEqual(bases.stop_loss.inputs["atr_14"], 3.0)
 
-    def test_missing_sma20_uses_swing_low(self):
-        bases = _bases(sma_20=None)
+    def test_missing_sma50_uses_pivot_support(self):
+        bases = _bases(sma_50=None)
         self.assertAlmostEqual(bases.entry.value, 94.0)
 
     def test_no_structural_supports_means_no_levels_with_warning(self):
-        bases = _bases(sma_20=None, sma_60=None, swing_low=None)
+        bases = _bases(sma_50=None, sma_200=None, support_1=None)
         self.assertIsNone(bases.entry)
         self.assertIsNone(bases.take_profit)
         self.assertTrue(any("support" in w.lower() for w in bases.warnings))
@@ -83,7 +105,7 @@ class TestComputeBaseLevels(unittest.TestCase):
         # Resistance at 106 (> close 100) caps the 108 geometric target:
         # ratio (106-96)/6 = 1.67 clears the 1.5 floor but misses the 2x
         # goal -> plan stands with a "reward below goal" warning.
-        bases = _bases(swing_high_20=106.0)
+        bases = _bases(resistance_1=106.0)
         self.assertAlmostEqual(bases.take_profit.value, 106.0)
         self.assertTrue(any("below" in w and "goal" in w for w in bases.warnings))
 
@@ -99,25 +121,25 @@ class TestTrendAndRoomGates(unittest.TestCase):
     def test_downtrend_still_issues_a_plan_with_a_trend_warning(self):
         # Owner decision 2026-07-24: the trend gate no longer voids the
         # plan — the warning row carries the judgment, the user decides.
-        bases = _bases(close=89.0)  # close <= sma_60 (90)
+        bases = _bases(close=89.0)  # close <= sma_50 (96)
         self.assertIsNotNone(bases.entry)
         self.assertIsNotNone(bases.take_profit)
         self.assertTrue(any("trend warning" in w for w in bases.warnings))
 
-    def test_trend_boundary_close_equal_sma60_is_downtrend(self):
-        bases = _bases(close=90.0, sma_20=89.0, swing_low=88.0)
+    def test_trend_boundary_close_equal_sma50_is_downtrend(self):
+        bases = _bases(close=96.0)  # close == sma_50 exactly
         self.assertIsNotNone(bases.entry)
         self.assertTrue(any("trend warning" in w for w in bases.warnings))
 
-    def test_missing_sma60_skips_trend_check_with_warning(self):
-        bases = _bases(sma_60=None)
+    def test_missing_sma50_skips_trend_check_with_warning(self):
+        bases = _bases(sma_50=None)
         self.assertIsNotNone(bases.entry)
         self.assertTrue(any("trend check skipped" in w for w in bases.warnings))
 
     def test_overhead_resistance_caps_target(self):
         # entry 96, stop 90, geometric target 108; nearest resistance 106
         # (above close 100) caps it: R:R = 10/6 = 1.67 >= 1.5 -> plan stands.
-        bases = _bases(swing_high_20=106.0)
+        bases = _bases(resistance_1=106.0)
         self.assertAlmostEqual(bases.take_profit.value, 106.0)
         self.assertIn("resistance", bases.take_profit.formula)
         self.assertAlmostEqual(bases.take_profit.inputs["geometric_target"], 108.0)
@@ -126,22 +148,22 @@ class TestTrendAndRoomGates(unittest.TestCase):
         # Resistance at 104: capped R:R = (104-96)/6 = 1.33, below the
         # user's 2x goal — the plan stands and a warning says so (the old
         # 1.5 room gate no longer voids the plan).
-        bases = _bases(swing_high_20=104.0)
+        bases = _bases(resistance_1=104.0)
         self.assertIsNotNone(bases.entry)
         self.assertAlmostEqual(bases.take_profit.value, 104.0)
         self.assertTrue(any("reward below goal" in w for w in bases.warnings))
 
     def test_resistance_below_close_is_ignored(self):
         # A "resistance" the price already broke through is not overhead.
-        bases = _bases(swing_high_20=99.0)
+        bases = _bases(resistance_1=99.0)
         self.assertAlmostEqual(bases.take_profit.value, 108.0)
 
     def test_nearest_of_several_resistances_wins(self):
-        bases = _bases(swing_high_20=107.0, swing_high_60=112.0, high_52w=120.0)
+        bases = _bases(resistance_1=107.0, high_1y=120.0)
         self.assertAlmostEqual(bases.take_profit.value, 107.0)
 
     def test_no_overhead_resistance_keeps_geometric_target(self):
-        bases = _bases(high_52w=100.0)  # at the 52w high: open air above
+        bases = _bases(high_1y=100.0)  # at the 1y high: open air above
         self.assertAlmostEqual(bases.take_profit.value, 108.0)
         self.assertNotIn("resistance", bases.take_profit.formula)
 
@@ -279,19 +301,13 @@ class TestBasesFromDimensions(unittest.TestCase):
             payload=payload,
         )
 
-    def test_extracts_inputs_from_technicals_payload(self):
-        dim = self._technicals(
-            {"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
-             "swing_low_20": 94.0, "atr_14": 3.0}
-        )
+    def test_extracts_inputs_from_v2_envelope_payload(self):
+        dim = self._technicals(_v2_payload())
         bases = bases_from_dimensions([dim])
         self.assertAlmostEqual(bases.entry.value, 96.0)
 
     def test_extracts_resistance_inputs_from_payload(self):
-        dim = self._technicals(
-            {"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
-             "swing_low_20": 94.0, "atr_14": 3.0, "swing_high_20": 106.0}
-        )
+        dim = self._technicals(_v2_payload(resistance_1=106.0))
         bases = bases_from_dimensions([dim])
         self.assertAlmostEqual(bases.take_profit.value, 106.0)
 

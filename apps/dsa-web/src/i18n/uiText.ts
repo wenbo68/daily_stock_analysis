@@ -1246,6 +1246,10 @@ const zh = {
   'tiered.alt.warnTitle': '{level}：警告',
   'tiered.alt.warn.downtrend':
     '收盘价（{close}）不高于 60 日均线（{sma60}）——股票处于中期下行趋势，此时入场是逆势买入，进一步下跌的风险更高。',
+  'tiered.alt.warn.downtrend_50':
+    '收盘价（{close}）不高于 50 日均线（{sma50}）——股票处于中期下行趋势，此时入场是逆势买入，进一步下跌的风险更高。',
+  'tiered.alt.warn.earnings_soon':
+    '距下次财报仅 {days} 天（{date}），在典型波段持仓期内。技术面判断扛不住财报：一次公告就可能让价格跳空越过任何止损。建议财报前离场，或按跳空风险缩小仓位。',
   'tiered.alt.warn.gap_atr':
     '若隔夜消息导致跳空低开，开盘价比止损（{stop}）再低 1 个 ATR（{atr}），落在 {atrOpen}——止损单会在该价成交，亏损 {atrLoss}，比计划的 {planned} 多亏 {atrExtra}。',
   'tiered.alt.warn.gap_worst':
@@ -1261,6 +1265,7 @@ const zh = {
   'tiered.alt.f.target': '目标价',
   // 每条风险文案开头的固定关键词（由代码根据检查项 id 决定，非 AI 生成）。
   'tiered.alt.warnKey.downtrend': '逆势',
+  'tiered.alt.warnKey.earnings_soon': '财报临近',
   'tiered.alt.warnKey.gap_atr': '隔夜跳空',
   'tiered.alt.warnKey.gap_worst': '最差单日',
   'tiered.alt.warnKey.reward_below_goal': '盈亏比',
@@ -1268,6 +1273,7 @@ const zh = {
   'tiered.alt.checkKey.liquidity': '流动性',
   'tiered.alt.checkKey.volatility': '波动',
   'tiered.alt.checkKey.stop_vs_swing_low': '摆动低点',
+  'tiered.alt.checkKey.stop_vs_support': '支撑位',
   'tiered.alt.reviewFail.title': '为什么维持原计算值',
   'tiered.alt.reviewFail.intro':
     'AI 尝试调整了这份方案，但每次调整后仍有风控检查未通过，因此放弃全部调整，维持按公式计算的方案。',
@@ -2776,6 +2782,10 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.warnTitle': '{level}: warnings',
   'tiered.alt.warn.downtrend':
     'The close ({close}) is at or below its 60-day average ({sma60}) — the stock is in a medium-term downtrend, so entering here is buying against the trend and carries extra risk of further downside.',
+  'tiered.alt.warn.downtrend_50':
+    'The close ({close}) is at or below its 50-day average ({sma50}) — the stock is in a medium-term downtrend, so entering here is buying against the trend and carries extra risk of further downside.',
+  'tiered.alt.warn.earnings_soon':
+    'The next earnings report is {days} day(s) away ({date}) — inside a typical swing hold. Technicals do not survive earnings: one announcement can gap the price past any stop. Plan to exit before the report, or size for the gap.',
   'tiered.alt.warn.gap_atr':
     'If overnight news gaps the open 1 ATR ({atr}) below your stop ({stop}), it opens at {atrOpen}; the stop order sells there — a {atrLoss} loss, {atrExtra} more than the {planned} you planned.',
   'tiered.alt.warn.gap_worst':
@@ -2793,6 +2803,7 @@ const en: Record<UiTextKey, string> = {
   // The fixed keyword each risk line opens with (code-picked from the
   // check id, never AI-written).
   'tiered.alt.warnKey.downtrend': 'Downtrend',
+  'tiered.alt.warnKey.earnings_soon': 'Earnings',
   'tiered.alt.warnKey.gap_atr': 'Overnight gap',
   'tiered.alt.warnKey.gap_worst': 'Worst-day gap',
   'tiered.alt.warnKey.reward_below_goal': 'Reward ratio',
@@ -2800,6 +2811,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.checkKey.liquidity': 'Liquidity',
   'tiered.alt.checkKey.volatility': 'Volatility',
   'tiered.alt.checkKey.stop_vs_swing_low': 'Swing low',
+  'tiered.alt.checkKey.stop_vs_support': 'Support',
   'tiered.alt.reviewFail.title': 'Why the plan keeps its computed numbers',
   'tiered.alt.reviewFail.intro':
     'The AI tried adjusting this plan, but every attempt still tripped a risk check, so all adjustments were discarded and the formula-computed plan stands.',

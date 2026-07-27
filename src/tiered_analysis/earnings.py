@@ -131,3 +131,19 @@ def earnings_warning(info: EarningsInfo) -> Optional[str]:
         "expect turbulence around the report; a single announcement can gap "
         "the price far past any stop"
     )
+
+
+def earnings_from_dimensions(dimensions: Any) -> EarningsInfo:
+    """The next earnings date the fundamentals provider already fetched
+    (no second network call). Shared by the run-detail block and the
+    plan review's earnings gate (2026-07-27) so both read one source."""
+    for dim in dimensions:
+        if getattr(dim, "dimension", None) == "fundamentals" and dim.payload:
+            date = dim.payload.get("next_earnings_date")
+            days = dim.payload.get("days_until_earnings")
+            if isinstance(date, str) and date:
+                return EarningsInfo(
+                    next_date=date,
+                    days_until=days if isinstance(days, int) else None,
+                )
+    return EarningsInfo(note="no upcoming earnings date found")

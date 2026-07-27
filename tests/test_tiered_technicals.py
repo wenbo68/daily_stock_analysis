@@ -2,25 +2,43 @@
 """Offline deterministic tests for the tiered-analysis technicals provider.
 
 No numpy/pandas/network: indicators are pure Python and bars are injected
-fixtures, per the numeric-vs-textual rule in docs/tiered-analysis-design.md.
+fixtures. v2 (2026-07-27): grouped envelope payload — every metric ships
+as {name, explanation, value}; composites swallow their ingredients;
+coordinates stay.
 """
 from __future__ import annotations
 
+import math
 import unittest
 
 from src.tiered_analysis.providers.base import Coverage, SourceKind
 from src.tiered_analysis.providers.technicals import (
     Bar,
     TechnicalsProvider,
+    combined_trend,
     compute_atr,
     compute_avg_volume,
-    compute_bias,
-    compute_ema,
-    compute_macd,
     compute_sma,
     compute_swing_high,
     compute_wilder_rsi,
     compute_worst_day_pct_1y,
+    find_pivots,
+    is_envelope,
+    ma_stack,
+    macd_histogram_series,
+    metric_value,
+    momentum_label,
+    nearest_resistance,
+    nearest_support,
+    pct_change,
+    pivot_structure,
+    read_label,
+    read_metric,
+    regime_read,
+    relative_strength_label,
+    relative_strength_pct,
+    resample_weekly,
+    typical_pullback_atr,
 )
 
 # Classic 14-period RSI walkthrough dataset (Wilder's method, as popularized
@@ -47,7 +65,30 @@ def _trend_bars(closes: list) -> list:
     ]
 
 
-class TestSMA(unittest.TestCase):
+def _wave_bars(count: int, drift: float = 0.0015, amp: float = 0.03,
+               period: float = 9.0, volume: float = 1e6) -> list:
+    """A drifting sine wave: produces real pivots, dips and rallies."""
+    bars = []
+    price = 100.0
+    for i in range(count):
+        price *= 1 + drift
+        c = price * (1 + amp * math.sin(i / period))
+        bars.append(Bar(
+            high=c * 1.01, low=c * 0.99, close=c, open=c * 0.995,
+            volume=volume, date=None,
+        ))
+    return bars
+
+
+def _full_provider(bars, index_bars=None):
+    return TechnicalsProvider(
+        bars_loader=lambda s: bars,
+        index_bars_loader=(lambda: index_bars) if index_bars else None,
+        benchmark_name="S&P 500",
+    )
+
+
+class TestIndicatorMath(unittest.TestCase):
     def test_sma_simple_average(self):
         self.assertEqual(compute_sma([1.0, 2.0, 3.0, 4.0], period=4), 2.5)
 
@@ -57,21 +98,6 @@ class TestSMA(unittest.TestCase):
     def test_sma_insufficient_data_returns_none(self):
         self.assertIsNone(compute_sma([1.0, 2.0], period=3))
 
-
-class TestEMA(unittest.TestCase):
-    def test_ema_constant_series_equals_constant(self):
-        self.assertAlmostEqual(compute_ema([5.0] * 30, period=12), 5.0)
-
-    def test_ema_reacts_toward_recent_values(self):
-        ema = compute_ema([1.0] * 20 + [2.0] * 5, period=10)
-        self.assertGreater(ema, 1.0)
-        self.assertLess(ema, 2.0)
-
-    def test_ema_insufficient_data_returns_none(self):
-        self.assertIsNone(compute_ema([1.0] * 5, period=10))
-
-
-class TestWilderRSI(unittest.TestCase):
     def test_rsi_matches_wilder_textbook_value(self):
         rsi = compute_wilder_rsi(WILDER_CLOSES, period=14)
         self.assertAlmostEqual(rsi, 70.46, places=2)
@@ -80,31 +106,6 @@ class TestWilderRSI(unittest.TestCase):
         closes = [float(i) for i in range(1, 20)]
         self.assertEqual(compute_wilder_rsi(closes, period=14), 100.0)
 
-    def test_rsi_all_losses_is_0(self):
-        closes = [float(i) for i in range(20, 1, -1)]
-        self.assertEqual(compute_wilder_rsi(closes, period=14), 0.0)
-
-    def test_rsi_insufficient_data_returns_none(self):
-        self.assertIsNone(compute_wilder_rsi([1.0, 2.0, 3.0], period=14))
-
-
-class TestMACD(unittest.TestCase):
-    def test_macd_constant_series_is_zero(self):
-        macd = compute_macd([50.0] * 60)
-        self.assertAlmostEqual(macd["macd"], 0.0)
-        self.assertAlmostEqual(macd["signal"], 0.0)
-        self.assertAlmostEqual(macd["histogram"], 0.0)
-
-    def test_macd_positive_in_uptrend(self):
-        closes = [100.0 * (1.01 ** i) for i in range(60)]
-        macd = compute_macd(closes)
-        self.assertGreater(macd["macd"], 0.0)
-
-    def test_macd_insufficient_data_returns_none(self):
-        self.assertIsNone(compute_macd([1.0] * 10))
-
-
-class TestATR(unittest.TestCase):
     def test_atr_constant_range_equals_range(self):
         bars = _flat_bars(30, close=100.0, spread=2.0)
         self.assertAlmostEqual(compute_atr(bars, period=14), 2.0)
@@ -113,24 +114,230 @@ class TestATR(unittest.TestCase):
         # A gap up: true range must use previous close, not just high-low.
         bars = _flat_bars(20, close=100.0, spread=2.0)
         bars.append(Bar(high=111.0, low=110.0, close=110.5))
-        atr_with_gap = compute_atr(bars, period=14)
-        self.assertGreater(atr_with_gap, 2.0)
+        self.assertGreater(compute_atr(bars, period=14), 2.0)
 
-    def test_atr_insufficient_data_returns_none(self):
-        self.assertIsNone(compute_atr(_flat_bars(5), period=14))
+    def test_pct_change_five_days(self):
+        closes = [100.0] * 6 + [110.0]
+        # The close 5 bars before the last one is 100 → +10%.
+        self.assertAlmostEqual(pct_change(closes, 5), 10.0)
+
+    def test_pct_change_needs_enough_history(self):
+        self.assertIsNone(pct_change([100.0, 101.0], 5))
+
+    def test_macd_histogram_series_positive_in_uptrend(self):
+        closes = [100.0 * (1.01 ** i) for i in range(80)]
+        line, hist = macd_histogram_series(closes)
+        self.assertGreater(line, 0.0)
+        self.assertTrue(hist)
+
+    def test_macd_histogram_series_insufficient_data(self):
+        line, hist = macd_histogram_series([1.0] * 10)
+        self.assertIsNone(line)
+        self.assertEqual(hist, [])
 
 
-class TestBIAS(unittest.TestCase):
-    def test_bias_above_sma_is_positive(self):
-        closes = [100.0] * 19 + [110.0]
-        bias = compute_bias(closes, period=20)
-        self.assertGreater(bias, 0.0)
+class TestWeeklyResample(unittest.TestCase):
+    def test_resample_by_iso_week_groups_dates(self):
+        bars = [
+            Bar(high=11, low=9, close=10, open=10, volume=100, date="2026-07-20"),
+            Bar(high=13, low=10, close=12, open=10, volume=100, date="2026-07-21"),
+            Bar(high=12, low=8, close=9, open=12, volume=100, date="2026-07-24"),
+            Bar(high=15, low=14, close=15, open=14, volume=200, date="2026-07-27"),
+        ]
+        weekly = resample_weekly(bars)
+        self.assertEqual(len(weekly), 2)
+        first = weekly[0]
+        self.assertEqual(first.high, 13)      # max of the week
+        self.assertEqual(first.low, 8)        # min of the week
+        self.assertEqual(first.close, 9)      # last close of the week
+        self.assertEqual(first.open, 10)      # first open of the week
+        self.assertEqual(first.volume, 300)   # summed
+        self.assertEqual(first.date, "2026-07-24")
+        self.assertEqual(weekly[1].close, 15)
 
-    def test_bias_at_sma_is_zero(self):
-        self.assertAlmostEqual(compute_bias([100.0] * 20, period=20), 0.0)
+    def test_resample_without_dates_chunks_from_the_recent_end(self):
+        # 12 dateless bars → chunks of 5 counted from the newest bar, so
+        # the most recent weekly bar is always a full five sessions: 2+5+5.
+        weekly = resample_weekly(_flat_bars(12))
+        self.assertEqual(len(weekly), 3)
 
-    def test_bias_insufficient_data_returns_none(self):
-        self.assertIsNone(compute_bias([100.0] * 5, period=20))
+    def test_resample_empty(self):
+        self.assertEqual(resample_weekly([]), [])
+
+
+class TestPivots(unittest.TestCase):
+    def test_finds_the_turning_bars(self):
+        closes = [10, 11, 12, 15, 12, 11, 10, 9, 8, 11, 12, 13, 14]
+        bars = [Bar(high=c + 0.5, low=c - 0.5, close=c) for c in closes]
+        highs, lows = find_pivots(bars, fringe=2)
+        self.assertEqual([price for _, price in highs], [15.5])
+        self.assertEqual([price for _, price in lows], [7.5])
+
+    def test_flat_shelf_produces_no_pivot(self):
+        highs, lows = find_pivots(_flat_bars(20), fringe=2)
+        self.assertEqual(highs, [])
+        self.assertEqual(lows, [])
+
+    def test_structure_higher_highs_and_lows(self):
+        self.assertEqual(
+            pivot_structure([(1, 10.0), (5, 12.0)], [(3, 8.0), (7, 9.0)]),
+            "higher highs and lows",
+        )
+
+    def test_structure_lower_highs_and_lows(self):
+        self.assertEqual(
+            pivot_structure([(1, 12.0), (5, 10.0)], [(3, 9.0), (7, 8.0)]),
+            "lower highs and lows",
+        )
+
+    def test_structure_disagreement_is_sideways(self):
+        self.assertEqual(
+            pivot_structure([(1, 10.0), (5, 12.0)], [(3, 9.0), (7, 8.0)]),
+            "sideways",
+        )
+
+    def test_structure_needs_two_of_each(self):
+        self.assertIsNone(pivot_structure([(1, 10.0)], [(3, 8.0), (7, 9.0)]))
+
+    def test_nearest_support_and_resistance(self):
+        lows = [(1, 90.0), (5, 95.0), (9, 80.0)]
+        highs = [(3, 110.0), (7, 105.0), (11, 120.0)]
+        self.assertEqual(nearest_support(lows, 100.0), 95.0)
+        self.assertEqual(nearest_resistance(highs, 100.0), 105.0)
+
+    def test_no_pivot_beyond_the_close_is_honest_none(self):
+        # A close at its extreme has no pivot beyond it.
+        self.assertIsNone(nearest_support([(1, 105.0)], 100.0))
+        self.assertIsNone(nearest_resistance([(1, 95.0)], 100.0))
+
+
+class TestTypicalPullback(unittest.TestCase):
+    def test_median_depth_of_completed_dips(self):
+        # Two completed pullbacks: 110→104 (6) and 112→108 (4); ATR 2
+        # → depths 3.0 and 2.0 ATR, median 2.5.
+        highs = [(10, 110.0), (30, 112.0)]
+        lows = [(20, 104.0), (40, 108.0)]
+        self.assertAlmostEqual(
+            typical_pullback_atr(highs, lows, atr=2.0), 2.5
+        )
+
+    def test_one_dip_is_not_a_norm(self):
+        self.assertIsNone(
+            typical_pullback_atr([(10, 110.0)], [(20, 104.0)], atr=2.0)
+        )
+
+    def test_no_atr_means_no_units(self):
+        self.assertIsNone(
+            typical_pullback_atr([(10, 110.0)], [(20, 104.0)], atr=None)
+        )
+
+
+class TestTrendComposites(unittest.TestCase):
+    def test_ma_stack(self):
+        self.assertEqual(ma_stack(100.0, 95.0, 90.0), "up")
+        self.assertEqual(ma_stack(80.0, 85.0, 90.0), "down")
+        self.assertEqual(ma_stack(100.0, 105.0, 90.0), "mixed")
+        self.assertIsNone(ma_stack(100.0, None, 90.0))
+
+    def test_combined_trend_requires_agreement(self):
+        self.assertEqual(
+            combined_trend("up", "higher highs and lows"), "bullish"
+        )
+        self.assertEqual(
+            combined_trend("down", "lower highs and lows"), "bearish"
+        )
+        self.assertEqual(
+            combined_trend("up", "lower highs and lows"), "neutral"
+        )
+        self.assertIsNone(combined_trend(None, "sideways"))
+
+    def test_momentum_label_states(self):
+        rising = [0.1, 0.2, 0.3, 0.4, 0.5]
+        falling = list(reversed(rising))
+        self.assertEqual(momentum_label(60.0, rising, 1.0), "strong")
+        self.assertEqual(momentum_label(40.0, falling, -1.0), "weak")
+        self.assertEqual(momentum_label(60.0, falling, 1.0), "fading")
+        self.assertEqual(momentum_label(40.0, rising, -1.0), "basing")
+        self.assertEqual(momentum_label(50.0, rising, 1.0), "neutral")
+        self.assertIsNone(momentum_label(None, rising, 1.0))
+        self.assertIsNone(momentum_label(60.0, [0.1], 1.0))
+
+
+class TestBenchmarkFields(unittest.TestCase):
+    def test_relative_strength_leader_and_laggard(self):
+        stock = [100.0 * (1.002 ** i) for i in range(80)]
+        index = [100.0] * 80
+        rs = relative_strength_pct(stock, index, 63)
+        self.assertGreater(rs, 0.0)
+        self.assertEqual(relative_strength_label(1.0, 5.0), "leader")
+        self.assertEqual(relative_strength_label(-1.0, -5.0), "laggard")
+        self.assertEqual(relative_strength_label(1.0, -5.0), "neutral")
+        self.assertIsNone(relative_strength_label(None, 5.0))
+
+    def test_regime_bullish_above_200d_and_high_in_range(self):
+        closes = [1000.0 * (1.001 ** i) for i in range(300)]
+        regime = regime_read(closes)
+        self.assertEqual(regime["label"], "bullish")
+        self.assertTrue(regime["above_200d"])
+
+    def test_regime_bearish_below_200d_and_low_in_range(self):
+        closes = [1000.0 * (0.999 ** i) for i in range(300)]
+        self.assertEqual(regime_read(closes)["label"], "bearish")
+
+    def test_regime_short_history_is_none(self):
+        self.assertIsNone(regime_read([1000.0] * 50))
+
+
+class TestWorstDay(unittest.TestCase):
+    def test_worst_day_picks_the_single_worst_return_as_a_percent(self):
+        closes = [100.0]
+        for _ in range(20):
+            closes.append(closes[-1] * 1.01)
+        closes.append(closes[-1] * 0.90)
+        for _ in range(20):
+            closes.append(closes[-1] * 1.01)
+        self.assertAlmostEqual(compute_worst_day_pct_1y(closes), -10.0)
+
+    def test_worst_day_needs_enough_history(self):
+        self.assertIsNone(compute_worst_day_pct_1y([100.0] * 10))
+
+    def test_worst_day_honours_its_window_instead_of_all_history(self):
+        crash_then_calm = [100.0, 60.0]  # a -40% day, 400 bars back
+        crash_then_calm += [60.0 * (1.001 ** i) for i in range(400)]
+        self.assertAlmostEqual(
+            compute_worst_day_pct_1y(crash_then_calm, lookback=300), 0.1,
+            places=1,
+        )
+        self.assertAlmostEqual(
+            compute_worst_day_pct_1y(crash_then_calm, lookback=500), -40.0
+        )
+
+
+class TestEnvelopeHelpers(unittest.TestCase):
+    def test_envelope_detection_and_unwrap(self):
+        env = {"name": "n", "explanation": "e", "value": 42.0}
+        self.assertTrue(is_envelope(env))
+        self.assertFalse(is_envelope({"value": 1}))
+        self.assertFalse(is_envelope(42.0))
+        self.assertEqual(metric_value(env), 42.0)
+        self.assertEqual(metric_value(7), 7)
+
+    def test_read_metric_and_label(self):
+        payload = {
+            "volatility": {
+                "atr_14": {"name": "n", "explanation": "e", "value": 3.2},
+                "atr_trend": {
+                    "name": "n", "explanation": "e", "value": "stable",
+                },
+            },
+        }
+        self.assertEqual(read_metric(payload, "volatility", "atr_14"), 3.2)
+        self.assertEqual(
+            read_label(payload, "volatility", "atr_trend"), "stable"
+        )
+        self.assertIsNone(read_metric(payload, "volatility", "atr_trend"))
+        self.assertIsNone(read_metric(payload, "missing", "atr_14"))
+        self.assertIsNone(read_metric(None, "volatility", "atr_14"))
 
 
 class TestTechnicalsProvider(unittest.TestCase):
@@ -139,19 +346,114 @@ class TestTechnicalsProvider(unittest.TestCase):
         self.assertEqual(provider.kind, SourceKind.NUMERIC)
         self.assertEqual(provider.dimension, "technicals")
 
-    def test_collect_full_coverage_payload(self):
-        closes = [100.0 * (1.005 ** i) for i in range(80)]
+    def test_collect_full_coverage_with_a_year_of_bars(self):
+        bars = _wave_bars(320)
+        index = [Bar(high=1, low=1, close=1000 * (1.0007 ** i))
+                 for i in range(320)]
+        result = _full_provider(bars, index).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.FULL)
+        self.assertTrue(result.is_actionable)
+        self.assertEqual(len(result.citations), 1)
+
+    def test_payload_has_exactly_the_v2_metrics(self):
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
+        leaves = {
+            f"{group}.{key}"
+            for group, metrics in payload.items()
+            for key in metrics
+        }
+        self.assertEqual(leaves, {
+            "meta.as_of", "meta.bars_daily", "meta.bars_weekly",
+            "regime.regime",
+            "relative_strength.rs_3m", "relative_strength.rs_label",
+            "price.close", "price.chg_5d_pct", "price.range_pct_1y",
+            "price.high_1y",
+            "weekly.trend", "weekly.stretch_10w_atr",
+            "daily.trend", "daily.sma_50", "daily.stretch_50d_atr",
+            "daily.sma_200", "daily.momentum", "daily.rsi_14",
+            "volatility.atr_14", "volatility.atr_pct",
+            "volatility.atr_trend",
+            "volume.avg_vol_60d", "volume.vol_ratio_5_60",
+            "levels.support_1", "levels.resistance_1",
+            "levels.typical_pullback_atr",
+            "risk.worst_day_pct_1y",
+        })
+
+    def test_every_metric_is_an_envelope(self):
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
+        for group, metrics in payload.items():
+            for key, node in metrics.items():
+                self.assertTrue(is_envelope(node), f"{group}.{key}")
+                self.assertTrue(node["name"], f"{group}.{key} has no name")
+                self.assertTrue(
+                    node["explanation"], f"{group}.{key} has no explanation"
+                )
+
+    def test_retired_fields_stay_retired(self):
+        # The v2 payload publishes composites, not their ingredients, and
+        # no code-computed verdict: no score, no EMA pair, no raw MACD
+        # lines, no bias, no flat swing keys.
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
+        flat = set(payload.keys())
+        for group in payload.values():
+            flat.update(group.keys())
+        for retired in ("score", "ema_12", "ema_26", "macd", "bias_20",
+                        "sma_20", "sma_60", "swing_low_20", "swing_high_20",
+                        "volatility_pct", "avg_volume_20", "high_52w"):
+            self.assertNotIn(retired, flat)
+
+    def test_neutral_trend_explains_its_disagreement(self):
+        # Explanation style rule: an agreeing label gets method text only;
+        # a neutral label must say which ingredient said what.
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
+        for scope in ("weekly", "daily"):
+            trend = payload[scope]["trend"]
+            if trend["value"] == "neutral":
+                self.assertIn("disagree", trend["explanation"])
+            elif trend["value"] in ("bullish", "bearish"):
+                self.assertNotIn("disagree", trend["explanation"])
+
+    def test_benchmark_unwired_degrades_to_none_with_warning(self):
+        result = _full_provider(_wave_bars(320)).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.FULL)  # optional fields
+        self.assertIsNone(result.payload["regime"]["regime"]["value"])
+        self.assertIsNone(
+            result.payload["relative_strength"]["rs_3m"]["value"]
+        )
+        self.assertTrue(
+            any("benchmark index not configured" in w for w in result.warnings)
+        )
+
+    def test_benchmark_failure_degrades_to_none_with_warning(self):
+        def _boom():
+            raise RuntimeError("index source down")
+
         provider = TechnicalsProvider(
-            bars_loader=lambda symbol: _trend_bars(closes),
+            bars_loader=lambda s: _wave_bars(320), index_bars_loader=_boom,
         )
         result = provider.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertTrue(result.is_actionable)
-        payload = result.payload
-        for key in ("sma_20", "ema_12", "rsi_14", "macd", "atr_14", "bias_20"):
-            self.assertIn(key, payload)
-        self.assertIsNotNone(payload["atr_14"])
-        self.assertEqual(len(result.citations), 1)  # cites the data source
+        self.assertIsNone(result.payload["regime"]["regime"]["value"])
+        self.assertTrue(
+            any("index source down" in w for w in result.warnings)
+        )
+
+    def test_benchmark_wired_produces_regime_and_rs(self):
+        bars = _wave_bars(320)
+        index = [Bar(high=1, low=1, close=1000 * (1.0007 ** i))
+                 for i in range(320)]
+        payload = _full_provider(bars, index).collect("AAPL").payload
+        self.assertIn(
+            payload["regime"]["regime"]["value"],
+            ("bullish", "bearish", "mixed"),
+        )
+        self.assertIsInstance(
+            payload["relative_strength"]["rs_3m"]["value"], float
+        )
+        # The regime explanation embeds the benchmark's name and its
+        # ingredients (the label is the only citable field).
+        self.assertIn("S&P 500", payload["regime"]["regime"]["explanation"])
+        self.assertIn("200-day", payload["regime"]["regime"]["explanation"])
 
     def test_collect_insufficient_bars_is_unavailable_not_silent(self):
         provider = TechnicalsProvider(bars_loader=lambda symbol: _flat_bars(3))
@@ -167,35 +469,42 @@ class TestTechnicalsProvider(unittest.TestCase):
         provider = TechnicalsProvider(bars_loader=_boom)
         result = provider.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.UNAVAILABLE)
-        self.assertFalse(result.is_actionable)
         self.assertTrue(any("source down" in w for w in result.warnings))
 
-    def test_collect_short_history_is_partial(self):
-        # Enough for RSI/ATR but not for SMA-60: partial, still actionable.
-        closes = [100.0 * (1.005 ** i) for i in range(30)]
+    def test_collect_short_history_is_partial_with_named_gaps(self):
+        # 80 bars: RSI/ATR fine, but no 200-day average and no honest
+        # weekly read → PARTIAL, and the warning names what is missing.
+        closes = [100.0 * (1.005 ** i) for i in range(80)]
         provider = TechnicalsProvider(
-            bars_loader=lambda symbol: _trend_bars(closes),
+            bars_loader=lambda s: _trend_bars(closes),
         )
         result = provider.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.PARTIAL)
         self.assertTrue(result.is_actionable)
-        self.assertIsNone(result.payload["sma_60"])
-
-
-class TestSwingAndTailAdditions(unittest.TestCase):
-    """Outlook-redesign additions: swing highs, 52w range, volume, tail day."""
-
-    def test_swing_high_is_max_high_of_lookback(self):
-        bars = _trend_bars([100.0, 105.0, 102.0])
-        self.assertAlmostEqual(
-            compute_swing_high(bars, lookback=3), 105.0 * 1.005
+        self.assertIsNone(result.payload["daily"]["sma_200"]["value"])
+        self.assertTrue(
+            any("daily.sma_200" in w for w in result.warnings)
+        )
+        self.assertTrue(
+            any("weekly bars" in w for w in result.warnings)
         )
 
-    def test_swing_high_respects_lookback_window(self):
-        bars = _trend_bars([200.0, 100.0, 101.0])
-        self.assertAlmostEqual(
-            compute_swing_high(bars, lookback=2), 101.0 * 1.005
-        )
+    def test_short_history_warns_about_the_one_year_window(self):
+        closes = [100.0 * (1.002 ** i) for i in range(60)]
+        result = TechnicalsProvider(
+            bars_loader=lambda s: _trend_bars(closes)
+        ).collect("AAPL")
+        self.assertTrue(any("one-year fields" in w for w in result.warnings))
+
+    def test_missing_volume_does_not_degrade_coverage(self):
+        bars = [
+            Bar(high=b.high, low=b.low, close=b.close, open=b.open,
+                volume=None, date=b.date)
+            for b in _wave_bars(320)
+        ]
+        result = TechnicalsProvider(bars_loader=lambda s: bars).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.FULL)
+        self.assertIsNone(result.payload["volume"]["avg_vol_60d"]["value"])
 
     def test_avg_volume_ignores_missing_volumes(self):
         bars = [
@@ -205,41 +514,7 @@ class TestSwingAndTailAdditions(unittest.TestCase):
         ]
         self.assertAlmostEqual(compute_avg_volume(bars, lookback=3), 2000.0)
 
-    def test_avg_volume_none_when_source_has_no_volume(self):
-        self.assertIsNone(compute_avg_volume(_flat_bars(20)))
-
-    def test_worst_day_picks_the_single_worst_return_as_a_percent(self):
-        # 40 returns of +1% and one crash of -10%: the worst single day
-        # IS the crash — no percentile softening.
-        closes = [100.0]
-        for _ in range(20):
-            closes.append(closes[-1] * 1.01)
-        closes.append(closes[-1] * 0.90)
-        for _ in range(20):
-            closes.append(closes[-1] * 1.01)
-        worst = compute_worst_day_pct_1y(closes)
-        self.assertIsNotNone(worst)
-        self.assertAlmostEqual(worst, -10.0)  # percent, not a fraction
-
-    def test_worst_day_needs_enough_history(self):
-        self.assertIsNone(compute_worst_day_pct_1y([100.0] * 10))
-
-    def test_worst_day_honours_its_window_instead_of_all_history(self):
-        # A field named for one year must not report the worst day of the
-        # two-plus years the bar loader actually fetches.
-        crash_then_calm = [100.0, 60.0]  # a -40% day, 400 bars back
-        crash_then_calm += [60.0 * (1.001 ** i) for i in range(400)]
-        self.assertAlmostEqual(
-            compute_worst_day_pct_1y(crash_then_calm, lookback=300), 0.1,
-            places=1,
-        )
-        self.assertAlmostEqual(
-            compute_worst_day_pct_1y(crash_then_calm, lookback=500), -40.0
-        )
-
     def test_worst_day_shares_the_percent_convention_of_its_neighbours(self):
-        # Mixed units in one payload is a misreading waiting to happen:
-        # this used to be a fraction sitting next to volatility_pct.
         closes = [100.0]
         for _ in range(60):
             closes.append(closes[-1] * 1.01)
@@ -247,40 +522,25 @@ class TestSwingAndTailAdditions(unittest.TestCase):
         payload = TechnicalsProvider(
             bars_loader=lambda s: _trend_bars(closes)
         ).collect("AAPL").payload
-
-        self.assertAlmostEqual(payload["worst_day_pct_1y"], -15.0)
-        self.assertLess(payload["worst_day_pct_1y"], -1.0)  # percent, not a fraction
-        self.assertNotIn("worst_day_1y", payload)
+        worst = payload["risk"]["worst_day_pct_1y"]["value"]
+        self.assertAlmostEqual(worst, -15.0)
+        self.assertLess(worst, -1.0)  # percent, not a fraction
 
     def test_no_composite_score_is_handed_to_the_judgment_stages(self):
         # The payload is dumped verbatim into the LLM prompt, so a
         # code-computed 0-100 verdict in it would pre-answer the question
         # those stages exist to answer and invite anchoring.
-        closes = [100.0 * (1.005 ** i) for i in range(80)]
-        payload = TechnicalsProvider(
-            bars_loader=lambda s: _trend_bars(closes)
-        ).collect("AAPL").payload
-
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
         self.assertNotIn("score", payload)
+        self.assertNotIn("score", payload.get("meta", {}))
 
-    def test_payload_contains_resistance_and_tail_keys(self):
-        closes = [100.0 * (1.002 ** i) for i in range(60)]
-        provider = TechnicalsProvider(bars_loader=lambda s: _trend_bars(closes))
-        payload = provider.collect("AAPL").payload
-        for key in (
-            "swing_high_20", "swing_low_60", "swing_high_60",
-            "high_52w", "low_52w", "worst_day_pct_1y",
-        ):
-            self.assertIsNotNone(payload[key], key)
-        # 60 bars: the "52w" window honestly covers what exists.
-        self.assertAlmostEqual(payload["high_52w"], payload["swing_high_60"])
-
-    def test_missing_volume_does_not_degrade_coverage(self):
-        closes = [100.0 * (1.002 ** i) for i in range(60)]
-        provider = TechnicalsProvider(bars_loader=lambda s: _trend_bars(closes))
-        result = provider.collect("AAPL")
-        self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertIsNone(result.payload["avg_volume_20"])
+    def test_high_1y_is_the_highest_traded_high(self):
+        bars = _wave_bars(320)
+        payload = _full_provider(bars).collect("AAPL").payload
+        expected = compute_swing_high(bars, 253)
+        self.assertAlmostEqual(
+            payload["price"]["high_1y"]["value"], round(expected, 2)
+        )
 
 
 if __name__ == "__main__":

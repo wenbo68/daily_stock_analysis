@@ -28,6 +28,26 @@ def detect_market(symbol: str) -> Market:
         return Market.UNKNOWN
 
 
+#: Benchmark index per market: (daily-data code, display name).
+#:
+#: US only for now. ``get_daily_data`` has explicit US-index routing
+#: ("SPX" → ^GSPC via yfinance), but no index-daily routing for the
+#: other markets — and their mood codes are actively dangerous through
+#: the stock path: normalize_stock_code("sh000001") strips the prefix
+#: into 000001 (Ping An Bank) and "HSI" is a real NYSE ticker. Absent
+#: beats silently wrong: unmapped markets degrade to null regime /
+#: relative-strength fields with a warning. Wiring CN/HK needs an
+#: index-daily fetch first (future slice).
+BENCHMARKS = {
+    Market.US: ("SPX", "S&P 500"),
+}
+
+
+def benchmark_for(market: Market) -> Optional[tuple]:
+    """(index code, display name) for the market's benchmark, or None."""
+    return BENCHMARKS.get(market)
+
+
 def get_providers(
     market: Market,
     bars_loader: Optional[Callable] = None,
@@ -40,13 +60,22 @@ def get_providers(
 
     ``bars_loader`` feeds the technicals provider (production passes the
     data_provider-backed loader; omitting it leaves the unwired default
-    that fails loud).
+    that fails loud). When a bars_loader is wired and the market has a
+    benchmark, the same loader also feeds the market-regime and
+    relative-strength fields with the benchmark index's bars.
     """
-    technicals = (
-        TechnicalsProvider(bars_loader=bars_loader)
-        if bars_loader is not None
-        else TechnicalsProvider()
-    )
+    benchmark = benchmark_for(market)
+    if bars_loader is not None and benchmark is not None:
+        index_code, index_name = benchmark
+        technicals = TechnicalsProvider(
+            bars_loader=bars_loader,
+            index_bars_loader=lambda: bars_loader(index_code),
+            benchmark_name=index_name,
+        )
+    elif bars_loader is not None:
+        technicals = TechnicalsProvider(bars_loader=bars_loader)
+    else:
+        technicals = TechnicalsProvider()
     # List order is display order on the report pages: technicals,
     # fundamentals, positioning, then macro.
     candidates: List[DimensionProvider] = [

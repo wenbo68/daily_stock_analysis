@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .earnings import EarningsInfo
+from .earnings import EarningsInfo, earnings_from_dimensions
 from .levels import (
     apply_adjustments,
     bases_from_dimensions,
@@ -44,7 +44,7 @@ from .providers.base import (
     Market,
 )
 from .providers.registry import detect_market, get_providers
-from .providers.technicals import Bar
+from .providers.technicals import Bar, read_metric
 from .schema import (
     Action,
     Direction,
@@ -195,26 +195,13 @@ def _collect_dimensions(
 def _technicals_atr(dimensions: Sequence[DimensionResult]) -> Optional[float]:
     for dim in dimensions:
         if dim.dimension == "technicals" and dim.payload:
-            value = dim.payload.get("atr_14")
-            return float(value) if isinstance(value, (int, float)) else None
+            return read_metric(dim.payload, "volatility", "atr_14")
     return None
 
 
-def _earnings_from_dimensions(
-    dimensions: Sequence[DimensionResult],
-) -> EarningsInfo:
-    """The next earnings date the fundamentals provider fetched, as the
-    run-detail block (no second network call)."""
-    for dim in dimensions:
-        if dim.dimension == "fundamentals" and dim.payload:
-            date = dim.payload.get("next_earnings_date")
-            days = dim.payload.get("days_until_earnings")
-            if isinstance(date, str) and date:
-                return EarningsInfo(
-                    next_date=date,
-                    days_until=days if isinstance(days, int) else None,
-                )
-    return EarningsInfo(note="no upcoming earnings date found")
+#: The run-detail earnings block reads the same shared helper the plan
+#: review's earnings gate uses (moved to earnings.py, 2026-07-27).
+_earnings_from_dimensions = earnings_from_dimensions
 
 
 def _sizing_block(

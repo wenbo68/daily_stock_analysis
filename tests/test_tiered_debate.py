@@ -399,6 +399,72 @@ class CeilingsTest(unittest.TestCase):
         ]
         self.assertEqual(max_items_per_dimension(dims)["technicals"], 2)
 
+    def test_envelope_counts_as_one_leaf_not_three(self):
+        # v2 metrics are {name, explanation, value}: one citable fact.
+        # Counting the prose keys would triple every ceiling.
+        dims = [
+            DimensionResult(
+                dimension="technicals",
+                kind=SourceKind.NUMERIC,
+                coverage=Coverage.FULL,
+                payload={
+                    "price": {
+                        "close": {"name": "n", "explanation": "e", "value": 1.0},
+                        "high_1y": {"name": "n", "explanation": "e", "value": 2.0},
+                    },
+                    "daily": {
+                        "rsi_14": {"name": "n", "explanation": "e", "value": 3.0},
+                    },
+                },
+            )
+        ]
+        self.assertEqual(max_items_per_dimension(dims)["technicals"], 3)
+
+
+class EnvelopeRefResolutionTest(unittest.TestCase):
+    """v2 refs land on the envelope path and resolve to its value."""
+
+    def _dims(self, value):
+        return [
+            DimensionResult(
+                dimension="technicals",
+                kind=SourceKind.NUMERIC,
+                coverage=Coverage.FULL,
+                payload={
+                    "daily": {
+                        "rsi_14": {
+                            "name": "RSI (14d)",
+                            "explanation": "momentum",
+                            "value": value,
+                        },
+                    },
+                },
+            )
+        ]
+
+    def test_envelope_path_resolves_to_the_value(self):
+        from src.tiered_analysis.debate import _payload_value
+
+        resolves, value = _payload_value(
+            "technicals.daily.rsi_14", self._dims(56.28)
+        )
+        self.assertTrue(resolves)
+        self.assertEqual(value, 56.28)
+
+    def test_envelope_with_null_value_does_not_resolve(self):
+        from src.tiered_analysis.debate import _payload_value
+
+        resolves, _ = _payload_value(
+            "technicals.daily.rsi_14", self._dims(None)
+        )
+        self.assertFalse(resolves)
+
+    def test_group_path_still_rejected(self):
+        from src.tiered_analysis.debate import _payload_value
+
+        resolves, _ = _payload_value("technicals.daily", self._dims(56.28))
+        self.assertFalse(resolves)
+
     def test_too_many_items_for_the_ceiling_is_rejected(self):
         # 5 technicals bullets against a ceiling of 4 → retry with the error.
         many = [

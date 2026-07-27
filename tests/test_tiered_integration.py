@@ -240,20 +240,35 @@ class _FakeDebateEngine:
         return DebateResult(verdict=self._verdict, warnings=self._warnings)
 
 
+def _env(value):
+    return {"name": "n", "explanation": "e", "value": value}
+
+
+def _tech_payload(close=100.0, sma_50=96.0, sma_200=90.0, support_1=94.0,
+                  atr_14=3.0, avg_vol_60d=None):
+    """A minimal v2 envelope payload with the plan-pipeline anchors."""
+    return {
+        "price": {"close": _env(close), "high_1y": _env(None)},
+        "daily": {"sma_50": _env(sma_50), "sma_200": _env(sma_200)},
+        "volatility": {"atr_14": _env(atr_14)},
+        "volume": {"avg_vol_60d": _env(avg_vol_60d)},
+        "levels": {"support_1": _env(support_1),
+                   "resistance_1": _env(None)},
+    }
+
+
 def _technicals_dim_with_levels():
     """Payload the base-level formulas can compute from.
 
-    Bases: entry=96 (nearest support capped at close), backup=94,
-    stop=90 (entry − 2×ATR), target=108 (entry + 2×(entry−stop); no
-    swing-high keys → no overhead resistance to cap it). Trend gate
-    passes: close 100 > sma_60 90.
+    Bases: entry=96 (nearest support capped at close), stop=90
+    (entry − 2×ATR), target=108 (entry + 2×(entry−stop); no overhead
+    resistance to cap it). Trend check passes: close 100 > sma_50 96.
     """
     return DimensionResult(
         dimension="technicals",
         kind=SourceKind.NUMERIC,
         coverage=Coverage.FULL,
-        payload={"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
-                 "swing_low_20": 94.0, "atr_14": 3.0},
+        payload=_tech_payload(),
     )
 
 
@@ -444,9 +459,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         """Fake LLM replies, one per call; the last one repeats."""
         from src.tiered_analysis.settings import SizingSettings
 
-        payload = {"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
-                   "swing_low_20": 94.0, "atr_14": 3.0,
-                   "avg_volume_20": 1000.0}
+        payload = _tech_payload(avg_vol_60d=1000.0)
         dim = DimensionResult(
             dimension="technicals", kind=SourceKind.NUMERIC,
             coverage=Coverage.FULL, payload=payload,
@@ -479,7 +492,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
                 "check": "liquidity",
                 "text": ("The planned order is far above the 5% liquidity "
                          "limit against an average daily volume of 1000."),
-                "links": [{"ref": "technicals.avg_volume_20", "value": "1000"}],
+                "links": [{"ref": "technicals.volume.avg_vol_60d", "value": "1000"}],
             }],
         }]})
         outcome, prompts = self._run_with_reply(reply)
@@ -492,7 +505,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
         self.assertEqual(detail["reasons"][0]["check"], "liquidity")
         self.assertIn("liquidity limit", detail["reasons"][0]["text"])
         self.assertEqual(detail["reasons"][0]["links"][0]["ref"],
-                         "technicals.avg_volume_20")
+                         "technicals.volume.avg_vol_60d")
         # Receipt data always rides with an adjusted count (2026-07-22):
         # the mechanical recompute and the inputs it used.
         self.assertEqual(detail["mechanical"], 166)
@@ -512,7 +525,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
                 "check": "liquidity",
                 "text": ("Order flow above 12.34% of daily volume is "
                          "hard to exit, so the count comes down."),
-                "links": [{"ref": "technicals.avg_volume_20",
+                "links": [{"ref": "technicals.volume.avg_vol_60d",
                            "value": "1000"}],
             }],
         }]})
@@ -532,7 +545,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
                 "text": ("Cutting to 50 keeps the order under the 5% "
                          "limit against the average daily volume of "
                          "1000."),
-                "links": [{"ref": "technicals.avg_volume_20",
+                "links": [{"ref": "technicals.volume.avg_vol_60d",
                            "value": "1000"}],
             }],
         }]})
@@ -572,7 +585,7 @@ class TestPlanReviewAdjustments(unittest.TestCase):
                     "text": (f"Cutting to {value} moves the order toward "
                              "the 5% limit against the average daily "
                              "volume of 1000."),
-                    "links": [{"ref": "technicals.avg_volume_20",
+                    "links": [{"ref": "technicals.volume.avg_vol_60d",
                                "value": "1000"}],
                 }],
             }]})
@@ -613,16 +626,18 @@ class TestRegistryBarsLoaderWiring(unittest.TestCase):
         providers = get_providers(Market.US, bars_loader=lambda symbol: bars)
         technicals = next(p for p in providers if p.dimension == "technicals")
         result = technicals.collect("AAPL")
-        self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertIsNotNone(result.payload["close"])
+        # 70 bars: honest PARTIAL (no 200-day average, thin weekly read)
+        # — but the payload exists and the close is served.
+        self.assertEqual(result.coverage, Coverage.PARTIAL)
+        self.assertIsNotNone(result.payload["price"]["close"]["value"])
 
 
 class TestDowntrendCheckAndWarning(unittest.TestCase):
-    """A close at or below the 60-day average no longer voids the plan
+    """A close at or below the 50-day average no longer voids the plan
     (owner decision 2026-07-24) — it flags the adjust cycle and lands a
     structured warning on the entry column instead."""
 
-    DOWNTREND_TECH = {"close": 89.0, "sma_60": 90.0, "atr_14": 3.0}
+    DOWNTREND_TECH = _tech_payload(close=89.0, sma_50=90.0, support_1=None)
     LEVELS = SniperLevels(entry=89.0, stop_loss=83.0, take_profit=101.0)
 
     def test_downtrend_is_flagged_for_the_adjust_cycle(self):
@@ -635,7 +650,7 @@ class TestDowntrendCheckAndWarning(unittest.TestCase):
     def test_uptrend_is_not_flagged(self):
         from src.tiered_analysis.plan_review import _flagged_checks
 
-        uptrend = dict(self.DOWNTREND_TECH, close=91.0)
+        uptrend = _tech_payload(close=91.0, sma_50=90.0, support_1=None)
         names = [c.name for c in
                  _flagged_checks(uptrend, self.LEVELS, shares=None)]
         self.assertNotIn("downtrend", names)
@@ -649,7 +664,7 @@ class TestDowntrendCheckAndWarning(unittest.TestCase):
         )
         self.assertEqual(
             warnings["entry"],
-            [{"id": "downtrend", "values": {"close": 89.0, "sma_60": 90.0}}],
+            [{"id": "downtrend", "values": {"close": 89.0, "sma_50": 90.0}}],
         )
 
     def test_no_entry_warning_without_an_entry(self):
@@ -660,6 +675,77 @@ class TestDowntrendCheckAndWarning(unittest.TestCase):
             shares=None, risk_amount=None, reward_goal=2.0,
         )
         self.assertEqual(warnings["entry"], [])
+
+
+class TestEarningsGateWarning(unittest.TestCase):
+    """The earnings gate (2026-07-27): a plan whose hold window straddles
+    the next report gets a code-computed warning — previously the date
+    was display + a debate-prompt nudge only, with nothing in the plan
+    pipeline reading it."""
+
+    TECH = _tech_payload()
+    LEVELS = SniperLevels(entry=96.0, stop_loss=90.0, take_profit=108.0)
+
+    def _warnings(self, earnings):
+        from src.tiered_analysis.plan_review import build_plan_warnings
+
+        return build_plan_warnings(
+            self.TECH, self.LEVELS,
+            shares=None, risk_amount=None, reward_goal=2.0,
+            earnings=earnings,
+        )
+
+    def test_near_earnings_lands_a_structured_entry_warning(self):
+        from src.tiered_analysis.earnings import EarningsInfo
+
+        warnings = self._warnings(
+            EarningsInfo(next_date="2026-07-30", days_until=3)
+        )
+        self.assertEqual(warnings["entry"], [{
+            "id": "earnings_soon",
+            "values": {
+                "days_until": 3, "next_date": "2026-07-30",
+                "warning_days": 7,
+            },
+        }])
+
+    def test_distant_earnings_stays_quiet(self):
+        from src.tiered_analysis.earnings import EarningsInfo
+
+        warnings = self._warnings(
+            EarningsInfo(next_date="2026-09-30", days_until=64)
+        )
+        self.assertEqual(warnings["entry"], [])
+
+    def test_no_earnings_info_stays_quiet(self):
+        self.assertEqual(self._warnings(None)["entry"], [])
+
+    def test_full_run_reads_earnings_from_the_fundamentals_payload(self):
+        # End to end: the fundamentals dimension carries the date; the
+        # plan review must find it there without a second fetch.
+        from src.tiered_analysis.settings import SizingSettings
+
+        fundamentals = DimensionResult(
+            dimension="fundamentals", kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL,
+            payload={"next_earnings_date": "2026-07-30",
+                     "days_until_earnings": 3},
+        )
+        outcome = run_tiered_analysis(
+            "AAPL", market=Market.US,
+            providers=[
+                _StubProvider("technicals", _technicals_dim_with_levels()),
+                _StubProvider("fundamentals", fundamentals),
+            ],
+            analysis_runner=lambda symbol: _fake_analysis_result(),
+            signal_logger=lambda report, trace_id=None: None,
+            log_signal=False,
+            sizing_settings=SizingSettings(),
+        )
+        entry_warnings = outcome.plan_warnings["entry"]
+        self.assertTrue(
+            any(w["id"] == "earnings_soon" for w in entry_warnings)
+        )
 
 
 if __name__ == "__main__":

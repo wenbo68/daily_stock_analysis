@@ -1,19 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Deterministic technical indicators (docs/tiered-analysis-design.md §2.1).
+"""Deterministic technical indicators — v2 envelope payload (2026-07-27).
 
 Pure Python over OHLCV bars — no numpy/pandas, no network. Fetching is
 decoupled: ``TechnicalsProvider`` receives a ``bars_loader`` callable so the
-indicator core stays reproducible and offline-testable. Indicators are pure
-math over price series and therefore market-agnostic.
+indicator core stays reproducible and offline-testable.
 
-ATR is intentionally included: it is the standard input for the future
-volatility-adaptive stops and risk-based sizing (design doc §3.2) and is
-absent from the legacy ``stock_analyzer.py``.
+v2 design (TODO.md "technical fields — FINAL"):
+
+- **Envelope format** — every published metric ships as
+  ``{"name", "explanation", "value"}`` so the LLM stages and the UI share
+  one source of truth about what a number means. Citations address the
+  envelope path (``technicals.daily.rsi_14``) and resolve to ``value``.
+- **Composites swallow their ingredients** — correlated fields get
+  double-counted by an LLM as independent evidence (stack + structure +
+  slope + trend reads as four confirmations of one fact), so judgments
+  ship only as their composite label. Ingredients live in code and, for
+  a *neutral* label, in the explanation text — a neutral verdict
+  collapses two opposite situations and only its inputs distinguish them.
+- **Coordinates stay** — price levels (the one-year high, the 50/200-day
+  averages, pivot support/resistance) are not confirmations of anything;
+  they are the numbers a plan is written against, and cutting them would
+  force the model into arithmetic.
+- No composite 0-100 score, and no pre-computed reward:risk — both would
+  pre-answer judgments other stages own (score retired 2026-07-26).
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .base import (
     Citation,
@@ -26,24 +41,79 @@ from .base import (
 
 RSI_PERIOD = 14
 ATR_PERIOD = 14
-BIAS_PERIOD = 20
 MACD_FAST = 12
 MACD_SLOW = 26
 MACD_SIGNAL = 9
-# Bars needed so every indicator in the payload can be computed.
-FULL_HISTORY_BARS = 60
-# One trading year of bars — the 52-week high/low window every desk
-# references. With less history the "52w" keys honestly cover what exists
-# (bars_count in the payload discloses the real window).
-YEAR_BARS = 250
-# Bars needed for the minimum viable set (RSI/ATR need period + 1).
+
+#: One trading year — the landmark window (1y range, worst day) and the
+#: honest-coverage line for the daily series.
+YEAR_BARS = 253
+#: Weekly bars below this make the weekly structure read unreliable.
+WEEKLY_BARS_TARGET = 60
+#: Bars needed for the minimum viable set (RSI/ATR need period + 1).
 MIN_HISTORY_BARS = max(RSI_PERIOD, ATR_PERIOD) + 1
-# Daily returns needed before a 5th-percentile "worst day" means anything.
+#: Daily returns needed before a worst-day extreme means anything.
 MIN_RETURNS_FOR_TAIL = 20
-#: Payload keys allowed to be None without downgrading coverage — volume
-#: is source-dependent (some feeds omit it), unlike price history;
-#: volatility_pct is derived from atr_14, whose absence is already flagged.
-OPTIONAL_PAYLOAD_KEYS = frozenset({"avg_volume_20", "volatility_pct"})
+
+#: Moving-average windows. Weekly 10/20 is a deliberate swing-scale choice
+#: (TODO.md 2026-07-27): 30w+ are position-trading rulers, and whipsaw from
+#: the faster pair is damped because the pivot structure must agree before
+#: the trend label turns directional.
+WEEKLY_SMA_FAST = 10
+WEEKLY_SMA_SLOW = 20
+DAILY_SMA_FAST = 20
+DAILY_SMA_MID = 50
+DAILY_SMA_LONG = 200
+
+#: Pivot detection: a bar whose high/low exceeds this many bars on each side.
+PIVOT_FRINGE = 2
+#: Daily pivots scan this window (~6 months) for structure and levels.
+DAILY_PIVOT_LOOKBACK = 120
+
+#: ATR trend compares now vs this many bars ago, with a ±10% dead band.
+ATR_TREND_LOOKBACK = 20
+ATR_TREND_BAND = 0.10
+#: Weekly ATR approximation: daily ATR × √5 (five sessions per week).
+WEEKLY_ATR_FACTOR = math.sqrt(5.0)
+
+#: MACD histogram direction compares now vs this many bars ago.
+HIST_DIRECTION_BARS = 3
+#: Momentum label RSI bands (strong above / weak below).
+MOMENTUM_RSI_STRONG = 55
+MOMENTUM_RSI_WEAK = 45
+
+#: Relative-strength windows in trading days (~1 month / ~3 months).
+RS_WINDOW_1M = 21
+RS_WINDOW_3M = 63
+
+#: Volume comparison windows (bars).
+VOLUME_BASE_BARS = 60
+VOLUME_RECENT_BARS = 5
+
+#: Typical pullback: median of the last N completed pivot-high→pivot-low
+#: dips, needing at least MIN pairs to mean anything.
+TYPICAL_PULLBACK_MAX_PAIRS = 5
+TYPICAL_PULLBACK_MIN_PAIRS = 2
+
+#: Envelope keys — the shape every published metric ships in.
+ENVELOPE_KEYS = frozenset({"name", "explanation", "value"})
+
+#: Metrics allowed to be None without downgrading coverage:
+#: benchmark-dependent fields degrade gracefully when the index fetch
+#: fails; volume is source-dependent; pivot levels can be legitimately
+#: absent (a close at its extreme has no pivot beyond it); as_of depends
+#: on the loader shipping dates.
+OPTIONAL_METRICS = frozenset({
+    "meta.as_of",
+    "regime.regime",
+    "relative_strength.rs_3m",
+    "relative_strength.rs_label",
+    "volume.avg_vol_60d",
+    "volume.vol_ratio_5_60",
+    "levels.support_1",
+    "levels.resistance_1",
+    "levels.typical_pullback_atr",
+})
 
 
 @dataclass(frozen=True)
@@ -56,6 +126,54 @@ class Bar:
     open: Optional[float] = None
     volume: Optional[float] = None
     date: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Envelope helpers (shared with every payload consumer)
+# ---------------------------------------------------------------------------
+
+
+def make_metric(name: str, explanation: str, value: Any) -> Dict[str, Any]:
+    """One published metric: the LLM and the UI read the same words."""
+    return {"name": name, "explanation": explanation, "value": value}
+
+
+def is_envelope(node: Any) -> bool:
+    return isinstance(node, dict) and set(node.keys()) == ENVELOPE_KEYS
+
+
+def metric_value(node: Any) -> Any:
+    """The value behind a node: envelopes unwrap, everything else passes."""
+    return node.get("value") if is_envelope(node) else node
+
+
+def read_metric(payload: Optional[Dict[str, Any]], group: str, key: str) -> Optional[float]:
+    """Numeric metric out of a v2 payload; None when absent or non-numeric."""
+    if not payload:
+        return None
+    node = payload.get(group)
+    if not isinstance(node, dict):
+        return None
+    value = metric_value(node.get(key))
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def read_label(payload: Optional[Dict[str, Any]], group: str, key: str) -> Optional[str]:
+    """String metric out of a v2 payload; None when absent."""
+    if not payload:
+        return None
+    node = payload.get(group)
+    if not isinstance(node, dict):
+        return None
+    value = metric_value(node.get(key))
+    return value if isinstance(value, str) else None
+
+
+# ---------------------------------------------------------------------------
+# Indicator math (single values)
+# ---------------------------------------------------------------------------
 
 
 def compute_sma(closes: List[float], period: int) -> Optional[float]:
@@ -109,15 +227,20 @@ def compute_wilder_rsi(closes: List[float], period: int = RSI_PERIOD) -> Optiona
     return 100.0 - 100.0 / (1.0 + rs)
 
 
-def compute_macd(
+def macd_histogram_series(
     closes: List[float],
     fast: int = MACD_FAST,
     slow: int = MACD_SLOW,
     signal: int = MACD_SIGNAL,
-) -> Optional[Dict[str, float]]:
-    """MACD line, signal line, and histogram for the latest bar."""
+) -> Tuple[Optional[float], List[float]]:
+    """(latest MACD line, histogram series) — the two MACD facts v2 keeps.
+
+    The raw MACD/signal lines are internal computation now: the histogram
+    plus the line's sign carry everything the momentum label needs, and
+    publishing the operands alongside the verdict double-counts them.
+    """
     if len(closes) < slow + signal - 1:
-        return None
+        return None, []
     fast_series = _ema_series(closes, fast)
     slow_series = _ema_series(closes, slow)
     macd_line = [
@@ -126,18 +249,15 @@ def compute_macd(
         if f is not None and s is not None
     ]
     signal_series = _ema_series(macd_line, signal)
-    signal_value = signal_series[-1]
-    if signal_value is None:
-        return None
-    macd_value = macd_line[-1]
-    return {
-        "macd": macd_value,
-        "signal": signal_value,
-        "histogram": macd_value - signal_value,
-    }
+    histogram = [
+        m - s for m, s in zip(macd_line, signal_series) if s is not None
+    ]
+    if not histogram:
+        return None, []
+    return macd_line[-1], histogram
 
 
-def compute_atr(bars: List[Bar], period: int = ATR_PERIOD) -> Optional[float]:
+def compute_atr(bars: Sequence[Bar], period: int = ATR_PERIOD) -> Optional[float]:
     """Average True Range with Wilder smoothing; needs ``period + 1`` bars.
 
     True range includes gaps: max(high-low, |high-prev_close|, |low-prev_close|).
@@ -161,31 +281,30 @@ def compute_atr(bars: List[Bar], period: int = ATR_PERIOD) -> Optional[float]:
     return atr
 
 
-SWING_LOOKBACK = 20
-
-
-def compute_swing_low(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optional[float]:
-    """Lowest traded low of the last ``lookback`` bars — a floor the market
-    has already defended once; a support anchor for the level formulas."""
-    if not bars or lookback <= 0:
-        return None
-    return min(bar.low for bar in bars[-lookback:])
-
-
-def compute_swing_high(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optional[float]:
-    """Highest traded high of the last ``lookback`` bars — a ceiling the
-    market has already rejected once; a resistance anchor for the target."""
+def compute_swing_high(bars: Sequence[Bar], lookback: int) -> Optional[float]:
+    """Highest traded high of the last ``lookback`` bars."""
     if not bars or lookback <= 0:
         return None
     return max(bar.high for bar in bars[-lookback:])
 
 
-def compute_avg_volume(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optional[float]:
+def compute_swing_low(bars: Sequence[Bar], lookback: int) -> Optional[float]:
+    """Lowest traded low of the last ``lookback`` bars."""
+    if not bars or lookback <= 0:
+        return None
+    return min(bar.low for bar in bars[-lookback:])
+
+
+def compute_avg_volume(bars: Sequence[Bar], lookback: int) -> Optional[float]:
     """Mean daily volume over the last ``lookback`` bars; None when the
     data source ships no volume."""
     if not bars or lookback <= 0:
         return None
-    volumes = [bar.volume for bar in bars[-lookback:] if bar.volume is not None and bar.volume > 0]
+    volumes = [
+        bar.volume
+        for bar in bars[-lookback:]
+        if bar.volume is not None and bar.volume > 0
+    ]
     if not volumes:
         return None
     return sum(volumes) / len(volumes)
@@ -198,19 +317,11 @@ def compute_worst_day_pct_1y(
     year, AS A PERCENT — the honest "how bad has one day actually gotten"
     number the gap-risk check stresses with.
 
-    Two corrections over the retired ``worst_day_1y`` (2026-07-26):
-
-    It returns a percent (-16.97), not a raw fraction (-0.1697). Every
-    neighbouring field in this payload — ``volatility_pct``, the bias
-    readings — is already a percent, and two unit conventions in one
-    payload is a misreading waiting to happen, for a reader or an LLM.
-
-    And it honours ``lookback`` instead of scanning every loaded close,
-    so a field named for one year cannot quietly report the worst day of
-    the two-plus years the bar loader actually fetches.
-
-    Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer observations
-    the extreme is noise, so None (loud) beats a fake number.
+    Returns a percent (-16.97), never a raw fraction, and honours
+    ``lookback`` so a field named for one year cannot quietly report the
+    worst day of everything the loader fetched (both corrections
+    2026-07-26). Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer
+    observations the extreme is noise, so None (loud) beats a fake number.
     """
     if lookback <= 0:
         return None
@@ -227,12 +338,321 @@ def compute_worst_day_pct_1y(
     return round(min(returns) * 100.0, 2)
 
 
-def compute_bias(closes: List[float], period: int = BIAS_PERIOD) -> Optional[float]:
-    """BIAS: percentage deviation of the latest close from its SMA."""
-    sma = compute_sma(closes, period)
-    if sma is None or sma == 0.0:
+def pct_change(closes: List[float], bars_back: int) -> Optional[float]:
+    """Close-to-close change over ``bars_back`` bars, in percent."""
+    if bars_back <= 0 or len(closes) < bars_back + 1:
         return None
-    return (closes[-1] - sma) / sma * 100.0
+    then = closes[-(bars_back + 1)]
+    if then <= 0:
+        return None
+    return round((closes[-1] / then - 1.0) * 100.0, 2)
+
+
+# ---------------------------------------------------------------------------
+# Weekly resample, pivots, structure, trends
+# ---------------------------------------------------------------------------
+
+
+def _week_key(date: str) -> Optional[Tuple[int, int]]:
+    """ISO (year, week) of a YYYY-MM-DD date string; None when unparseable."""
+    try:
+        import datetime as _dt
+
+        iso = _dt.date.fromisoformat(date[:10]).isocalendar()
+        return iso[0], iso[1]
+    except (ValueError, TypeError):
+        return None
+
+
+def resample_weekly(bars: Sequence[Bar]) -> List[Bar]:
+    """Daily bars grouped into weekly bars, oldest first.
+
+    Groups by ISO calendar week when dates are present and parseable;
+    otherwise falls back to fixed chunks of five counted from the most
+    recent bar (so the newest weekly bar is always complete-as-loaded).
+    """
+    if not bars:
+        return []
+    groups: List[List[Bar]] = []
+    keys = [_week_key(bar.date) if bar.date else None for bar in bars]
+    if all(key is not None for key in keys):
+        current_key: Optional[Tuple[int, int]] = None
+        for bar, key in zip(bars, keys):
+            if key != current_key:
+                groups.append([])
+                current_key = key
+            groups[-1].append(bar)
+    else:
+        chunk: List[Bar] = []
+        for bar in reversed(bars):
+            chunk.append(bar)
+            if len(chunk) == 5:
+                groups.append(list(reversed(chunk)))
+                chunk = []
+        if chunk:
+            groups.append(list(reversed(chunk)))
+        groups.reverse()
+
+    weekly: List[Bar] = []
+    for group in groups:
+        volumes = [b.volume for b in group if b.volume is not None]
+        weekly.append(
+            Bar(
+                high=max(b.high for b in group),
+                low=min(b.low for b in group),
+                close=group[-1].close,
+                open=group[0].open,
+                volume=sum(volumes) if volumes else None,
+                date=group[-1].date,
+            )
+        )
+    return weekly
+
+
+def find_pivots(
+    bars: Sequence[Bar], fringe: int = PIVOT_FRINGE
+) -> Tuple[List[Tuple[int, float]], List[Tuple[int, float]]]:
+    """(pivot highs, pivot lows) as (index, price), oldest first.
+
+    A pivot high is a bar whose high strictly exceeds the highs of the
+    ``fringe`` bars on each side (mirrored for lows). Strictness means a
+    flat shelf produces no pivot — honest, since a shelf has no single
+    turning bar.
+    """
+    highs: List[Tuple[int, float]] = []
+    lows: List[Tuple[int, float]] = []
+    for i in range(fringe, len(bars) - fringe):
+        window = list(bars[i - fringe:i]) + list(bars[i + 1:i + fringe + 1])
+        if all(bars[i].high > b.high for b in window):
+            highs.append((i, bars[i].high))
+        if all(bars[i].low < b.low for b in window):
+            lows.append((i, bars[i].low))
+    return highs, lows
+
+
+def pivot_structure(
+    highs: Sequence[Tuple[int, float]],
+    lows: Sequence[Tuple[int, float]],
+) -> Optional[str]:
+    """Structure from the last two pivot highs and lows; None below that."""
+    if len(highs) < 2 or len(lows) < 2:
+        return None
+    higher_highs = highs[-1][1] > highs[-2][1]
+    higher_lows = lows[-1][1] > lows[-2][1]
+    if higher_highs and higher_lows:
+        return "higher highs and lows"
+    if not higher_highs and not higher_lows:
+        return "lower highs and lows"
+    return "sideways"
+
+
+def ma_stack(
+    close: float, fast_ma: Optional[float], slow_ma: Optional[float]
+) -> Optional[str]:
+    """"up" when close > fast MA > slow MA, "down" mirrored, else "mixed"."""
+    if fast_ma is None or slow_ma is None:
+        return None
+    if close > fast_ma > slow_ma:
+        return "up"
+    if close < fast_ma < slow_ma:
+        return "down"
+    return "mixed"
+
+
+def combined_trend(stack: Optional[str], structure: Optional[str]) -> Optional[str]:
+    """MA check + pivot structure; they must agree for a directional label."""
+    if stack is None or structure is None:
+        return None
+    if stack == "up" and structure == "higher highs and lows":
+        return "bullish"
+    if stack == "down" and structure == "lower highs and lows":
+        return "bearish"
+    return "neutral"
+
+
+def _trend_explanation(
+    label: Optional[str],
+    stack: Optional[str],
+    structure: Optional[str],
+    fast: str,
+    slow: str,
+    tail: str = "",
+) -> str:
+    """Method text, per the explanation style rule (TODO.md 2026-07-27):
+    an agreeing label gets method only — re-listing each ingredient's
+    verdict would smuggle the double-counting back in as prose. A neutral
+    label states which ingredient said what, because neutral collapses
+    two opposite situations that only the ingredients distinguish."""
+    method = (
+        f"Combined from the {fast}/{slow} moving-average check and the "
+        "pivot structure; both must agree for a directional label."
+    )
+    if label == "neutral":
+        method += (
+            f" Here they disagree: the moving-average check reads "
+            f"{stack}, the pivot structure reads {structure}."
+        )
+    elif label is None:
+        missing = "moving averages" if stack is None else "pivot structure"
+        method += f" Not enough history to compute the {missing}."
+    return method + tail
+
+
+def momentum_label(
+    rsi: Optional[float],
+    histogram: Sequence[float],
+    macd_line: Optional[float],
+) -> Optional[str]:
+    """One label resolving RSI and MACD together (v2: the label swallows
+    RSI slope, histogram value/direction and the zero-line boolean).
+
+    strong: RSI > 55, histogram rising, MACD line above zero.
+    weak: RSI < 45, histogram falling, MACD line below zero.
+    fading: RSI > 55 but histogram falling (strength draining).
+    basing: RSI < 45 but histogram rising (strength building).
+    """
+    if rsi is None or macd_line is None:
+        return None
+    if len(histogram) < HIST_DIRECTION_BARS + 1:
+        return None
+    rising = histogram[-1] > histogram[-1 - HIST_DIRECTION_BARS]
+    if rsi > MOMENTUM_RSI_STRONG:
+        if rising and macd_line > 0:
+            return "strong"
+        if not rising:
+            return "fading"
+    if rsi < MOMENTUM_RSI_WEAK:
+        if not rising and macd_line < 0:
+            return "weak"
+        if rising:
+            return "basing"
+    return "neutral"
+
+
+def atr_trend(bars: Sequence[Bar], lookback: int = ATR_TREND_LOOKBACK) -> Optional[str]:
+    """ATR now vs ``lookback`` bars ago with a ±10% dead band."""
+    now = compute_atr(bars)
+    then = compute_atr(bars[:-lookback]) if len(bars) > lookback else None
+    if now is None or then is None or then <= 0:
+        return None
+    change = now / then - 1.0
+    if change > ATR_TREND_BAND:
+        return "expanding"
+    if change < -ATR_TREND_BAND:
+        return "contracting"
+    return "stable"
+
+
+def nearest_support(
+    lows: Sequence[Tuple[int, float]], close: float
+) -> Optional[float]:
+    """Highest pivot low strictly below the close."""
+    below = [price for _, price in lows if price < close]
+    return max(below) if below else None
+
+
+def nearest_resistance(
+    highs: Sequence[Tuple[int, float]], close: float
+) -> Optional[float]:
+    """Lowest pivot high strictly above the close."""
+    above = [price for _, price in highs if price > close]
+    return min(above) if above else None
+
+
+def typical_pullback_atr(
+    highs: Sequence[Tuple[int, float]],
+    lows: Sequence[Tuple[int, float]],
+    atr: Optional[float],
+) -> Optional[float]:
+    """Median depth of recent completed pullbacks, in ATR units.
+
+    A completed pullback is a pivot high followed by the next pivot low
+    after it. Uses the last TYPICAL_PULLBACK_MAX_PAIRS pairs and needs at
+    least TYPICAL_PULLBACK_MIN_PAIRS — the field exists to stop a stop
+    from landing inside normal noise, and one dip is not "normal"."""
+    if atr is None or atr <= 0:
+        return None
+    depths: List[float] = []
+    for high_index, high_price in highs:
+        following = [
+            low_price for low_index, low_price in lows if low_index > high_index
+        ]
+        if not following:
+            continue
+        depth = high_price - following[0]
+        if depth > 0:
+            depths.append(depth / atr)
+    depths = depths[-TYPICAL_PULLBACK_MAX_PAIRS:]
+    if len(depths) < TYPICAL_PULLBACK_MIN_PAIRS:
+        return None
+    ordered = sorted(depths)
+    mid = len(ordered) // 2
+    median = (
+        ordered[mid]
+        if len(ordered) % 2
+        else (ordered[mid - 1] + ordered[mid]) / 2.0
+    )
+    return round(median, 2)
+
+
+# ---------------------------------------------------------------------------
+# Benchmark-relative fields (regime, relative strength)
+# ---------------------------------------------------------------------------
+
+
+def relative_strength_pct(
+    closes: List[float], index_closes: List[float], window: int
+) -> Optional[float]:
+    """Stock return minus index return over ``window`` bars, in points."""
+    stock = pct_change(closes, window)
+    index = pct_change(index_closes, window)
+    if stock is None or index is None:
+        return None
+    return round(stock - index, 2)
+
+
+def relative_strength_label(
+    rs_1m: Optional[float], rs_3m: Optional[float]
+) -> Optional[str]:
+    """leader / laggard / neutral from the 1-month and 3-month reads."""
+    if rs_1m is None or rs_3m is None:
+        return None
+    if rs_1m > 0 and rs_3m > 0:
+        return "leader"
+    if rs_1m < 0 and rs_3m < 0:
+        return "laggard"
+    return "neutral"
+
+
+def regime_read(index_closes: List[float]) -> Optional[Dict[str, Any]]:
+    """The benchmark regime: label + the two ingredients (for the
+    explanation text — the label is the only published field)."""
+    if not index_closes:
+        return None
+    close = index_closes[-1]
+    sma_long = compute_sma(index_closes, DAILY_SMA_LONG)
+    window = index_closes[-YEAR_BARS:]
+    low, high = min(window), max(window)
+    if sma_long is None or high <= low:
+        return None
+    range_pct = (close - low) / (high - low) * 100.0
+    above = close > sma_long
+    if above and range_pct > 50.0:
+        label = "bullish"
+    elif not above and range_pct < 50.0:
+        label = "bearish"
+    else:
+        label = "mixed"
+    return {"label": label, "above_200d": above, "range_pct": round(range_pct, 0)}
+
+
+# ---------------------------------------------------------------------------
+# The provider
+# ---------------------------------------------------------------------------
+
+
+def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
+    return round(value, digits) if value is not None else None
 
 
 def _unwired_bars_loader(symbol: str) -> List[Bar]:
@@ -246,11 +666,10 @@ def _unwired_bars_loader(symbol: str) -> List[Bar]:
 class TechnicalsProvider(DimensionProvider):
     """NUMERIC technicals for any market (indicators are market-agnostic).
 
-    No composite score is published (owner decision, 2026-07-26). This
-    payload is handed to the LLM stages verbatim, so a code-computed
-    0-100 verdict sitting in it would pre-answer the very question those
-    stages exist to answer — they anchor on the number instead of reading
-    the fields. Old stored runs still carry their ``score``.
+    ``index_bars_loader`` (optional) feeds the market-regime and
+    relative-strength fields with benchmark index bars; when it is absent
+    or fails, those fields are None with a warning — a benchmark outage
+    must not sink the stock's own report.
     """
 
     dimension = "technicals"
@@ -260,9 +679,13 @@ class TechnicalsProvider(DimensionProvider):
         self,
         bars_loader: Callable[[str], List[Bar]] = _unwired_bars_loader,
         source_name: str = "ohlcv-bars",
+        index_bars_loader: Optional[Callable[[], List[Bar]]] = None,
+        benchmark_name: str = "benchmark index",
     ) -> None:
         self._bars_loader = bars_loader
         self._source_name = source_name
+        self._index_bars_loader = index_bars_loader
+        self._benchmark_name = benchmark_name
 
     def supports(self, market: Market) -> bool:
         return True
@@ -289,47 +712,21 @@ class TechnicalsProvider(DimensionProvider):
                 ],
             )
 
-        closes = [bar.close for bar in bars]
-        atr = compute_atr(bars)
-        payload: Dict[str, object] = {
-            "close": closes[-1],
-            "bars_count": len(bars),
-            "sma_20": compute_sma(closes, 20),
-            "sma_60": compute_sma(closes, FULL_HISTORY_BARS),
-            "ema_12": compute_ema(closes, MACD_FAST),
-            "ema_26": compute_ema(closes, MACD_SLOW),
-            "rsi_14": compute_wilder_rsi(closes),
-            "macd": compute_macd(closes),
-            "atr_14": atr,
-            # Typical daily swing as % of price — stated here so LLM stages
-            # can cite it directly (plan review's volatility check).
-            "volatility_pct": (
-                round(atr / closes[-1] * 100, 2)
-                if atr is not None and closes[-1] > 0
-                else None
-            ),
-            "swing_low_20": compute_swing_low(bars),
-            "swing_high_20": compute_swing_high(bars),
-            "swing_low_60": compute_swing_low(bars, FULL_HISTORY_BARS),
-            "swing_high_60": compute_swing_high(bars, FULL_HISTORY_BARS),
-            "high_52w": compute_swing_high(bars, YEAR_BARS),
-            "low_52w": compute_swing_low(bars, YEAR_BARS),
-            "avg_volume_20": compute_avg_volume(bars),
-            "worst_day_pct_1y": compute_worst_day_pct_1y(closes),
-            "bias_20": compute_bias(closes),
-        }
+        warnings: List[str] = []
+        payload = self._build_payload(bars, warnings)
 
         missing = [
-            key
-            for key, value in payload.items()
-            if value is None and key not in OPTIONAL_PAYLOAD_KEYS
+            f"{group}.{key}"
+            for group, metrics in payload.items()
+            for key, envelope in metrics.items()
+            if metric_value(envelope) is None
+            and f"{group}.{key}" not in OPTIONAL_METRICS
         ]
         coverage = Coverage.FULL if not missing else Coverage.PARTIAL
-        warnings = (
-            [f"indicators lacking history: {', '.join(sorted(missing))}"]
-            if missing
-            else []
-        )
+        if missing:
+            warnings.append(
+                f"indicators lacking history: {', '.join(sorted(missing))}"
+            )
         return DimensionResult(
             dimension=self.dimension,
             kind=self.kind,
@@ -337,4 +734,369 @@ class TechnicalsProvider(DimensionProvider):
             payload=payload,
             citations=[Citation(source_name=self._source_name)],
             warnings=warnings,
+        )
+
+    # -- payload assembly ---------------------------------------------------
+
+    def _build_payload(
+        self, bars: List[Bar], warnings: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        closes = [bar.close for bar in bars]
+        close = closes[-1]
+        weekly_bars = resample_weekly(bars)
+        weekly_closes = [bar.close for bar in weekly_bars]
+
+        if len(bars) < YEAR_BARS:
+            warnings.append(
+                f"only {len(bars)} daily bars (<{YEAR_BARS}): the one-year "
+                "fields cover the history that exists"
+            )
+        if len(weekly_bars) < WEEKLY_BARS_TARGET:
+            warnings.append(
+                f"only {len(weekly_bars)} weekly bars "
+                f"(<{WEEKLY_BARS_TARGET}): the weekly structure read is "
+                "unreliable"
+            )
+
+        atr = compute_atr(bars)
+        atr_pct = (
+            _round(atr / close * 100.0) if atr is not None and close > 0 else None
+        )
+        rsi = _round(compute_wilder_rsi(closes))
+        macd_line, histogram = macd_histogram_series(closes)
+
+        # Daily trend: 20/50 stack + pivot structure over ~6 months.
+        sma_fast_d = compute_sma(closes, DAILY_SMA_FAST)
+        sma_mid_d = compute_sma(closes, DAILY_SMA_MID)
+        sma_long_d = compute_sma(closes, DAILY_SMA_LONG)
+        daily_window = bars[-DAILY_PIVOT_LOOKBACK:]
+        daily_offset = len(bars) - len(daily_window)
+        daily_highs, daily_lows = find_pivots(daily_window)
+        daily_highs = [(i + daily_offset, p) for i, p in daily_highs]
+        daily_lows = [(i + daily_offset, p) for i, p in daily_lows]
+        daily_stack = ma_stack(close, sma_fast_d, sma_mid_d)
+        daily_struct = pivot_structure(daily_highs, daily_lows)
+        daily_trend = combined_trend(daily_stack, daily_struct)
+
+        # Weekly trend: 10/20-week stack + weekly pivot structure.
+        sma_fast_w = compute_sma(weekly_closes, WEEKLY_SMA_FAST)
+        sma_slow_w = compute_sma(weekly_closes, WEEKLY_SMA_SLOW)
+        weekly_highs, weekly_lows = find_pivots(weekly_bars)
+        weekly_stack = ma_stack(close, sma_fast_w, sma_slow_w)
+        weekly_struct = pivot_structure(weekly_highs, weekly_lows)
+        weekly_trend = combined_trend(weekly_stack, weekly_struct)
+        weekly_atr = atr * WEEKLY_ATR_FACTOR if atr is not None else None
+
+        stretch_10w = (
+            _round((close - sma_fast_w) / weekly_atr)
+            if sma_fast_w is not None and weekly_atr
+            else None
+        )
+        stretch_50d = (
+            _round((close - sma_mid_d) / atr)
+            if sma_mid_d is not None and atr
+            else None
+        )
+
+        high_1y = compute_swing_high(bars, YEAR_BARS)
+        low_1y = compute_swing_low(bars, YEAR_BARS)
+        range_pct = (
+            _round((close - low_1y) / (high_1y - low_1y) * 100.0, 1)
+            if high_1y is not None and low_1y is not None and high_1y > low_1y
+            else None
+        )
+
+        avg_vol_60 = compute_avg_volume(bars, VOLUME_BASE_BARS)
+        avg_vol_5 = compute_avg_volume(bars, VOLUME_RECENT_BARS)
+        vol_ratio = (
+            _round(avg_vol_5 / avg_vol_60)
+            if avg_vol_5 is not None and avg_vol_60
+            else None
+        )
+
+        support = nearest_support(daily_lows, close)
+        resistance = nearest_resistance(daily_highs, close)
+        pullback = typical_pullback_atr(daily_highs, daily_lows, atr)
+
+        regime, rs_3m, rs_label = self._benchmark_fields(closes, warnings)
+
+        weekly_tail = (
+            " Daily signals should only generate trades in this direction;"
+            " against it, the best plan is no trade."
+        )
+        payload: Dict[str, Dict[str, Any]] = {
+            "meta": {
+                "as_of": make_metric(
+                    "as of",
+                    "Date of the last completed daily bar. Data older than "
+                    "a couple of sessions should not anchor a plan.",
+                    # Some loaders ship "YYYY-MM-DD 00:00:00"; the date part
+                    # is the fact.
+                    bars[-1].date[:10] if bars[-1].date else None,
+                ),
+                "bars_daily": make_metric(
+                    "daily bars",
+                    f"Daily bars loaded. Below {YEAR_BARS} the one-year "
+                    "fields only cover the history that exists.",
+                    len(bars),
+                ),
+                "bars_weekly": make_metric(
+                    "weekly bars",
+                    "Weekly bars resampled from the daily history. Below "
+                    f"{WEEKLY_BARS_TARGET} the weekly structure read is "
+                    "unreliable.",
+                    len(weekly_bars),
+                ),
+            },
+            "regime": {
+                "regime": regime,
+            },
+            "relative_strength": {
+                "rs_3m": rs_3m,
+                "rs_label": rs_label,
+            },
+            "price": {
+                "close": make_metric(
+                    "closing price",
+                    "Last daily closing price — the anchor every distance "
+                    "below is measured from.",
+                    _round(close),
+                ),
+                "chg_5d_pct": make_metric(
+                    "% change (5d)",
+                    "Closing-price change over the last 5 trading days, in "
+                    "%. A large move means the easy entry may already be "
+                    "gone.",
+                    pct_change(closes, 5),
+                ),
+                "range_pct_1y": make_metric(
+                    "closing price ranking (1y)",
+                    "Where the close sits in its one-year range: 0 = at "
+                    "the low, 100 = at the high.",
+                    range_pct,
+                ),
+                "high_1y": make_metric(
+                    "highest price (1y)",
+                    "Highest traded price of the last year — the most-"
+                    "watched resistance landmark; a target above it needs "
+                    "breakout logic, not pullback logic.",
+                    _round(high_1y),
+                ),
+            },
+            "weekly": {
+                "trend": make_metric(
+                    "weekly trend",
+                    _trend_explanation(
+                        weekly_trend, weekly_stack, weekly_struct,
+                        f"{WEEKLY_SMA_FAST}-week", f"{WEEKLY_SMA_SLOW}-week",
+                        tail=weekly_tail,
+                    ),
+                    weekly_trend,
+                ),
+                "stretch_10w_atr": make_metric(
+                    "stretch vs 10-week average (ATR)",
+                    "Distance of the close from the 10-week average, in "
+                    "weekly ATR units (weekly ATR ≈ daily ATR × √5). Above "
+                    "about +1.5 = extended, wait for a pullback; -0.5 to "
+                    "+1 in an uptrend = pullback-buy zone.",
+                    stretch_10w,
+                ),
+            },
+            "daily": {
+                "trend": make_metric(
+                    "daily trend",
+                    _trend_explanation(
+                        daily_trend, daily_stack, daily_struct,
+                        f"{DAILY_SMA_FAST}-day", f"{DAILY_SMA_MID}-day",
+                    ),
+                    daily_trend,
+                ),
+                "sma_50": make_metric(
+                    "50-day average",
+                    "50-day simple moving average — the classic swing "
+                    "pullback level.",
+                    _round(sma_mid_d),
+                ),
+                "stretch_50d_atr": make_metric(
+                    "stretch vs 50-day average (ATR)",
+                    "Distance of the close from the 50-day average, in ATR "
+                    "units. -1 to +1 in an uptrend = pullback entry zone; "
+                    "above +3 = extended, chasing.",
+                    stretch_50d,
+                ),
+                "sma_200": make_metric(
+                    "200-day average",
+                    "200-day simple moving average — the most-watched "
+                    "long-term line in finance; it acts as support or "
+                    "resistance whatever the holding period.",
+                    _round(sma_long_d),
+                ),
+                "momentum": make_metric(
+                    "momentum",
+                    "One label resolving RSI and MACD together: strong "
+                    f"(RSI > {MOMENTUM_RSI_STRONG}, MACD histogram rising, "
+                    "MACD line above zero), weak (the mirror image), "
+                    "fading (price strong but the histogram falling), "
+                    "basing (price weak but the histogram rising), else "
+                    "neutral.",
+                    momentum_label(rsi, histogram, macd_line),
+                ),
+                "rsi_14": make_metric(
+                    "RSI (14d)",
+                    "14-day relative strength index. Above 70 = risen too "
+                    "fast, below 30 = fallen too fast, 50 neutral. In "
+                    "strong trends it can stay pinned high — do not "
+                    "auto-fade it.",
+                    rsi,
+                ),
+            },
+            "volatility": {
+                "atr_14": make_metric(
+                    "ATR (14d)",
+                    "Average true range over 14 days, in price units — the "
+                    "typical daily move, and the unit for stops and "
+                    "sizing.",
+                    _round(atr),
+                ),
+                "atr_pct": make_metric(
+                    "ATR (% of price)",
+                    "The typical daily move as a percent of price, "
+                    "comparable across stocks. Above about 6% is a "
+                    "high-volatility name — consider smaller size.",
+                    atr_pct,
+                ),
+                "atr_trend": make_metric(
+                    "ATR trend",
+                    f"ATR now vs {ATR_TREND_LOOKBACK} bars ago (±10% dead "
+                    "band): expanding = widen stops and shrink size; "
+                    "contracting = a squeeze that often precedes a move; "
+                    "else stable.",
+                    atr_trend(bars),
+                ),
+            },
+            "volume": {
+                "avg_vol_60d": make_metric(
+                    "average volume (60d)",
+                    "Mean daily share volume over the last 60 bars — the "
+                    "liquidity baseline an order size is judged against.",
+                    _round(avg_vol_60, 0),
+                ),
+                "vol_ratio_5_60": make_metric(
+                    "volume ratio (5d ÷ 60d)",
+                    "Average volume of the last 5 bars over the 60-bar "
+                    "average. Above about 1.5 on a breakout = confirmed; "
+                    "below about 0.7 = suspect move.",
+                    vol_ratio,
+                ),
+            },
+            "levels": {
+                "support_1": make_metric(
+                    "support 1",
+                    "Nearest pivot low below the close — a stop belongs "
+                    "below a level like this, not at an arbitrary percent.",
+                    _round(support),
+                ),
+                "resistance_1": make_metric(
+                    "resistance 1",
+                    "Nearest pivot high above the close — the first "
+                    "target candidate.",
+                    _round(resistance),
+                ),
+                "typical_pullback_atr": make_metric(
+                    "typical pullback (ATR)",
+                    "Median depth of the last few completed pullbacks "
+                    "(pivot high to the next pivot low), in ATR units. A "
+                    "stop closer than this sits inside normal noise.",
+                    pullback,
+                ),
+            },
+            "risk": {
+                "worst_day_pct_1y": make_metric(
+                    "worst single-day drop (1y)",
+                    "Worst close-to-close daily return of the last year, "
+                    "in %. Gap risk: how far an overnight surprise has "
+                    "actually blown through this stock's stops.",
+                    compute_worst_day_pct_1y(closes),
+                ),
+            },
+        }
+        return payload
+
+    def _benchmark_fields(
+        self, closes: List[float], warnings: List[str]
+    ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """(regime, rs_3m, rs_label) envelopes; None values + a warning
+        when the benchmark is unwired or its fetch fails."""
+        regime_name = "market regime"
+        rs_name = "relative strength vs benchmark (3m)"
+        rs_label_name = "relative strength label"
+        rs_explanation = (
+            "Stock return minus benchmark return over the last "
+            f"{RS_WINDOW_3M} trading days (about 3 months), in percentage "
+            "points. Positive = leading the market."
+        )
+        label_explanation = (
+            "leader = outperforming the benchmark over both 1 and 3 "
+            "months; laggard = underperforming over both; else neutral. "
+            "Prefer longs in leaders — a laggard long needs an explicit "
+            "catalyst from the other reports."
+        )
+
+        def _absent(reason: str) -> Tuple[Dict[str, Any], ...]:
+            warnings.append(reason)
+            return (
+                make_metric(
+                    regime_name,
+                    f"What the overall market is doing. {reason}.",
+                    None,
+                ),
+                make_metric(rs_name, rs_explanation, None),
+                make_metric(rs_label_name, label_explanation, None),
+            )
+
+        if self._index_bars_loader is None:
+            return _absent("benchmark index not configured for this market")
+        try:
+            index_bars = list(self._index_bars_loader())
+        except Exception as exc:
+            return _absent(f"benchmark index bars unavailable: {exc}")
+        index_closes = [bar.close for bar in index_bars]
+        regime = regime_read(index_closes)
+        rs_1m = relative_strength_pct(closes, index_closes, RS_WINDOW_1M)
+        rs_3m = relative_strength_pct(closes, index_closes, RS_WINDOW_3M)
+        if regime is None and rs_3m is None:
+            return _absent(
+                f"benchmark index history too short "
+                f"({len(index_closes)} bars)"
+            )
+
+        if regime is not None:
+            position = "above" if regime["above_200d"] else "below"
+            regime_env = make_metric(
+                regime_name,
+                f"What the overall market is doing, from the benchmark "
+                f"index ({self._benchmark_name}): {position} its 200-day "
+                f"average and at {regime['range_pct']:.0f}% of its "
+                "one-year range. In a bearish regime demand stronger "
+                "setups and smaller size.",
+                regime["label"],
+            )
+        else:
+            warnings.append(
+                "benchmark index history too short for the regime read"
+            )
+            regime_env = make_metric(
+                regime_name,
+                "What the overall market is doing. Benchmark history too "
+                "short for the 200-day regime read.",
+                None,
+            )
+        return (
+            regime_env,
+            make_metric(rs_name, rs_explanation, rs_3m),
+            make_metric(
+                rs_label_name,
+                label_explanation,
+                relative_strength_label(rs_1m, rs_3m),
+            ),
         )

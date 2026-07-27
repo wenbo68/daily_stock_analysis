@@ -3,7 +3,7 @@ import type { TieredPlanWarning } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
-import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
+import { flashElement, formatPrice, jumpToMetric, jumpToMetricFirst } from '../tiered/termHelpers';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import { AltModal, FVar, MODAL_BODY, MODAL_STRONG } from './AltUi';
 
@@ -22,7 +22,17 @@ const WARN_KEYWORD_KEYS: Record<string, UiTextKey> = {
   gap_atr: 'tiered.alt.warnKey.gap_atr',
   gap_worst: 'tiered.alt.warnKey.gap_worst',
   reward_below_goal: 'tiered.alt.warnKey.reward_below_goal',
+  earnings_soon: 'tiered.alt.warnKey.earnings_soon',
 };
+
+// The technicals payload moved metrics into groups (v2, 2026-07-27);
+// stored runs still anchor at the old flat paths, so report jumps try
+// the new path first and fall back.
+const ATR_REFS = ['technicals.volatility.atr_14', 'technicals.atr_14'];
+const WORST_PCT_REFS = [
+  'technicals.risk.worst_day_pct_1y',
+  'technicals.worst_day_pct_1y',
+];
 
 // A number for warning sentences: at most 2 decimals, no float noise.
 const wNum = (value: unknown): string =>
@@ -143,6 +153,9 @@ const warningNodes = (
   const reportJump = (refPath: string, text: string, innerClose: () => void = closeAll) => (
     <JumpValue text={text} closeAll={innerClose} onJump={() => jumpToMetric(refPath)} />
   );
+  const reportJumpFirst = (refPaths: string[], text: string, innerClose: () => void = closeAll) => (
+    <JumpValue text={text} closeAll={innerClose} onJump={() => jumpToMetricFirst(refPaths)} />
+  );
   // Inner formula links must collapse the formula popup AND the warnings
   // modal before scrolling.
   const stack = (closeSelf: () => void) => () => {
@@ -200,6 +213,17 @@ const warningNodes = (
 
   switch (warning.id) {
     case 'downtrend':
+      // v2 runs compare against the 50-day average (values.sma_50);
+      // stored runs carry the retired 60-day comparison (values.sma_60).
+      if (typeof v.sma_50 === 'number') {
+        return {
+          templateKey: 'tiered.alt.warn.downtrend_50',
+          nodes: {
+            close: reportJumpFirst(['technicals.price.close', 'technicals.close'], wPrice(v.close)),
+            sma50: reportJump('technicals.daily.sma_50', wPrice(v.sma_50)),
+          },
+        };
+      }
       return {
         templateKey: 'tiered.alt.warn.downtrend',
         nodes: {
@@ -207,11 +231,22 @@ const warningNodes = (
           sma60: reportJump('technicals.sma_60', wPrice(v.sma_60)),
         },
       };
+    case 'earnings_soon':
+      return {
+        templateKey: 'tiered.alt.warn.earnings_soon',
+        nodes: {
+          days: reportJump('fundamentals.days_until_earnings', wNum(v.days_until)),
+          date: reportJump(
+            'fundamentals.next_earnings_date',
+            typeof v.next_date === 'string' ? v.next_date : '—',
+          ),
+        },
+      };
     case 'gap_atr':
       return {
         templateKey: 'tiered.alt.warn.gap_atr',
         nodes: {
-          atr: reportJump('technicals.atr_14', wNum(v.atr_14)),
+          atr: reportJumpFirst(ATR_REFS, wNum(v.atr_14)),
           stop: planJump('stop_loss', wPrice(v.stop_loss)),
           atrOpen: (
             <ComputedValue
@@ -229,7 +264,7 @@ const warningNodes = (
                     <>
                       {planJump('stop_loss', wPrice(v.stop_loss), stack(closeSelf))} −{' '}
                       {wNum(v.gap_atr_multiple)} ×{' '}
-                      {reportJump('technicals.atr_14', wNum(v.atr_14), stack(closeSelf))}
+                      {reportJumpFirst(ATR_REFS, wNum(v.atr_14), stack(closeSelf))}
                     </>
                   }
                   result={wPrice(v.atr_open)}
@@ -277,14 +312,14 @@ const warningNodes = (
             : null;
       const worstDayPct =
         worstPct === null ? '—' : String(Number(worstPct.toFixed(1)));
-      const worstRef =
+      const worstRefs =
         typeof v.worst_day_pct === 'number'
-          ? 'technicals.worst_day_pct_1y'
-          : 'technicals.worst_day_1y';
+          ? WORST_PCT_REFS
+          : ['technicals.worst_day_1y'];
       return {
         templateKey: 'tiered.alt.warn.gap_worst',
         nodes: {
-          worstDayPct: reportJump(worstRef, worstDayPct),
+          worstDayPct: reportJumpFirst(worstRefs, worstDayPct),
           stop: planJump('stop_loss', wPrice(v.stop_loss)),
           worstOpen: (
             <ComputedValue
@@ -301,7 +336,7 @@ const warningNodes = (
                   plugged={
                     <>
                       {planJump('entry', wPrice(v.entry), stack(closeSelf))} × (1 +{' '}
-                      {reportJump(worstRef, worstDayPct, stack(closeSelf))} ÷ 100)
+                      {reportJumpFirst(worstRefs, worstDayPct, stack(closeSelf))} ÷ 100)
                     </>
                   }
                   result={wPrice(v.worst_open)}

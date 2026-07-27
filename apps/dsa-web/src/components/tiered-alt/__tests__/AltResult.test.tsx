@@ -1006,6 +1006,36 @@ describe('AltResult', () => {
     expect(row?.contains(date)).toBe(true);
   });
 
+  it('renders a v2 envelope payload as one row per metric with group titles', () => {
+    const result = makeV1Result();
+    // technicals v2 (2026-07-27): nested groups of {name, explanation,
+    // value} envelopes.
+    result.dimensions[0].payload = {
+      price: {
+        close: { name: 'closing price', explanation: 'anchor', value: 157.79 },
+      },
+      daily: {
+        trend: { name: 'daily trend', explanation: 'combined', value: 'bullish' },
+        rsi_14: { name: 'RSI (14d)', explanation: 'momentum', value: 61.42 },
+      },
+    };
+    renderResult(result);
+    const card = screen.getByTestId('alt-dimension-technicals');
+    // One row per envelope, unwrapped to its value — the prose keys
+    // (name/explanation) must not render as rows of their own.
+    const close = document.getElementById('tiered-metric-technicals-price-close');
+    expect(close).toHaveTextContent('157.79');
+    const trend = document.getElementById('tiered-metric-technicals-daily-trend');
+    expect(trend).toHaveTextContent('bullish');
+    expect(within(card).queryByText('anchor')).not.toBeInTheDocument();
+    expect(within(card).queryByText('combined')).not.toBeInTheDocument();
+    // Group keys become section titles via the metric vocabulary.
+    expect(within(card).getByText(/价格|Price/)).toBeInTheDocument();
+    expect(within(card).getByText(/日线时间框架|Daily timeframe/)).toBeInTheDocument();
+    // No Other bucket: every v2 group renders under its own name.
+    expect(within(card).queryByText(/^(其他|Other)$/)).not.toBeInTheDocument();
+  });
+
   it('shows verdict, size, stop loss and score as plain Label: value facts', () => {
     renderResult(makeDeepResult());
     const tier3 = screen.getByTestId('alt-tier3');

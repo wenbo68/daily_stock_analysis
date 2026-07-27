@@ -5,8 +5,8 @@ Outlook redesign (2026-07-20): the AI level adjuster is retired — levels
 are formula bases everywhere. run_tiered_analysis must replace the DSA
 sniper levels (LLM prose) with the deterministic bases, attach the
 levels_detail audit trail (adjusted always None), and surface level
-warnings on the report. Also covers the swing_low_20 payload key the
-level formulas depend on.
+warnings on the report. v2 (2026-07-27): the anchors come from the
+envelope payload (daily.sma_50 / daily.sma_200 / levels.support_1).
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from src.tiered_analysis.providers.base import (
 from src.tiered_analysis.providers.technicals import (
     Bar,
     TechnicalsProvider,
-    compute_swing_low,
+    read_metric,
 )
 
 
@@ -42,13 +42,27 @@ class _StubProvider(DimensionProvider):
         return self._result
 
 
+def _env(value):
+    return {"name": "n", "explanation": "e", "value": value}
+
+
+def _payload(close=100.0, sma_50=96.0, sma_200=90.0, support_1=94.0,
+             atr_14=3.0):
+    return {
+        "price": {"close": _env(close), "high_1y": _env(None)},
+        "daily": {"sma_50": _env(sma_50), "sma_200": _env(sma_200)},
+        "volatility": {"atr_14": _env(atr_14)},
+        "levels": {"support_1": _env(support_1),
+                   "resistance_1": _env(None)},
+    }
+
+
 def _technicals_dim():
     return DimensionResult(
         dimension="technicals",
         kind=SourceKind.NUMERIC,
         coverage=Coverage.FULL,
-        payload={"close": 100.0, "sma_20": 96.0, "sma_60": 90.0,
-                 "swing_low_20": 94.0, "atr_14": 3.0},
+        payload=_payload(),
     )
 
 
@@ -113,8 +127,7 @@ class TestLevelsWiring(unittest.TestCase):
         downtrend = DimensionResult(
             dimension="technicals", kind=SourceKind.NUMERIC,
             coverage=Coverage.FULL,
-            payload={"close": 89.0, "sma_20": 96.0, "sma_60": 90.0,
-                     "swing_low_20": 94.0, "atr_14": 3.0},
+            payload=_payload(close=89.0),
         )
         outcome = _run(providers=[_StubProvider(downtrend)])
         self.assertIsNotNone(outcome.report.levels.entry)
@@ -123,25 +136,26 @@ class TestLevelsWiring(unittest.TestCase):
         )
 
 
-class TestSwingLowPayload(unittest.TestCase):
+class TestLevelAnchorsPayload(unittest.TestCase):
+    """The provider payload carries the anchors the level formulas read."""
+
     def _bars(self, count=70):
         bars = []
         for i in range(count):
             close = 100.0 + i * 0.1
             bars.append(Bar(high=close + 1, low=close - 1, close=close,
-                            open=close, volume=1000, date=f"d{i}"))
+                            open=close, volume=1000, date=None))
         return bars
 
-    def test_compute_swing_low_uses_lookback_window(self):
-        bars = self._bars(70)
-        # last 20 bars: closes 105.0..106.9, lows are close-1 -> min = 104.0
-        self.assertAlmostEqual(compute_swing_low(bars), 104.0)
-        self.assertIsNone(compute_swing_low([]))
-
-    def test_provider_payload_includes_swing_low(self):
+    def test_provider_payload_carries_the_level_anchors(self):
         provider = TechnicalsProvider(bars_loader=lambda symbol: self._bars(70))
-        result = provider.collect("AAPL")
-        self.assertAlmostEqual(result.payload["swing_low_20"], 104.0)
+        payload = provider.collect("AAPL").payload
+        self.assertAlmostEqual(read_metric(payload, "price", "close"), 106.9)
+        self.assertAlmostEqual(
+            read_metric(payload, "daily", "sma_50"),
+            round(sum(100.0 + i * 0.1 for i in range(20, 70)) / 50, 2),
+        )
+        self.assertIsNotNone(read_metric(payload, "volatility", "atr_14"))
 
 
 if __name__ == "__main__":

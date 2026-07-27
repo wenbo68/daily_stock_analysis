@@ -6,14 +6,15 @@ something:
 
 - **Adjustable checks** — liquidity (order > 5% of the average daily
   volume), volatility (typical daily swing > 4% of price) and
-  stop-vs-swing-low (stop resting at/above the 20-day low) feed an LLM
-  call that may adjust the plan: trim the share count, move the stop,
-  move the target. Every accepted adjustment carries a code-validated,
-  link-cited reason (the same citation contract as the tier-2 debate).
+  stop-vs-support (stop resting at/above the nearest pivot low) feed an
+  LLM call that may adjust the plan: trim the share count, move the
+  stop, move the target. Every accepted adjustment carries a
+  code-validated, link-cited reason (the same citation contract as the
+  tier-2 debate).
 - **The cycle** — an adjusted plan can trip a check the computed plan
   did not (a tightened stop raises the mechanical share count past the
   liquidity limit), so the PLAN-DEPENDENT checks (liquidity, stop vs
-  swing low) re-run after every adjustment round, up to
+  support) re-run after every adjustment round, up to
   ``MAX_ADJUST_ROUNDS`` rounds. Volatility depends only on report data —
   no adjustment can change it — so it fires in round 1 as context and
   never counts against convergence. Converged (no plan-dependent check
@@ -44,6 +45,7 @@ from .debate import (
     _values_equal,
     value_pattern,
 )
+from .earnings import EARNINGS_WARNING_DAYS, EarningsInfo, earnings_from_dimensions
 from .levels import (
     LEVEL_KEYS,
     AdjustmentProposal,
@@ -60,6 +62,7 @@ from .llm_support import (
     parse_llm_json,
 )
 from .providers.base import DimensionResult, Market
+from .providers.technicals import read_metric
 from .schema import Direction, SizingSlots, SniperLevels
 from .settings import SizingSettings
 from .sizing import SizingInputs, SizingResult, size_position
@@ -82,7 +85,10 @@ _ADJUSTABLE = ("stop_loss", "take_profit", "shares")
 #: placement). Only these re-run each round and define convergence —
 #: volatility depends on report data alone, so demanding it clear would
 #: make every volatile stock fail all rounds and revert.
-_PLAN_DEPENDENT_CHECKS = ("liquidity", "stop_vs_swing_low")
+#: (v2 renamed stop_vs_swing_low → stop_vs_support: the reference level
+#: is the nearest pivot low now, not the 20-day extreme. Stored runs
+#: still carry the old id; the web words both.)
+_PLAN_DEPENDENT_CHECKS = ("liquidity", "stop_vs_support")
 
 #: Adjustment rounds the AI gets before the computed plan stands.
 MAX_ADJUST_ROUNDS = 3
@@ -107,11 +113,6 @@ def _tech_payload(dimensions: Sequence[DimensionResult]) -> Dict[str, Any]:
         if dim.dimension == "technicals" and dim.payload:
             return dim.payload
     return {}
-
-
-def _num(payload: Dict[str, Any], key: str) -> Optional[float]:
-    value = payload.get(key)
-    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _size(
@@ -192,19 +193,19 @@ def _flagged_checks(
 ) -> List[_Check]:
     checks: List[_Check] = []
     stop = levels.stop_loss
-    avg_volume = _num(tech, "avg_volume_20")
-    volatility = _num(tech, "volatility_pct")
-    swing_low = _num(tech, "swing_low_20")
-    close = _num(tech, "close")
-    sma_60 = _num(tech, "sma_60")
+    avg_volume = read_metric(tech, "volume", "avg_vol_60d")
+    volatility = read_metric(tech, "volatility", "atr_pct")
+    support = read_metric(tech, "levels", "support_1")
+    close = read_metric(tech, "price", "close")
+    sma_50 = read_metric(tech, "daily", "sma_50")
 
-    if close is not None and sma_60 is not None and close <= sma_60:
+    if close is not None and sma_50 is not None and close <= sma_50:
         # Report-data check like volatility: it can never clear through
         # plan changes, so it must not join _PLAN_DEPENDENT_CHECKS.
         checks.append(_Check(
             "downtrend",
-            f"the close ({display_value(close)}) is at or below the 60-day "
-            f"average ({display_value(sma_60)}) — a counter-trend entry; "
+            f"the close ({display_value(close)}) is at or below the 50-day "
+            f"average ({display_value(sma_50)}) — a counter-trend entry; "
             "review the stop, the target and the share count together and "
             "tighten what the downtrend threatens",
         ))
@@ -223,17 +224,18 @@ def _flagged_checks(
         checks.append(_Check(
             "volatility",
             f"the typical daily swing is {display_value(volatility)}% of the "
-            f"price (technicals.volatility_pct), above the "
+            f"price (technicals.volatility.atr_pct), above the "
             f"{VOLATILITY_FLAG_PCT:g}% limit — review the share count, the "
             "stop and the target together and adjust what the volatility "
             "actually threatens",
         ))
-    if stop is not None and swing_low is not None and stop >= swing_low:
+    if stop is not None and support is not None and stop >= support:
         checks.append(_Check(
-            "stop_vs_swing_low",
-            f"the stop {display_value(stop)} rests at or above the 20-day "
-            f"swing low ({display_value(swing_low)}), where a routine "
-            'retest would trigger it — propose a "stop_loss" below that low',
+            "stop_vs_support",
+            f"the stop {display_value(stop)} rests at or above the nearest "
+            f"pivot support ({display_value(support)}), where a routine "
+            'retest would trigger it — propose a "stop_loss" below that '
+            "support level",
         ))
     return checks
 
@@ -244,22 +246,38 @@ def build_plan_warnings(
     shares: Optional[int],
     risk_amount: Optional[float],
     reward_goal: float,
+    earnings: Optional[EarningsInfo] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """The structured per-column warnings (numbers only, no wording)."""
     warnings: Dict[str, List[Dict[str, Any]]] = {
         "entry": [], "stop_loss": [], "take_profit": [], "shares": [],
     }
     entry, stop, target = levels.entry, levels.stop_loss, levels.take_profit
-    atr = _num(tech, "atr_14")
-    worst_day_pct = _num(tech, "worst_day_pct_1y")
-    close = _num(tech, "close")
-    sma_60 = _num(tech, "sma_60")
+    atr = read_metric(tech, "volatility", "atr_14")
+    worst_day_pct = read_metric(tech, "risk", "worst_day_pct_1y")
+    close = read_metric(tech, "price", "close")
+    sma_50 = read_metric(tech, "daily", "sma_50")
 
-    if entry is not None and close is not None and sma_60 is not None \
-            and close <= sma_60:
+    if entry is not None and close is not None and sma_50 is not None \
+            and close <= sma_50:
         warnings["entry"].append({
             "id": "downtrend",
-            "values": {"close": close, "sma_60": sma_60},
+            "values": {"close": close, "sma_50": sma_50},
+        })
+
+    # Earnings gate (2026-07-27, closing the gap the spec review found):
+    # a plan whose hold window straddles the next report gets a
+    # code-computed warning — technicals do not survive earnings. A
+    # warning, not a refusal, consistent with every other plan check
+    # (the warning row carries the judgment, the user decides).
+    if entry is not None and earnings is not None and earnings.is_near:
+        warnings["entry"].append({
+            "id": "earnings_soon",
+            "values": {
+                "days_until": earnings.days_until,
+                "next_date": earnings.next_date,
+                "warning_days": EARNINGS_WARNING_DAYS,
+            },
         })
 
     sized = shares is not None and shares > 0
@@ -336,7 +354,7 @@ checked mechanically by code):
     "value": <number>,
     "reasons": [{{"check": "<flagged check name>",
       "text": "<one sentence>",
-      "links": [{{"ref": "technicals.volatility_pct", "value": "4.3"}}]}}]}}]}}
+      "links": [{{"ref": "technicals.volatility.atr_pct", "value": "4.3"}}]}}]}}]}}
 - At most one adjustment per target. An empty list is a valid answer if
   no change genuinely helps.
 - Each reasons entry explains ONE flagged problem this adjustment fixes:
@@ -351,7 +369,7 @@ checked mechanically by code):
   {{"ref": the leaf field, "value": the displayed value}}. Plain
   sentences only — never paste refs or link JSON into the text.
 - Never point at a report metric by name alone: write its name AND its
-  displayed value, cited in "links" (e.g. "the 52-week high (461.62)").
+  displayed value, cited in "links" (e.g. "the one-year high (461.62)").
   Do not state numbers you cannot cite — the only uncited numbers
   allowed are your proposed value, that target's computed value, and
   the thresholds quoted in the flagged checks. No market lore that the
@@ -755,7 +773,8 @@ def review_plan(
     LLM outages keep the computed plan with a warning, as before.
     """
     tech = _tech_payload(dimensions)
-    atr = _num(tech, "atr_14")
+    atr = read_metric(tech, "volatility", "atr_14")
+    earnings = earnings_from_dimensions(dimensions)
     warnings: List[str] = []
 
     # The computed plan: base levels, base share count.
@@ -982,7 +1001,8 @@ def review_plan(
         levels_detail["review_failures"] = review_failures
 
     plan_warnings = build_plan_warnings(
-        tech, levels, final_shares, final_risk, settings.reward_risk
+        tech, levels, final_shares, final_risk, settings.reward_risk,
+        earnings=earnings,
     )
 
     return PlanReview(

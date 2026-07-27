@@ -109,6 +109,115 @@ const en: Record<string, MetricEntry> = {
     full: 'Retired field old runs still carry: a code-computed 0-100 technical score. New runs omit it — handing the AI a finished verdict made it anchor on the number instead of reading the fields.',
   },
 
+  // ---- technicals v2 groups + fields (2026-07-27) ----
+  regime: {
+    short: 'Market regime',
+    full: 'What the overall market is doing, judged on the benchmark index (S&P 500 for US stocks): above/below its 200-day average and its position in its one-year range.\nMost long setups fail in a falling market regardless of the individual chart.',
+  },
+  relative_strength: {
+    short: 'Relative strength',
+    full: 'The stock\'s return minus the benchmark index\'s return over the same window — is this stock leading or lagging the market.',
+  },
+  price: { short: 'Price', full: 'The current price and where it sits in its recent history.' },
+  weekly: {
+    short: 'Weekly timeframe',
+    full: 'The zoomed-out read (weeks per bar) — sets the outlook; daily signals should only generate trades in its direction.',
+  },
+  daily: {
+    short: 'Daily timeframe',
+    full: 'The trade-plan timeframe (one bar per day) — trend, momentum and the levels the plan is written against.',
+  },
+  volatility: {
+    short: 'Volatility',
+    full: 'How much the stock typically moves — the unit stops and position sizes are measured in.',
+  },
+  volume: { short: 'Volume', full: 'Trading activity — whether moves are backed by real participation and whether an order can exit cleanly.' },
+  levels: {
+    short: 'Levels',
+    full: 'Price levels from the stock\'s own turning points — where entries, stops and targets anchor.',
+  },
+  risk: { short: 'Risk', full: 'Tail behavior — how bad this stock\'s bad days actually get.' },
+  bars_daily: {
+    short: 'Daily bars',
+    full: 'Trading days of history loaded. Below 253 (one trading year) the one-year fields only cover what exists.',
+  },
+  bars_weekly: {
+    short: 'Weekly bars',
+    full: 'Weekly bars resampled from the daily history. Below 60 the weekly structure read is unreliable.',
+  },
+  rs_3m: {
+    short: 'vs index (3m)',
+    full: 'Stock return minus benchmark return over ~3 months (63 trading days), in percentage points.\nPositive = leading the market.',
+  },
+  rs_label: {
+    short: 'RS label',
+    full: 'leader = outperforming the benchmark over both 1 and 3 months; laggard = underperforming over both; else neutral.\nPrefer longs in leaders.',
+  },
+  chg_5d_pct: {
+    short: '% change (5d)',
+    full: 'Closing-price change over the last 5 trading days, in %.\nA large move means the easy entry may already be gone.',
+  },
+  range_pct_1y: {
+    short: 'Ranking (1y)',
+    full: 'Where the close sits in its one-year range: 0 = at the low, 100 = at the high.',
+  },
+  high_1y: {
+    short: 'Highest (1y)',
+    full: 'Highest traded price of the last year — the most-watched resistance landmark.\nA target above it needs breakout logic, not pullback logic.',
+  },
+  trend: {
+    short: 'Trend',
+    full: 'Combined from the moving-average check and the pivot structure; both must agree for a bullish/bearish label, otherwise neutral.',
+  },
+  stretch_10w_atr: {
+    short: 'Stretch vs 10w (ATR)',
+    full: 'Distance of the close from the 10-week average, in weekly ATR units.\nAbove ~+1.5 = extended, wait for a pullback; -0.5 to +1 in an uptrend = pullback-buy zone.',
+  },
+  sma_50: {
+    short: 'SMA 50',
+    full: '50-day simple moving average — the classic swing pullback level.',
+  },
+  stretch_50d_atr: {
+    short: 'Stretch vs 50d (ATR)',
+    full: 'Distance of the close from the 50-day average, in ATR units.\n-1 to +1 in an uptrend = pullback entry zone; above +3 = extended, chasing.',
+  },
+  sma_200: {
+    short: 'SMA 200',
+    full: '200-day simple moving average — the most-watched long-term line in finance; acts as support or resistance whatever the holding period.',
+  },
+  momentum: {
+    short: 'Momentum',
+    full: 'One label resolving RSI and MACD together: strong / weak / fading (price strong but momentum draining) / basing (price weak but momentum building) / neutral.',
+  },
+  atr_pct: {
+    short: 'ATR %',
+    full: 'The typical daily move as a percent of price, comparable across stocks.\nAbove ~6% is a high-volatility name — consider smaller size.',
+  },
+  atr_trend: {
+    short: 'ATR trend',
+    full: 'ATR now vs 20 bars ago (±10% band): expanding = widen stops and shrink size; contracting = a squeeze that often precedes a move; else stable.',
+  },
+  avg_vol_60d: {
+    short: 'Avg volume (60d)',
+    full: 'Mean daily share volume over the last 60 bars — the liquidity baseline an order size is judged against.',
+  },
+  vol_ratio_5_60: {
+    short: 'Volume ratio (5÷60)',
+    full: 'Average volume of the last 5 bars over the 60-bar average.\nAbove ~1.5 on a breakout = confirmed; below ~0.7 = suspect move.',
+  },
+  support_1: {
+    short: 'Support 1',
+    full: 'Nearest pivot low below the close — a stop belongs below a level like this, not at an arbitrary percent.',
+  },
+  resistance_1: {
+    short: 'Resistance 1',
+    full: 'Nearest pivot high above the close — the first target candidate.',
+  },
+  typical_pullback_atr: {
+    short: 'Typical pullback (ATR)',
+    full: 'Median depth of the last few completed pullbacks (pivot high to the next pivot low), in ATR units.\nA stop closer than this sits inside normal noise.',
+  },
+
   // ---- fundamentals ----
   growth: {
     short: 'Growth',
@@ -431,6 +540,40 @@ const zh: Record<string, MetricEntry> = {
     short: '技术评分',
     full: '旧运行保留的已退役字段：由代码算出的 0-100 技术面总分。新运行不再输出——把现成结论交给 AI 会让它锚定这个数字，而不是自己读取各项指标。',
   },
+
+  // ---- technicals v2 分组与字段（2026-07-27）----
+  regime: {
+    short: '市场环境',
+    full: '用基准指数（美股为标普500）判断大盘状态：是否高于其200日均线、处于一年区间的什么位置。\n大盘下行时，多数做多机会无论个股图形多好都容易失败。',
+  },
+  relative_strength: { short: '相对强度', full: '同一窗口内个股收益减指数收益——个股是领先还是落后于大盘。' },
+  price: { short: '价格', full: '当前价格及其在近期历史中的位置。' },
+  weekly: { short: '周线时间框架', full: '拉远视角（每根K线一周）——决定方向判断；日线信号只应顺着它的方向开仓。' },
+  daily: { short: '日线时间框架', full: '交易计划所用的时间框架（每根K线一天）——趋势、动量以及计划挂靠的价位。' },
+  volatility: { short: '波动', full: '股票通常的波动幅度——止损与仓位大小的度量单位。' },
+  volume: { short: '成交量', full: '交易活跃度——行情是否有真实参与支撑、订单能否顺利退出。' },
+  levels: { short: '价位', full: '来自股票自身转折点的价位——买入、止损、目标价的锚点。' },
+  risk: { short: '风险', full: '尾部特征——这只股票糟糕的日子究竟有多糟。' },
+  bars_daily: { short: '日线数量', full: '已载入的交易日数量。少于253（一个交易年）时，一年期字段只覆盖已有历史。' },
+  bars_weekly: { short: '周线数量', full: '由日线合成的周线数量。少于60时，周线结构判断不可靠。' },
+  rs_3m: { short: '对比指数（3月）', full: '约3个月（63个交易日）内个股收益减基准指数收益，单位为百分点。\n为正 = 跑赢大盘。' },
+  rs_label: { short: '强弱标签', full: 'leader = 1个月和3个月都跑赢基准；laggard = 都跑输；否则 neutral。\n做多优先选 leader。' },
+  chg_5d_pct: { short: '涨跌幅（5日）', full: '最近5个交易日收盘价变化（%）。\n涨幅过大意味着好的买点可能已经错过。' },
+  range_pct_1y: { short: '一年区间位置', full: '收盘价在一年区间中的位置：0 = 最低点，100 = 最高点。' },
+  high_1y: { short: '一年最高价', full: '过去一年的最高成交价——最受关注的阻力位。\n目标价高于它需要按突破逻辑而非回调逻辑。' },
+  trend: { short: '趋势', full: '由均线检查与转折点结构共同判定；两者一致才给出多/空方向，否则为中性。' },
+  stretch_10w_atr: { short: '偏离10周线（ATR）', full: '收盘价距10周均线的距离，以周ATR为单位。\n约+1.5以上 = 过度伸展，等回调；上升趋势中-0.5到+1 = 回调买入区。' },
+  sma_50: { short: 'SMA 50', full: '50日简单移动平均线——波段交易经典的回调支撑位。' },
+  stretch_50d_atr: { short: '偏离50日线（ATR）', full: '收盘价距50日均线的距离，以ATR为单位。\n上升趋势中-1到+1 = 回调买入区；+3以上 = 过度伸展，属于追高。' },
+  sma_200: { short: 'SMA 200', full: '200日简单移动平均线——金融市场最受关注的长期均线，无论持仓周期长短都会成为支撑或阻力。' },
+  momentum: { short: '动量', full: '综合 RSI 与 MACD 的单一标签：strong / weak / fading（价格强但动量衰减）/ basing（价格弱但动量积聚）/ neutral。' },
+  atr_pct: { short: 'ATR %', full: '典型单日波幅占价格的百分比，可跨股票比较。\n超过约6%属于高波动股——考虑缩小仓位。' },
+  atr_trend: { short: 'ATR 趋势', full: '当前ATR对比20根K线之前（±10%缓冲带）：expanding = 放宽止损、缩小仓位；contracting = 收敛，往往预示行情；否则 stable。' },
+  avg_vol_60d: { short: '平均成交量（60日）', full: '最近60根K线的日均成交股数——衡量订单规模的流动性基线。' },
+  vol_ratio_5_60: { short: '量比（5÷60）', full: '最近5根K线的均量除以60日均量。\n突破时高于约1.5 = 有效；低于约0.7 = 存疑。' },
+  support_1: { short: '支撑位 1', full: '收盘价下方最近的转折点低点——止损应放在这类价位下方，而不是任意百分比处。' },
+  resistance_1: { short: '阻力位 1', full: '收盘价上方最近的转折点高点——第一目标价候选。' },
+  typical_pullback_atr: { short: '典型回调（ATR）', full: '最近几次完整回调（转折高点到随后的转折低点）深度的中位数，以ATR为单位。\n止损距离小于它就落在正常波动之内。' },
 
   growth: { short: '成长性', full: '取自最新年报的同比增长数据。' },
   revenue_yoy_pct: { short: '营收同比 %', full: '营业收入与去年同期相比的增长率。' },

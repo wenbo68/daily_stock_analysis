@@ -6,9 +6,53 @@
 > does. The slice-7 frontend "formula modals" render from the same definitions.
 > Convention: all levels are written for a **buy**; v2 does not size short positions.
 
-## 1. Technical indicators (v1, `providers/technicals.py`)
+## 1. Technical indicators (v2 envelope payload, `providers/technicals.py`)
 
 These are computed from daily price bars (open/high/low/close) — no AI involved.
+
+**v2 (2026-07-27).** The payload is 10 groups of `{name, explanation, value}`
+envelopes (~27 metrics): meta, regime, relative_strength, price, weekly, daily,
+volatility, volume, levels, risk. Design rules (full field list and rationale in
+`TODO.md` "technical fields — FINAL"):
+
+- **Composites swallow their ingredients** — correlated fields double-count as
+  independent evidence in an LLM prompt, so judgments ship only as their
+  composite label (`weekly.trend`, `daily.trend`, `daily.momentum`), with the
+  method in the envelope's explanation. A *neutral* label states which
+  ingredient said what.
+- **Coordinates stay** — price levels (`high_1y`, `sma_50`, `sma_200`,
+  `support_1`, `resistance_1`) are the numbers the plan is written against.
+- Citations address the envelope path (`technicals.daily.rsi_14`) and resolve
+  to its `value`.
+- Retired from new runs (stored runs still render theirs): the 0-100 score,
+  `ema_12/26`, MACD's raw line/signal, `bias_20`, the flat
+  `sma_20/60`, `swing_low/high_20/60`, `high_52w/low_52w`,
+  `volatility_pct` (now `volatility.atr_pct`), `avg_volume_20` (now
+  `volume.avg_vol_60d`), `worst_day_pct_1y` (now under `risk`).
+
+New v2 machinery:
+
+```
+weekly bars     = daily bars grouped by ISO week (~300 daily → ~60 weekly)
+pivot high/low  = a bar whose high/low strictly exceeds the 2 bars each side
+structure       = last 2 pivot highs + lows: higher highs and lows /
+                  lower highs and lows / sideways
+ma stack        = close > fast MA > slow MA → up (reversed → down, else mixed)
+trend           = stack + structure agree → bullish/bearish, else neutral
+                  (weekly: 10w/20w; daily: 20d/50d)
+momentum        = one label from RSI + MACD histogram + zero line:
+                  strong / weak / fading / basing / neutral
+stretch (ATR)   = (close − MA) / ATR   (weekly ATR ≈ daily ATR × √5)
+atr_trend       = ATR now vs 20 bars ago, ±10% band →
+                  expanding / contracting / stable
+support_1       = highest pivot low below the close (last ~120 daily bars)
+resistance_1    = lowest pivot high above the close
+typical_pullback= median depth of the last ≤5 completed pivot-high→pivot-low
+                  dips, in ATR units (needs ≥2)
+regime          = benchmark index (US: SPX): above/below SMA-200 + position
+                  in its 1y range → bullish / bearish / mixed
+rs_3m           = stock % return − index % return over 63 bars
+```
 
 ### SMA — simple moving average
 
@@ -71,34 +115,25 @@ BIAS = (close − SMA(20)) / SMA(20) × 100
 How far (in %) today's price has stretched away from its own 20-day average.
 Large positive = extended above trend (chasing); large negative = washed out.
 
-### Technicals score (0–100)
+### Technicals score — retired (2026-07-26)
 
-A weighted composite of the indicators above (trend position, momentum, RSI zone,
-extension) produced by deterministic rules in `technicals.py` — higher = technically
-stronger. It is a ranking aid, not a probability.
+Stored runs may carry a 0-100 composite score. New runs omit it: the payload is
+dumped verbatim into the LLM prompts, and a code-computed verdict inside it
+pre-answered the judgment those stages exist to make.
 
-### Swing lows and highs (20- and 60-day), 52-week range
-
-```
-swing_low(n)  = min(low  of each of the last n trading days)    n = 20, 60
-swing_high(n) = max(high of each of the last n trading days)    n = 20, 60
-high_52w / low_52w = the same over the last 250 trading days (~1 year)
-```
-
-Swing lows are floors the market has already defended; swing highs are ceilings
-where sellers appeared before. The outlook redesign (2026-07) extended the price
-history to ~250 bars so the 52-week range and the 60-day swings exist.
-
-### Average daily volume (20-day) and worst single day
+### One-year range, volume, worst day (v2 names)
 
 ```
-avg_volume_20 = mean(volume of the last 20 trading days)        (None if no volume data)
-worst_day_1y  = the single worst daily return of the last ~250 bars
+high_1y / low_1y     = max high / min low of the last 253 trading days
+range_pct_1y         = (close − low_1y) / (high_1y − low_1y) × 100
+avg_vol_60d          = mean volume of the last 60 bars   (None if no volume data)
+vol_ratio_5_60       = avg volume of last 5 bars ÷ avg_vol_60d
+worst_day_pct_1y     = worst single close-to-close daily return of the last
+                       253 bars, as a percent
 ```
 
-Both feed the display-only risk card (§7) only — they never move levels or
-sizing. (`worst_day_1y` replaced the softer `worst_day_5pct` percentile,
-2026-07-21; old stored runs still carry the retired key.)
+`worst_day_pct_1y` feeds the gap-risk plan warning; `avg_vol_60d` feeds the
+liquidity check.
 
 ## 2. Price levels — formula-only (outlook redesign, `levels.py`)
 
@@ -108,14 +143,17 @@ adjuster is deleted** — no nudging, no bands. What the formulas print is the p
 ### Trend warning (the voiding gate retired 2026-07-24)
 
 ```
-if close ≤ SMA(60):  plan still issues — "trend warning" in the notes, a
+if close ≤ SMA(50):  plan still issues — "trend warning" in the notes, a
                      "downtrend" warning on the entry column, and a
                      "downtrend" flagged check for the plan-review cycle
-if SMA(60) missing:  trend check skipped, warning notes it
+if SMA(50) missing:  trend check skipped, warning notes it
 ```
 
-Pullback-buying works best in an uptrend — below the one-quarter average the
-"support" anchors are falling with the price. The old gate withheld the whole
+(v2 2026-07-27: the reference average moved from the 60-day to the 50-day —
+the classic swing pullback line and a published coordinate. Stored runs carry
+the 60-day comparison and the web words both.) Pullback-buying works best in
+an uptrend — below the trend average the "support" anchors are falling with
+the price. The old gate withheld the whole
 plan; owner decision 2026-07-24: always issue the plan and let the warnings
 row carry the judgment. The downtrend also joins the plan-review flagged
 checks, so the AI adjust cycle can tighten the stop, target, or share count
@@ -124,15 +162,17 @@ with cited reasons.
 ### Ideal entry
 
 ```
-support candidates = {SMA(20), SMA(60), swing_low_20, swing_low_60, round_number_below(close)}
+support candidates = {SMA(50), SMA(200), support_1, round_number_below(close)}
 ideal_entry = min(close, max(candidates))
 ```
 
-"Buy the pullback to the nearest real support." The candidate set grew in the
-redesign: both averages, both swing lows, and the nearest round number below the
-price (10s above 100, 5s above 20, …) — round numbers act as psychological floors
-because many resting orders sit exactly there. The `min(close, …)` cap makes sure
-we never suggest paying more than the current price.
+"Buy the pullback to the nearest real support." v2 anchors (2026-07-27): the
+two published coordinate averages, the nearest pivot low below the close
+(`levels.support_1` — a floor the market actually defended, not a window
+extreme), and the nearest round number below the price (10s above 100, 5s
+above 20, …) — round numbers act as psychological floors because many resting
+orders sit exactly there. The `min(close, …)` cap makes sure we never suggest
+paying more than the current price.
 
 ### Backup entry — retired (owner decision, 2026-07-21)
 
@@ -156,7 +196,7 @@ out. Volatile stocks automatically get wider stops.
 ```
 R           = the user's reward-to-risk ratio (run form "Reward" field, default 2)
 geometric   = ideal_entry + R × (ideal_entry − stop_loss)
-resistances = {swing_high_20, swing_high_60, high_52w} strictly above close
+resistances = {resistance_1, high_1y} strictly above close   (v2 2026-07-27)
 target      = min(geometric, nearest resistance above close)
 ```
 

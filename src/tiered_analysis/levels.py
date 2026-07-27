@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .providers.base import DimensionResult
+from .providers.technicals import read_metric
 from .schema import SniperLevels
 from .stops import DEFAULT_ATR_MULTIPLIER, suggest_atr_stop
 
@@ -84,26 +85,28 @@ def round_number_below(close: float) -> Optional[float]:
 
 def compute_base_levels(
     close: Optional[float],
-    sma_20: Optional[float] = None,
-    sma_60: Optional[float] = None,
-    swing_low: Optional[float] = None,
+    sma_50: Optional[float] = None,
+    sma_200: Optional[float] = None,
+    support_1: Optional[float] = None,
     atr: Optional[float] = None,
-    swing_low_60: Optional[float] = None,
-    swing_high_20: Optional[float] = None,
-    swing_high_60: Optional[float] = None,
-    high_52w: Optional[float] = None,
+    resistance_1: Optional[float] = None,
+    high_1y: Optional[float] = None,
     reward_risk: float = REWARD_RISK_MULTIPLE,
 ) -> BaseLevels:
     """The base levels; missing inputs degrade loudly, never silently.
 
+    v2 anchors (technicals redesign 2026-07-27): supports are the
+    nearest pivot low below the close plus the 50/200-day averages
+    (the payload's coordinate fields); resistance is the nearest pivot
+    high, with the one-year high as the landmark cap.
+
     ``reward_risk`` is the user's chosen target multiple (target = entry
-    + reward_risk × risk). No condition voids the plan anymore (owner
-    decisions 2026-07-22 and 2026-07-24: always give a plan — the
-    warning row carries the judgment, the user decides). A close at or
-    below the 60-day average (downtrend) draws a trend warning, and the
-    plan review flags it so the AI can tighten stop/target/shares; a
-    resistance-capped target that misses the user's chosen ratio draws
-    a warning the same way.
+    + reward_risk × risk). No condition voids the plan (owner decisions
+    2026-07-22 and 2026-07-24: always give a plan — the warning row
+    carries the judgment, the user decides). A close at or below the
+    50-day average draws a trend warning, and the plan review flags it
+    so the AI can tighten stop/target/shares; a resistance-capped target
+    that misses the user's chosen ratio draws a warning the same way.
     """
     warnings: List[str] = []
 
@@ -112,25 +115,24 @@ def compute_base_levels(
             warnings=["no close price — deterministic levels cannot be computed"]
         )
 
-    if _valid(sma_60):
-        if close <= sma_60:
+    if _valid(sma_50):
+        if close <= sma_50:
             warnings.append(
-                f"trend warning: close {close:g} is at or below the 60-day "
-                f"average {sma_60:g} (downtrend) — a pullback buy against "
+                f"trend warning: close {close:g} is at or below the 50-day "
+                f"average {sma_50:g} (downtrend) — a pullback buy against "
                 "the trend carries extra downside risk"
             )
     else:
-        warnings.append("sma_60 unavailable — trend check skipped")
+        warnings.append("sma_50 unavailable — trend check skipped")
 
     structural = [
-        v for v in (sma_20, sma_60, swing_low, swing_low_60) if _valid(v)
+        v for v in (sma_50, sma_200, support_1) if _valid(v)
     ]
     if not structural:
         return BaseLevels(
             warnings=[
-                "no structural support anchors (sma_20 / sma_60 / "
-                "swing_low_20 / swing_low_60) — no entry base, so no "
-                "deterministic levels"
+                "no structural support anchors (sma_50 / sma_200 / "
+                "support_1) — no entry base, so no deterministic levels"
             ]
         )
     round_level = round_number_below(close)
@@ -142,10 +144,9 @@ def compute_base_levels(
         formula="min(close, max(support candidates))",
         inputs=_present(
             close=close,
-            sma_20=sma_20,
-            sma_60=sma_60,
-            swing_low_20=swing_low,
-            swing_low_60=swing_low_60,
+            sma_50=sma_50,
+            sma_200=sma_200,
+            support_1=support_1,
             round_level=round_level,
         ),
     )
@@ -171,7 +172,7 @@ def compute_base_levels(
         geometric = entry_value + reward_risk * (entry_value - stop_value)
         resistances = [
             v
-            for v in (swing_high_20, swing_high_60, high_52w)
+            for v in (resistance_1, high_1y)
             if _valid(v) and v > close
         ]
         nearest_res = min(resistances) if resistances else None
@@ -193,9 +194,8 @@ def compute_base_levels(
                     ideal_entry=entry_value,
                     stop_loss=stop_value,
                     geometric_target=geometric,
-                    swing_high_20=swing_high_20,
-                    swing_high_60=swing_high_60,
-                    high_52w=high_52w,
+                    resistance_1=resistance_1,
+                    high_1y=high_1y,
                 ),
             )
         else:
@@ -238,20 +238,14 @@ def bases_from_dimensions(
             ]
         )
 
-    def _num(key: str) -> Optional[float]:
-        value = payload.get(key)
-        return float(value) if isinstance(value, (int, float)) else None
-
     return compute_base_levels(
-        close=_num("close"),
-        sma_20=_num("sma_20"),
-        sma_60=_num("sma_60"),
-        swing_low=_num("swing_low_20"),
-        atr=_num("atr_14"),
-        swing_low_60=_num("swing_low_60"),
-        swing_high_20=_num("swing_high_20"),
-        swing_high_60=_num("swing_high_60"),
-        high_52w=_num("high_52w"),
+        close=read_metric(payload, "price", "close"),
+        sma_50=read_metric(payload, "daily", "sma_50"),
+        sma_200=read_metric(payload, "daily", "sma_200"),
+        support_1=read_metric(payload, "levels", "support_1"),
+        atr=read_metric(payload, "volatility", "atr_14"),
+        resistance_1=read_metric(payload, "levels", "resistance_1"),
+        high_1y=read_metric(payload, "price", "high_1y"),
         reward_risk=reward_risk,
     )
 
