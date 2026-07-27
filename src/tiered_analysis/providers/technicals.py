@@ -647,8 +647,8 @@ def relative_strength_label(
 
 
 def regime_read(index_closes: List[float]) -> Optional[Dict[str, Any]]:
-    """The benchmark regime: label + the two ingredients (for the
-    explanation text — the label is the only published field)."""
+    """The benchmark regime: label + its ingredients (for the explanation
+    text and the UI receipt — the label is the only published field)."""
     if not index_closes:
         return None
     close = index_closes[-1]
@@ -665,7 +665,13 @@ def regime_read(index_closes: List[float]) -> Optional[Dict[str, Any]]:
         label = "bearish"
     else:
         label = "mixed"
-    return {"label": label, "above_200d": above, "range_pct": round(range_pct, 0)}
+    return {
+        "label": label,
+        "above_200d": above,
+        "range_pct": round(range_pct, 0),
+        "close": close,
+        "sma_200": sma_long,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -841,7 +847,7 @@ class TechnicalsProvider(DimensionProvider):
         resistance = nearest_resistance(daily_highs, close)
         pullback = typical_pullback_atr(daily_highs, daily_lows, atr)
 
-        regime, rs_3m, rs_label, rs_inputs = self._benchmark_fields(
+        regime, rs_3m, rs_label, bench_receipts = self._benchmark_fields(
             closes, warnings
         )
 
@@ -851,6 +857,17 @@ class TechnicalsProvider(DimensionProvider):
         rsi_parts = wilder_averages(closes)
         worst_detail = worst_day_detail(closes)
         worst_day = worst_detail[0] if worst_detail is not None else None
+        macd_hist_direction = (
+            ("rising" if histogram[-1] > histogram[-1 - HIST_DIRECTION_BARS]
+             else "falling")
+            if len(histogram) >= HIST_DIRECTION_BARS + 1
+            else None
+        )
+        atr_then = (
+            compute_atr(bars[:-ATR_TREND_LOOKBACK])
+            if len(bars) > ATR_TREND_LOOKBACK
+            else None
+        )
 
         weekly_tail = (
             " Daily signals should only generate trades in this direction;"
@@ -1063,7 +1080,14 @@ class TechnicalsProvider(DimensionProvider):
             avg_vol_5=avg_vol_5,
             avg_vol_60=avg_vol_60,
             worst_detail=worst_detail,
-            rs_inputs=rs_inputs,
+            bench_receipts=bench_receipts,
+            weekly_stack=weekly_stack,
+            weekly_struct=weekly_struct,
+            daily_stack=daily_stack,
+            daily_struct=daily_struct,
+            macd_hist_direction=macd_hist_direction,
+            macd_line=macd_line,
+            atr_then=atr_then,
         )
         return payload, formulas
 
@@ -1079,13 +1103,23 @@ class TechnicalsProvider(DimensionProvider):
         avg_vol_5: Optional[float],
         avg_vol_60: Optional[float],
         worst_detail: Optional[Tuple[float, float, float]],
-        rs_inputs: Optional[Dict[str, float]],
+        bench_receipts: Dict[str, Dict[str, Any]],
+        weekly_stack: Optional[str],
+        weekly_struct: Optional[str],
+        daily_stack: Optional[str],
+        daily_struct: Optional[str],
+        macd_hist_direction: Optional[str],
+        macd_line: Optional[float],
+        atr_then: Optional[float],
     ) -> Dict[str, Any]:
         """UI receipts, keyed "group.key": formula words + this run's
-        plugged-in inputs (variable tokens in the words match input keys,
-        so the frontend can split and link them — the levels-table
-        pattern). Aggregate fields whose ingredients are whole series
-        (a 50-close average) get words only, no inputs. A receipt is
+        plugged-in inputs — the levels-table pattern. Two styles the
+        frontend picks between by inspecting the words: when every input
+        token appears in the words, the plugged line substitutes the
+        numbers in place; otherwise (label rules whose ingredients are
+        words themselves) the plugged line lists "ingredient = value"
+        pairs. Aggregate fields whose ingredients are whole series (a
+        50-close average) get words only, no inputs. A receipt is
         published only when its metric has a value and every input is
         present — a partial receipt would show broken arithmetic."""
         formulas: Dict[str, Any] = {}
@@ -1093,25 +1127,41 @@ class TechnicalsProvider(DimensionProvider):
         def add(
             path: str,
             formula: str,
-            inputs: Optional[Dict[str, Optional[float]]] = None,
+            inputs: Optional[Dict[str, Any]] = None,
             digits: int = 2,
         ) -> None:
             group, key = path.split(".")
             if metric_value(payload.get(group, {}).get(key)) is None:
                 return
-            plugged: Dict[str, float] = {}
+            plugged: Dict[str, Any] = {}
             for var, value in (inputs or {}).items():
                 if value is None:
                     return
-                plugged[var] = round(value, digits)
+                plugged[var] = (
+                    round(value, digits)
+                    if isinstance(value, (int, float))
+                    else value
+                )
             formulas[path] = {"formula": formula, "inputs": plugged}
 
-        if rs_inputs is not None:
-            add(
-                "relative_strength.rs_3m",
-                "stock_return_3m − index_return_3m",
-                rs_inputs,
-            )
+        add(
+            "regime.regime",
+            "bullish if index_close > index_sma_200 and "
+            "index_range_pct > 50; bearish if index_close < "
+            "index_sma_200 and index_range_pct < 50; else mixed",
+            bench_receipts.get("regime"),
+        )
+        add(
+            "relative_strength.rs_3m",
+            "stock_return_3m − index_return_3m",
+            bench_receipts.get("rs_3m"),
+        )
+        add(
+            "relative_strength.rs_label",
+            "leader if rs_1m > 0 and rs_3m > 0; "
+            "laggard if rs_1m < 0 and rs_3m < 0; else neutral",
+            bench_receipts.get("rs_label"),
+        )
         close = read_metric(payload, "price", "close")
         atr = read_metric(payload, "volatility", "atr_14")
         sma_50 = read_metric(payload, "daily", "sma_50")
@@ -1129,10 +1179,25 @@ class TechnicalsProvider(DimensionProvider):
             "price.high_1y",
             f"the highest traded price of the last {YEAR_BARS} daily bars",
         )
+        trend_rule = (
+            "the moving-average check and the pivot structure must "
+            "agree: both pointing up → bullish; both pointing down → "
+            "bearish; else neutral"
+        )
+        add(
+            "weekly.trend",
+            trend_rule,
+            {"ma_stack": weekly_stack, "pivot_structure": weekly_struct},
+        )
         add(
             "weekly.stretch_10w_atr",
             "(close − sma_10w) / (atr_14 × √5)",
             {"close": close, "sma_10w": sma_10w, "atr_14": atr},
+        )
+        add(
+            "daily.trend",
+            trend_rule,
+            {"ma_stack": daily_stack, "pivot_structure": daily_struct},
         )
         add(
             "daily.sma_50",
@@ -1148,6 +1213,19 @@ class TechnicalsProvider(DimensionProvider):
             "daily.sma_200",
             f"the sum of the last {DAILY_SMA_LONG} daily closes"
             f" / {DAILY_SMA_LONG}",
+        )
+        add(
+            "daily.momentum",
+            f"strong = RSI above {MOMENTUM_RSI_STRONG} with the MACD "
+            "histogram rising and the MACD line above zero; weak = the "
+            f"mirror; fading = RSI above {MOMENTUM_RSI_STRONG} but the "
+            f"histogram falling; basing = RSI below {MOMENTUM_RSI_WEAK} "
+            "but the histogram rising; else neutral",
+            {
+                "rsi_14": read_metric(payload, "daily", "rsi_14"),
+                "macd_hist": macd_hist_direction,
+                "macd_line": macd_line,
+            },
         )
         if rsi_parts is not None and rsi_parts[1] > 0:
             add(
@@ -1166,6 +1244,13 @@ class TechnicalsProvider(DimensionProvider):
             "volatility.atr_pct",
             "atr_14 / close × 100",
             {"atr_14": atr, "close": close},
+        )
+        add(
+            "volatility.atr_trend",
+            f"expanding if atr_14 > {1 + ATR_TREND_BAND:.2f} × "
+            f"atr_20_bars_ago; contracting if atr_14 < "
+            f"{1 - ATR_TREND_BAND:.2f} × atr_20_bars_ago; else stable",
+            {"atr_14": atr, "atr_20_bars_ago": atr_then},
         )
         add(
             "volume.avg_vol_60d",
@@ -1210,12 +1295,13 @@ class TechnicalsProvider(DimensionProvider):
         self, closes: List[float], warnings: List[str]
     ) -> Tuple[
         Dict[str, Any], Dict[str, Any], Dict[str, Any],
-        Optional[Dict[str, float]],
+        Dict[str, Dict[str, Any]],
     ]:
-        """(regime, rs_3m, rs_label, rs receipt inputs) — envelopes with
+        """(regime, rs_3m, rs_label, receipt inputs) — envelopes with
         None values + a warning when the benchmark is unwired or its
-        fetch fails; the fourth element carries the stock/index 3-month
-        returns the rs_3m receipt subtracts, or None."""
+        fetch fails; the fourth element maps "rs_3m" / "rs_label" /
+        "regime" to that receipt's plugged-in inputs (a key is absent
+        when its ingredients are)."""
         regime_name = "market regime"
         rs_name = "relative strength vs benchmark (3m)"
         rs_label_name = "relative strength label"
@@ -1241,7 +1327,7 @@ class TechnicalsProvider(DimensionProvider):
                 ),
                 make_metric(rs_name, rs_explanation, None),
                 make_metric(rs_label_name, label_explanation, None),
-                None,
+                {},
             )
 
         if self._index_bars_loader is None:
@@ -1281,14 +1367,22 @@ class TechnicalsProvider(DimensionProvider):
                 "short for the 200-day regime read.",
                 None,
             )
+        receipts: Dict[str, Dict[str, Any]] = {}
         stock_return_3m = pct_change(closes, RS_WINDOW_3M)
         index_return_3m = pct_change(index_closes, RS_WINDOW_3M)
-        rs_inputs = (
-            {"stock_return_3m": stock_return_3m,
-             "index_return_3m": index_return_3m}
-            if stock_return_3m is not None and index_return_3m is not None
-            else None
-        )
+        if stock_return_3m is not None and index_return_3m is not None:
+            receipts["rs_3m"] = {
+                "stock_return_3m": stock_return_3m,
+                "index_return_3m": index_return_3m,
+            }
+        if rs_1m is not None and rs_3m is not None:
+            receipts["rs_label"] = {"rs_1m": rs_1m, "rs_3m": rs_3m}
+        if regime is not None:
+            receipts["regime"] = {
+                "index_close": regime["close"],
+                "index_sma_200": regime["sma_200"],
+                "index_range_pct": regime["range_pct"],
+            }
         return (
             regime_env,
             make_metric(rs_name, rs_explanation, rs_3m),
@@ -1297,5 +1391,5 @@ class TechnicalsProvider(DimensionProvider):
                 label_explanation,
                 relative_strength_label(rs_1m, rs_3m),
             ),
-            rs_inputs,
+            receipts,
         )

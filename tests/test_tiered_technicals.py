@@ -601,15 +601,67 @@ class TestFormulaReceipts(unittest.TestCase):
             )
             self.assertTrue(receipt["formula"], path)
             for var, value in receipt["inputs"].items():
-                self.assertIsInstance(value, float, f"{path}:{var}")
+                self.assertIsInstance(value, (float, str), f"{path}:{var}")
 
-    def test_labels_and_meta_get_no_receipt(self):
+    def test_raw_facts_and_meta_get_no_receipt(self):
         result = self._result()
-        for path in ("weekly.trend", "daily.trend", "daily.momentum",
-                     "regime.regime", "relative_strength.rs_label",
-                     "volatility.atr_trend", "meta.bars_daily",
+        for path in ("meta.as_of", "meta.bars_daily", "meta.bars_weekly",
                      "price.close"):
             self.assertNotIn(path, result.formulas)
+
+    def test_label_receipts_carry_their_rule_ingredients(self):
+        # Rule fields (2026-07-28): the receipt is the rule in words plus
+        # this run's ingredient values — word ingredients ship as strings.
+        result = self._result()
+        for path in ("weekly.trend", "daily.trend"):
+            receipt = result.formulas[path]
+            self.assertIn(
+                receipt["inputs"]["ma_stack"], ("up", "down", "mixed")
+            )
+            self.assertIn(
+                receipt["inputs"]["pivot_structure"],
+                ("higher highs and lows", "lower highs and lows",
+                 "sideways"),
+            )
+        momentum = result.formulas["daily.momentum"]
+        self.assertIn(momentum["inputs"]["macd_hist"],
+                      ("rising", "falling"))
+        self.assertIsInstance(momentum["inputs"]["rsi_14"], float)
+        self.assertIsInstance(momentum["inputs"]["macd_line"], float)
+        atr_trend_receipt = result.formulas["volatility.atr_trend"]
+        self.assertIsInstance(
+            atr_trend_receipt["inputs"]["atr_20_bars_ago"], float
+        )
+
+    def test_regime_receipt_reproduces_the_label(self):
+        result = self._result()
+        receipt = result.formulas["regime.regime"]
+        i = receipt["inputs"]
+        above = i["index_close"] > i["index_sma_200"]
+        if above and i["index_range_pct"] > 50:
+            expected = "bullish"
+        elif not above and i["index_range_pct"] < 50:
+            expected = "bearish"
+        else:
+            expected = "mixed"
+        self.assertEqual(
+            metric_value(result.payload["regime"]["regime"]), expected
+        )
+
+    def test_rs_label_receipt_reproduces_the_label(self):
+        result = self._result()
+        i = result.formulas["relative_strength.rs_label"]["inputs"]
+        expected = (
+            "leader" if i["rs_1m"] > 0 and i["rs_3m"] > 0
+            else "laggard" if i["rs_1m"] < 0 and i["rs_3m"] < 0
+            else "neutral"
+        )
+        self.assertEqual(
+            metric_value(
+                result.payload["relative_strength"]["rs_label"]
+            ),
+            expected,
+        )
 
     def test_no_benchmark_means_no_rs_receipt_not_a_crash(self):
         result = _full_provider(_wave_bars(320)).collect("AAPL")

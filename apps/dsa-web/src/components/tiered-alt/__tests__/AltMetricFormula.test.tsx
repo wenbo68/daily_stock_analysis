@@ -5,8 +5,9 @@ import { UiLanguageProvider } from '../../../contexts/UiLanguageContext';
 import { AltDimensions } from '../AltDimensions';
 
 // Technicals v2 dimension slice: nested envelope groups + the parallel
-// formulas map (2026-07-28). rsi_14 has a plugged receipt, sma_50 a
-// words-only receipt, and momentum (a label) none.
+// formulas map (2026-07-28). rsi_14 has a substituted receipt, sma_50 a
+// words-only receipt, the trend and regime labels rule receipts, and
+// as_of (a raw fact) none.
 function makeTechnicals(): TieredDimension {
   const env = (name: string, value: unknown) => ({
     name,
@@ -22,16 +23,30 @@ function makeTechnicals(): TieredDimension {
     warnings: [],
     citations: [],
     payload: {
+      meta: { as_of: env('as of', '2026-07-24') },
+      regime: { regime: env('market regime', 'bullish') },
       price: { close: env('closing price', 157.79) },
       daily: {
+        trend: env('daily trend', 'neutral'),
         sma_50: env('50-day average', 156.36),
         stretch_50d_atr: env('stretch vs 50-day average (ATR)', 0.45),
-        momentum: env('momentum', 'neutral'),
         rsi_14: env('RSI (14d)', 38.89),
       },
       volatility: { atr_14: env('ATR (14d)', 3.17) },
     },
     formulas: {
+      'regime.regime': {
+        formula:
+          'bullish if index_close > index_sma_200 and index_range_pct > 50; '
+          + 'bearish if index_close < index_sma_200 and index_range_pct < 50; else mixed',
+        inputs: { index_close: 6234.5, index_sma_200: 5890.2, index_range_pct: 78 },
+      },
+      'daily.trend': {
+        formula:
+          'the moving-average check and the pivot structure must agree: '
+          + 'both pointing up → bullish; both pointing down → bearish; else neutral',
+        inputs: { ma_stack: 'mixed', pivot_structure: 'sideways' },
+      },
       'daily.rsi_14': {
         formula: '100 − 100 / (1 + avg_gain_14 / avg_loss_14)',
         inputs: { avg_gain_14: 0.1017, avg_loss_14: 0.1598 },
@@ -95,7 +110,31 @@ describe('AltMetricFormula', () => {
 
   it('leaves metrics without a receipt as plain text', () => {
     renderTechnicals();
-    expect(screen.getByText('neutral')).toBeInTheDocument();
-    expect(screen.queryByTestId('alt-metric-formula-momentum')).toBeNull();
+    expect(screen.getByText('2026-07-24')).toBeInTheDocument();
+    expect(screen.queryByTestId('alt-metric-formula-as_of')).toBeNull();
+  });
+
+  it('substitutes numbers into a numeric rule (regime)', () => {
+    renderTechnicals();
+    fireEvent.click(screen.getByTestId('alt-metric-formula-regime'));
+    const modal = screen.getByTestId('alt-metric-formula-modal');
+    // Plugged line: the rule with the index numbers in place.
+    expect(within(modal).getAllByText('6234.5')).toHaveLength(2);
+    expect(within(modal).getAllByText('5890.2')).toHaveLength(2);
+    expect(within(modal).getByText('= bullish')).toBeInTheDocument();
+  });
+
+  it('lists word ingredients for rule labels (trend)', () => {
+    renderTechnicals();
+    fireEvent.click(screen.getByTestId('alt-metric-formula-trend'));
+    const modal = screen.getByTestId('alt-metric-formula-modal');
+    // Rule in words, then "ingredient = value" pairs, then the label.
+    expect(
+      within(modal).getByText(/must agree/),
+    ).toBeInTheDocument();
+    expect(within(modal).getByText('moving-average check')).toBeInTheDocument();
+    expect(within(modal).getByText('mixed')).toBeInTheDocument();
+    expect(within(modal).getByText('sideways')).toBeInTheDocument();
+    expect(within(modal).getByText('= neutral')).toBeInTheDocument();
   });
 });

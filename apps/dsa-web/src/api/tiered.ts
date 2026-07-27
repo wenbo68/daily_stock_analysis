@@ -10,13 +10,16 @@ export type TieredCitation = {
 };
 
 // Technicals v2 UI receipt (2026-07-28): how a derived payload metric was
-// computed — formula words whose variable tokens match `inputs` keys, the
-// same shape as TieredLevelDetail's formula/inputs pair. Keyed by
-// "group.key" (e.g. "daily.rsi_14"). Words-only receipts (aggregates over
-// a whole series, like a 50-close average) ship empty inputs.
+// computed — formula words plus this run's inputs, the same shape as
+// TieredLevelDetail's formula/inputs pair. Keyed by "group.key" (e.g.
+// "daily.rsi_14"). Three sub-shapes, told apart by inspecting the words:
+// every input token appears in the words → substitution style (numbers
+// plug in place); tokens absent → listed style ("ingredient = value"
+// pairs — label rules whose ingredients are words, like ma_stack = up);
+// empty inputs → words-only (aggregates over a whole series).
 export type TieredMetricFormula = {
   formula: string;
-  inputs: Record<string, number>;
+  inputs: Record<string, number | string>;
 };
 
 export type TieredDimension = {
