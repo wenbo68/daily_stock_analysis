@@ -266,14 +266,25 @@ const warningNodes = (
         },
       };
     case 'gap_worst': {
+      // New runs publish a percent (-16.97); runs stored before that fix
+      // carry a raw fraction (-0.1697). Normalise to percent so one
+      // formula reads correctly for both.
+      const worstPct =
+        typeof v.worst_day_pct === 'number'
+          ? v.worst_day_pct
+          : typeof v.worst_day_1y === 'number'
+            ? v.worst_day_1y * 100
+            : null;
       const worstDayPct =
-        typeof v.worst_day_1y === 'number'
-          ? String(Number((v.worst_day_1y * 100).toFixed(1)))
-          : '—';
+        worstPct === null ? '—' : String(Number(worstPct.toFixed(1)));
+      const worstRef =
+        typeof v.worst_day_pct === 'number'
+          ? 'technicals.worst_day_pct_1y'
+          : 'technicals.worst_day_1y';
       return {
         templateKey: 'tiered.alt.warn.gap_worst',
         nodes: {
-          worstDayPct: reportJump('technicals.worst_day_1y', worstDayPct),
+          worstDayPct: reportJump(worstRef, worstDayPct),
           stop: planJump('stop_loss', wPrice(v.stop_loss)),
           worstOpen: (
             <ComputedValue
@@ -283,14 +294,14 @@ const warningNodes = (
                 <FormulaBody
                   words={
                     <>
-                      <FVar>{t('tiered.alt.f.entry')}</FVar> × (1 + <FVar>worst day 1y</FVar>)
+                      <FVar>{t('tiered.alt.f.entry')}</FVar> × (1 +{' '}
+                      <FVar>worst day 1y</FVar> ÷ 100)
                     </>
                   }
                   plugged={
                     <>
                       {planJump('entry', wPrice(v.entry), stack(closeSelf))} × (1 +{' '}
-                      {reportJump('technicals.worst_day_1y', wNum(v.worst_day_1y), stack(closeSelf))}
-                      )
+                      {reportJump(worstRef, worstDayPct, stack(closeSelf))} ÷ 100)
                     </>
                   }
                   result={wPrice(v.worst_open)}

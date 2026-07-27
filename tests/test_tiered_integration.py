@@ -614,7 +614,7 @@ class TestRegistryBarsLoaderWiring(unittest.TestCase):
         technicals = next(p for p in providers if p.dimension == "technicals")
         result = technicals.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertIsNotNone(result.payload["score"])
+        self.assertIsNotNone(result.payload["close"])
 
 
 class TestDowntrendCheckAndWarning(unittest.TestCase):

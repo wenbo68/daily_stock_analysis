@@ -17,11 +17,10 @@ from src.tiered_analysis.providers.technicals import (
     compute_bias,
     compute_ema,
     compute_macd,
-    compute_score,
     compute_sma,
     compute_swing_high,
     compute_wilder_rsi,
-    compute_worst_day_1y,
+    compute_worst_day_pct_1y,
 )
 
 # Classic 14-period RSI walkthrough dataset (Wilder's method, as popularized
@@ -134,38 +133,6 @@ class TestBIAS(unittest.TestCase):
         self.assertIsNone(compute_bias([100.0] * 5, period=20))
 
 
-class TestCompositeScore(unittest.TestCase):
-    def _score(self, closes: list) -> float:
-        return compute_score(_trend_bars(closes))
-
-    def test_score_bounded_0_100(self):
-        for closes in (
-            [100.0 * (1.03 ** i) for i in range(80)],   # parabolic rise
-            [100.0 * (0.97 ** i) for i in range(80)],   # steady fall
-            [100.0] * 80,                                # flat
-        ):
-            score = self._score(closes)
-            self.assertGreaterEqual(score, 0.0)
-            self.assertLessEqual(score, 100.0)
-
-    def test_score_ranks_pullback_over_overbought_over_downtrend(self):
-        # Healthy uptrend that recently pulled back a little.
-        pullback = [100.0 * (1.01 ** i) for i in range(70)]
-        pullback += [pullback[-1] * (0.995 ** i) for i in range(1, 6)]
-        # Overbought straight-line: relentless steep rise, RSI pinned high.
-        overbought = [100.0 * (1.025 ** i) for i in range(75)]
-        # Downtrend.
-        downtrend = [100.0 * (0.985 ** i) for i in range(75)]
-
-        s_pullback = self._score(pullback)
-        s_overbought = self._score(overbought)
-        s_downtrend = self._score(downtrend)
-
-        self.assertGreater(s_pullback, s_overbought)
-        self.assertGreater(s_overbought, s_downtrend)
-        self.assertLess(s_downtrend, 50.0)
-
-
 class TestTechnicalsProvider(unittest.TestCase):
     def test_provider_is_numeric(self):
         provider = TechnicalsProvider(bars_loader=lambda symbol: [])
@@ -181,7 +148,7 @@ class TestTechnicalsProvider(unittest.TestCase):
         self.assertEqual(result.coverage, Coverage.FULL)
         self.assertTrue(result.is_actionable)
         payload = result.payload
-        for key in ("sma_20", "ema_12", "rsi_14", "macd", "atr_14", "bias_20", "score"):
+        for key in ("sma_20", "ema_12", "rsi_14", "macd", "atr_14", "bias_20"):
             self.assertIn(key, payload)
         self.assertIsNotNone(payload["atr_14"])
         self.assertEqual(len(result.citations), 1)  # cites the data source
@@ -241,7 +208,7 @@ class TestSwingAndTailAdditions(unittest.TestCase):
     def test_avg_volume_none_when_source_has_no_volume(self):
         self.assertIsNone(compute_avg_volume(_flat_bars(20)))
 
-    def test_worst_day_1y_picks_the_single_worst_return(self):
+    def test_worst_day_picks_the_single_worst_return_as_a_percent(self):
         # 40 returns of +1% and one crash of -10%: the worst single day
         # IS the crash — no percentile softening.
         closes = [100.0]
@@ -250,12 +217,51 @@ class TestSwingAndTailAdditions(unittest.TestCase):
         closes.append(closes[-1] * 0.90)
         for _ in range(20):
             closes.append(closes[-1] * 1.01)
-        worst = compute_worst_day_1y(closes)
+        worst = compute_worst_day_pct_1y(closes)
         self.assertIsNotNone(worst)
-        self.assertAlmostEqual(worst, -0.10)
+        self.assertAlmostEqual(worst, -10.0)  # percent, not a fraction
 
     def test_worst_day_needs_enough_history(self):
-        self.assertIsNone(compute_worst_day_1y([100.0] * 10))
+        self.assertIsNone(compute_worst_day_pct_1y([100.0] * 10))
+
+    def test_worst_day_honours_its_window_instead_of_all_history(self):
+        # A field named for one year must not report the worst day of the
+        # two-plus years the bar loader actually fetches.
+        crash_then_calm = [100.0, 60.0]  # a -40% day, 400 bars back
+        crash_then_calm += [60.0 * (1.001 ** i) for i in range(400)]
+        self.assertAlmostEqual(
+            compute_worst_day_pct_1y(crash_then_calm, lookback=300), 0.1,
+            places=1,
+        )
+        self.assertAlmostEqual(
+            compute_worst_day_pct_1y(crash_then_calm, lookback=500), -40.0
+        )
+
+    def test_worst_day_shares_the_percent_convention_of_its_neighbours(self):
+        # Mixed units in one payload is a misreading waiting to happen:
+        # this used to be a fraction sitting next to volatility_pct.
+        closes = [100.0]
+        for _ in range(60):
+            closes.append(closes[-1] * 1.01)
+        closes.append(closes[-1] * 0.85)  # a -15% day
+        payload = TechnicalsProvider(
+            bars_loader=lambda s: _trend_bars(closes)
+        ).collect("AAPL").payload
+
+        self.assertAlmostEqual(payload["worst_day_pct_1y"], -15.0)
+        self.assertLess(payload["worst_day_pct_1y"], -1.0)  # percent, not a fraction
+        self.assertNotIn("worst_day_1y", payload)
+
+    def test_no_composite_score_is_handed_to_the_judgment_stages(self):
+        # The payload is dumped verbatim into the LLM prompt, so a
+        # code-computed 0-100 verdict in it would pre-answer the question
+        # those stages exist to answer and invite anchoring.
+        closes = [100.0 * (1.005 ** i) for i in range(80)]
+        payload = TechnicalsProvider(
+            bars_loader=lambda s: _trend_bars(closes)
+        ).collect("AAPL").payload
+
+        self.assertNotIn("score", payload)
 
     def test_payload_contains_resistance_and_tail_keys(self):
         closes = [100.0 * (1.002 ** i) for i in range(60)]
@@ -263,7 +269,7 @@ class TestSwingAndTailAdditions(unittest.TestCase):
         payload = provider.collect("AAPL").payload
         for key in (
             "swing_high_20", "swing_low_60", "swing_high_60",
-            "high_52w", "low_52w", "worst_day_1y",
+            "high_52w", "low_52w", "worst_day_pct_1y",
         ):
             self.assertIsNotNone(payload[key], key)
         # 60 bars: the "52w" window honestly covers what exists.

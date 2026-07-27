@@ -45,8 +45,6 @@ MIN_RETURNS_FOR_TAIL = 20
 #: volatility_pct is derived from atr_14, whose absence is already flagged.
 OPTIONAL_PAYLOAD_KEYS = frozenset({"avg_volume_20", "volatility_pct"})
 
-_SCORE_NEUTRAL = 50.0
-
 
 @dataclass(frozen=True)
 class Bar:
@@ -193,24 +191,40 @@ def compute_avg_volume(bars: List[Bar], lookback: int = SWING_LOOKBACK) -> Optio
     return sum(volumes) / len(volumes)
 
 
-def compute_worst_day_1y(closes: List[float]) -> Optional[float]:
-    """Worst single daily return (close-to-close) in the loaded history —
-    the honest "how bad has one day actually gotten" number the gap-risk
-    check stresses with.
+def compute_worst_day_pct_1y(
+    closes: List[float], lookback: int = YEAR_BARS
+) -> Optional[float]:
+    """Worst single daily return (close-to-close) over the last trading
+    year, AS A PERCENT — the honest "how bad has one day actually gotten"
+    number the gap-risk check stresses with.
+
+    Two corrections over the retired ``worst_day_1y`` (2026-07-26):
+
+    It returns a percent (-16.97), not a raw fraction (-0.1697). Every
+    neighbouring field in this payload — ``volatility_pct``, the bias
+    readings — is already a percent, and two unit conventions in one
+    payload is a misreading waiting to happen, for a reader or an LLM.
+
+    And it honours ``lookback`` instead of scanning every loaded close,
+    so a field named for one year cannot quietly report the worst day of
+    the two-plus years the bar loader actually fetches.
 
     Needs at least MIN_RETURNS_FOR_TAIL returns; with fewer observations
     the extreme is noise, so None (loud) beats a fake number.
     """
-    if len(closes) < MIN_RETURNS_FOR_TAIL + 1:
+    if lookback <= 0:
+        return None
+    window = closes[-(lookback + 1):]
+    if len(window) < MIN_RETURNS_FOR_TAIL + 1:
         return None
     returns = [
-        closes[i] / closes[i - 1] - 1.0
-        for i in range(1, len(closes))
-        if closes[i - 1] > 0
+        window[i] / window[i - 1] - 1.0
+        for i in range(1, len(window))
+        if window[i - 1] > 0
     ]
     if len(returns) < MIN_RETURNS_FOR_TAIL:
         return None
-    return min(returns)
+    return round(min(returns) * 100.0, 2)
 
 
 def compute_bias(closes: List[float], period: int = BIAS_PERIOD) -> Optional[float]:
@@ -219,54 +233,6 @@ def compute_bias(closes: List[float], period: int = BIAS_PERIOD) -> Optional[flo
     if sma is None or sma == 0.0:
         return None
     return (closes[-1] - sma) / sma * 100.0
-
-
-def compute_score(bars: List[Bar]) -> float:
-    """Deterministic 0-100 composite health score.
-
-    Starts neutral (50) and adjusts for trend alignment, momentum band,
-    MACD histogram sign, and over-extension. Components whose indicator
-    lacks history are skipped rather than guessed. Rewards a healthy
-    uptrend (mild pullback) over an over-extended straight-line rise, and
-    both over a downtrend.
-    """
-    closes = [bar.close for bar in bars]
-    score = _SCORE_NEUTRAL
-
-    sma_20 = compute_sma(closes, 20)
-    sma_60 = compute_sma(closes, FULL_HISTORY_BARS)
-    if sma_20 is not None:
-        score += 10.0 if closes[-1] > sma_20 else -10.0
-    if sma_20 is not None and sma_60 is not None:
-        score += 10.0 if sma_20 > sma_60 else -10.0
-
-    macd = compute_macd(closes)
-    if macd is not None:
-        score += 5.0 if macd["histogram"] > 0.0 else -5.0
-
-    rsi = compute_wilder_rsi(closes)
-    if rsi is not None:
-        if 45.0 <= rsi <= 70.0:
-            score += 15.0
-        elif 70.0 < rsi <= 80.0:
-            score += 5.0
-        elif rsi > 80.0:
-            score -= 10.0
-        elif 30.0 <= rsi < 45.0:
-            score -= 5.0
-        else:
-            score -= 15.0
-
-    bias = compute_bias(closes)
-    if bias is not None:
-        if abs(bias) > 15.0:
-            # Over-extended in either direction: mean-reversion risk.
-            score -= 10.0
-        elif abs(bias) <= 5.0 and sma_20 is not None and sma_60 is not None and sma_20 > sma_60:
-            # Healthy consolidation/pullback inside an uptrend.
-            score += 5.0
-
-    return max(0.0, min(100.0, score))
 
 
 def _unwired_bars_loader(symbol: str) -> List[Bar]:
@@ -278,7 +244,14 @@ def _unwired_bars_loader(symbol: str) -> List[Bar]:
 
 
 class TechnicalsProvider(DimensionProvider):
-    """NUMERIC technicals for any market (indicators are market-agnostic)."""
+    """NUMERIC technicals for any market (indicators are market-agnostic).
+
+    No composite score is published (owner decision, 2026-07-26). This
+    payload is handed to the LLM stages verbatim, so a code-computed
+    0-100 verdict sitting in it would pre-answer the very question those
+    stages exist to answer — they anchor on the number instead of reading
+    the fields. Old stored runs still carry their ``score``.
+    """
 
     dimension = "technicals"
     kind = SourceKind.NUMERIC
@@ -342,9 +315,8 @@ class TechnicalsProvider(DimensionProvider):
             "high_52w": compute_swing_high(bars, YEAR_BARS),
             "low_52w": compute_swing_low(bars, YEAR_BARS),
             "avg_volume_20": compute_avg_volume(bars),
-            "worst_day_1y": compute_worst_day_1y(closes),
+            "worst_day_pct_1y": compute_worst_day_pct_1y(closes),
             "bias_20": compute_bias(closes),
-            "score": compute_score(bars),
         }
 
         missing = [

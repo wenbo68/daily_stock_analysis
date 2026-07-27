@@ -251,7 +251,7 @@ def build_plan_warnings(
     }
     entry, stop, target = levels.entry, levels.stop_loss, levels.take_profit
     atr = _num(tech, "atr_14")
-    worst_day = _num(tech, "worst_day_1y")
+    worst_day_pct = _num(tech, "worst_day_pct_1y")
     close = _num(tech, "close")
     sma_60 = _num(tech, "sma_60")
 
@@ -278,15 +278,18 @@ def build_plan_warnings(
                 ),
             },
         })
-        if worst_day is not None:
-            worst_open = entry * (1.0 + worst_day)
+        if worst_day_pct is not None:
+            # worst_day_pct_1y is a PERCENT (-16.97), not a fraction — it
+            # is divided by 100 before it multiplies a price.
+            worst_open = entry * (1.0 + worst_day_pct / 100.0)
             if worst_open < stop:
                 worst_loss = shares * (entry - worst_open)
                 warnings["stop_loss"].append({
                     "id": "gap_worst",
                     "values": {
                         "entry": entry, "stop_loss": stop, "shares": shares,
-                        "worst_day_1y": worst_day, "worst_open": worst_open,
+                        "worst_day_pct": worst_day_pct,
+                        "worst_open": worst_open,
                         "worst_loss": worst_loss,
                         "loss_at_stop": risk_amount,
                         "worst_extra": (

@@ -92,9 +92,13 @@ const en: Record<string, MetricEntry> = {
     short: 'Avg volume 20',
     full: 'Average daily trading volume over the last 20 trading days.\nUsed to judge whether a position could be exited in one day without moving the price.',
   },
+  worst_day_pct_1y: {
+    short: 'Worst day 1y',
+    full: 'The worst single-day price drop over the last trading year, as a percent.\nThe gap-risk check stresses the plan with this drop landing overnight.',
+  },
   worst_day_1y: {
     short: 'Worst day 1y',
-    full: 'The worst single-day price drop in the loaded history (about a year), as a fraction.\nThe gap-risk check stresses the plan with this drop landing overnight.',
+    full: 'Retired field old runs still carry: the same statistic written as a fraction (-0.17 meaning -17%), and scanned over all loaded history rather than one year. New runs publish worst_day_pct_1y instead.',
   },
   worst_day_5pct: {
     short: 'Worst 5% day',
@@ -102,7 +106,7 @@ const en: Record<string, MetricEntry> = {
   },
   score: {
     short: 'Tech score',
-    full: 'Overall technical score computed from the indicators above.',
+    full: 'Retired field old runs still carry: a code-computed 0-100 technical score. New runs omit it — handing the AI a finished verdict made it anchor on the number instead of reading the fields.',
   },
 
   // ---- fundamentals ----
@@ -411,15 +415,22 @@ const zh: Record<string, MetricEntry> = {
     short: '20日均量',
     full: '最近20个交易日的平均成交量。\n用于判断仓位能否在一天内退出而不砸盘。',
   },
+  worst_day_pct_1y: {
+    short: '年内最差单日',
+    full: '最近一个交易年度中最差的单日跌幅，以百分数表示。\n跳空风险检查用它模拟隔夜落地的情形。',
+  },
   worst_day_1y: {
     short: '年内最差单日',
-    full: '已加载历史（约一年）中最差的单日跌幅（比例）。\n跳空风险检查用它模拟隔夜落地的情形。',
+    full: '旧运行保留的已退役字段：同一统计量，但以小数表示（-0.17 表示 -17%），且扫描了全部已加载历史而非仅一年。新运行改用 worst_day_pct_1y。',
   },
   worst_day_5pct: {
     short: '最差5%单日',
     full: '旧运行保留的已退役统计：仅最差 5% 的交易日才会超过的单日跌幅。',
   },
-  score: { short: '技术评分', full: '由上述指标综合计算出的技术面总分。' },
+  score: {
+    short: '技术评分',
+    full: '旧运行保留的已退役字段：由代码算出的 0-100 技术面总分。新运行不再输出——把现成结论交给 AI 会让它锚定这个数字，而不是自己读取各项指标。',
+  },
 
   growth: { short: '成长性', full: '取自最新年报的同比增长数据。' },
   revenue_yoy_pct: { short: '营收同比 %', full: '营业收入与去年同期相比的增长率。' },
