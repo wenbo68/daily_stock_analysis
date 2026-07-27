@@ -5,6 +5,7 @@ import type { UiLanguage } from '../../i18n/uiText';
 import { metricEntry } from '../../i18n/metricLabels';
 import { cn } from '../../utils/cn';
 import { formatValue, jumpToMetric } from '../tiered/termHelpers';
+import { formatMetricValue } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import { AltModal, FVar, MODAL_STRONG } from './AltUi';
 
@@ -28,22 +29,28 @@ import { AltModal, FVar, MODAL_STRONG } from './AltUi';
 const INPUT_ROW_PATH: Record<string, string> = {
   close: 'technicals.price.close',
   high_1y: 'technicals.price.high_1y',
+  low_1y: 'technicals.price.low_1y',
   sma_50: 'technicals.daily.sma_50',
+  sma_10w: 'technicals.weekly.sma_10w',
   atr_14: 'technicals.volatility.atr_14',
   avg_vol_60d: 'technicals.volume.avg_vol_60d',
+  avg_vol_5d: 'technicals.volume.avg_vol_5d',
   rsi_14: 'technicals.daily.rsi_14',
-  rs_3m: 'technicals.relative_strength.rs_3m',
+  rs_1m: 'technicals.market.rs_1m',
+  rs_3m: 'technicals.market.rs_3m',
 };
 
 // On-screen names for receipt-only ingredients (values the formula needs
-// that are not published as rows) — never raw underscore tokens.
+// that are not published as rows) — never raw underscore tokens. Keys
+// that ARE rows take their name from metricLabels; entries here also
+// cover receipts stored before a key was promoted to a row (avg_vol_5).
 const HELPER_VAR_LABEL: Record<string, string> = {
   close_5d_ago: 'close 5 days ago',
-  low_1y: 'lowest (1y)',
-  sma_10w: '10-week average',
   avg_gain_14: 'avg gain (14d)',
   avg_loss_14: 'avg loss (14d)',
   avg_vol_5: 'avg volume (5d)',
+  stock_return_1m: 'stock return (1m)',
+  index_return_1m: 'index return (1m)',
   stock_return_3m: 'stock return (3m)',
   index_return_3m: 'index return (3m)',
   worst_close: 'worst-day close',
@@ -51,7 +58,6 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   index_close: 'index close',
   index_sma_200: 'index 200-day average',
   index_range_pct: 'index position in 1y range (%)',
-  rs_1m: 'vs index (1m)',
   ma_stack: 'moving-average check',
   pivot_structure: 'pivot structure',
   macd_hist: 'MACD histogram',
@@ -226,7 +232,7 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
         onClick={() => setIsOpen(true)}
         className={cn('cursor-pointer tabular-nums', ALT_LINK)}
       >
-        {formatValue(value)}
+        {formatMetricValue(term, value)}
       </button>
       <AltModal
         isOpen={isOpen}
@@ -251,7 +257,7 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
             )}
           </div>
           {plugged ? <div className="flex flex-col gap-0.5">{plugged}</div> : null}
-          <p className={FORMULA_RESULT}>= {formatValue(value)}</p>
+          <p className={FORMULA_RESULT}>= {formatMetricValue(term, value)}</p>
         </div>
       </AltModal>
     </>

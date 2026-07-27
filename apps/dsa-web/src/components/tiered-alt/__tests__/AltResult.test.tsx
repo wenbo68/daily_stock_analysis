@@ -1030,7 +1030,7 @@ describe('AltResult', () => {
     expect(within(card).queryByText('anchor')).not.toBeInTheDocument();
     expect(within(card).queryByText('combined')).not.toBeInTheDocument();
     // Group keys become section titles via the metric vocabulary.
-    expect(within(card).getByText(/价格|Price/)).toBeInTheDocument();
+    expect(within(card).getByText(/股票价格|Stock price/)).toBeInTheDocument();
     expect(within(card).getByText(/日线时间框架|Daily timeframe/)).toBeInTheDocument();
     // No Other bucket: every v2 group renders under its own name.
     expect(within(card).queryByText(/^(其他|Other)$/)).not.toBeInTheDocument();

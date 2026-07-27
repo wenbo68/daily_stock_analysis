@@ -124,3 +124,44 @@
     - redundant pairs: % change (1d), rs 1m/6m, support 2 / resistance 2, avg volume 5b (the ratio is it), volume trend, days since lowest price
     - rarely flips a decision (~1-in-20): days since highest price (first one back if missed), max drawdown 1y, gap frequency, up/down volume ratio, divergence
   - retires from today's 19-field payload: ema 12/26, macd's three lines, the four swing high/low fields (→ support/resistance), bias 20, raw sma 20/60 (60 → 50 coordinate)
+
+- technicals
+  - meta
+    - as of
+    - daily bars
+    - weekly bars
+  - overall market
+    - benchmark: market
+    - 1m return diff: stock vs market
+    - 3m return diff: stock vs market
+    - relative strength: stock
+  - stock price
+    - closing price
+    - 5d price change
+    - 1y highest price
+    - 1y lowest price
+    - current price ranking: 1y
+  - volume
+    - 60d avg volume
+    - 5d avg volume
+    - volume ratio: 5d/60d
+  - volatility
+    - 14d ATR
+    - 14d ATR (this is the percentage one)
+    - ATR trend
+    - typical price drop (same as typical pullback in atr): but what's the time range?
+    - worst price drop: 1y
+  - weekly timeframe
+    - 10w SMA
+    - diff: closing price vs 10w SMA
+    - trend: SMA + pivots
+  - daily timeframe
+    - 50d SMA
+    - 200d SMA
+    - diff: closing price vs 50d SMA
+    - trend: SMA + pivots
+    - 14d RSI
+    - momentum
+  - levels
+    - nearest support
+    - nearest resistance

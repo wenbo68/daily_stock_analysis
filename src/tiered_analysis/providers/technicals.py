@@ -105,14 +105,16 @@ ENVELOPE_KEYS = frozenset({"name", "explanation", "value"})
 #: on the loader shipping dates.
 OPTIONAL_METRICS = frozenset({
     "meta.as_of",
-    "regime.regime",
-    "relative_strength.rs_3m",
-    "relative_strength.rs_label",
+    "market.regime",
+    "market.rs_1m",
+    "market.rs_3m",
+    "market.rs_label",
     "volume.avg_vol_60d",
+    "volume.avg_vol_5d",
     "volume.vol_ratio_5_60",
     "levels.support_1",
     "levels.resistance_1",
-    "levels.typical_pullback_atr",
+    "volatility.typical_pullback_atr",
 })
 
 
@@ -847,8 +849,8 @@ class TechnicalsProvider(DimensionProvider):
         resistance = nearest_resistance(daily_highs, close)
         pullback = typical_pullback_atr(daily_highs, daily_lows, atr)
 
-        regime, rs_3m, rs_label, bench_receipts = self._benchmark_fields(
-            closes, warnings
+        regime, rs_1m, rs_3m, rs_label, bench_receipts = (
+            self._benchmark_fields(closes, warnings)
         )
 
         # Receipt ingredients (UI formulas): values the formulas divide
@@ -897,10 +899,9 @@ class TechnicalsProvider(DimensionProvider):
                     len(weekly_bars),
                 ),
             },
-            "regime": {
+            "market": {
                 "regime": regime,
-            },
-            "relative_strength": {
+                "rs_1m": rs_1m,
                 "rs_3m": rs_3m,
                 "rs_label": rs_label,
             },
@@ -912,103 +913,64 @@ class TechnicalsProvider(DimensionProvider):
                     _round(close),
                 ),
                 "chg_5d_pct": make_metric(
-                    "% change (5d)",
+                    "5d price change",
                     "Closing-price change over the last 5 trading days, in "
                     "%. A large move means the easy entry may already be "
                     "gone.",
                     pct_change(closes, 5),
                 ),
-                "range_pct_1y": make_metric(
-                    "closing price ranking (1y)",
-                    "Where the close sits in its one-year range: 0 = at "
-                    "the low, 100 = at the high.",
-                    range_pct,
-                ),
                 "high_1y": make_metric(
-                    "highest price (1y)",
+                    "1y highest price",
                     "Highest traded price of the last year — the most-"
                     "watched resistance landmark; a target above it needs "
                     "breakout logic, not pullback logic.",
                     _round(high_1y),
                 ),
-            },
-            "weekly": {
-                "trend": make_metric(
-                    "weekly trend",
-                    _trend_explanation(
-                        weekly_trend, weekly_stack, weekly_struct,
-                        f"{WEEKLY_SMA_FAST}-week", f"{WEEKLY_SMA_SLOW}-week",
-                        tail=weekly_tail,
-                    ),
-                    weekly_trend,
+                "low_1y": make_metric(
+                    "1y lowest price",
+                    "Lowest traded price of the last year — the floor of "
+                    "the one-year range.",
+                    _round(low_1y),
                 ),
-                "stretch_10w_atr": make_metric(
-                    "stretch vs 10-week average (ATR)",
-                    "Distance of the close from the 10-week average, in "
-                    "weekly ATR units (weekly ATR ≈ daily ATR × √5). Above "
-                    "about +1.5 = extended, wait for a pullback; -0.5 to "
-                    "+1 in an uptrend = pullback-buy zone.",
-                    stretch_10w,
+                "range_pct_1y": make_metric(
+                    "current price ranking (1y)",
+                    "Where the close sits in its one-year range: 0 = at "
+                    "the low, 100 = at the high.",
+                    range_pct,
                 ),
             },
-            "daily": {
-                "trend": make_metric(
-                    "daily trend",
-                    _trend_explanation(
-                        daily_trend, daily_stack, daily_struct,
-                        f"{DAILY_SMA_FAST}-day", f"{DAILY_SMA_MID}-day",
-                    ),
-                    daily_trend,
+            "volume": {
+                "avg_vol_60d": make_metric(
+                    "60d avg volume",
+                    "Mean daily share volume over the last 60 bars — the "
+                    "liquidity baseline an order size is judged against.",
+                    _round(avg_vol_60, 0),
                 ),
-                "sma_50": make_metric(
-                    "50-day average",
-                    "50-day simple moving average — the classic swing "
-                    "pullback level.",
-                    _round(sma_mid_d),
+                "avg_vol_5d": make_metric(
+                    "5d avg volume",
+                    "Mean daily share volume over the last 5 bars — the "
+                    "recent-activity read the volume ratio compares "
+                    "against the 60-day baseline.",
+                    _round(avg_vol_5, 0),
                 ),
-                "stretch_50d_atr": make_metric(
-                    "stretch vs 50-day average (ATR)",
-                    "Distance of the close from the 50-day average, in ATR "
-                    "units. -1 to +1 in an uptrend = pullback entry zone; "
-                    "above +3 = extended, chasing.",
-                    stretch_50d,
-                ),
-                "sma_200": make_metric(
-                    "200-day average",
-                    "200-day simple moving average — the most-watched "
-                    "long-term line in finance; it acts as support or "
-                    "resistance whatever the holding period.",
-                    _round(sma_long_d),
-                ),
-                "momentum": make_metric(
-                    "momentum",
-                    "One label resolving RSI and MACD together: strong "
-                    f"(RSI > {MOMENTUM_RSI_STRONG}, MACD histogram rising, "
-                    "MACD line above zero), weak (the mirror image), "
-                    "fading (price strong but the histogram falling), "
-                    "basing (price weak but the histogram rising), else "
-                    "neutral.",
-                    momentum_label(rsi, histogram, macd_line),
-                ),
-                "rsi_14": make_metric(
-                    "RSI (14d)",
-                    "14-day relative strength index. Above 70 = risen too "
-                    "fast, below 30 = fallen too fast, 50 neutral. In "
-                    "strong trends it can stay pinned high — do not "
-                    "auto-fade it.",
-                    rsi,
+                "vol_ratio_5_60": make_metric(
+                    "volume ratio (5d ÷ 60d)",
+                    "Average volume of the last 5 bars over the 60-bar "
+                    "average. Above about 1.5 on a breakout = confirmed; "
+                    "below about 0.7 = suspect move.",
+                    vol_ratio,
                 ),
             },
             "volatility": {
                 "atr_14": make_metric(
-                    "ATR (14d)",
+                    "14d ATR",
                     "Average true range over 14 days, in price units — the "
                     "typical daily move, and the unit for stops and "
                     "sizing.",
                     _round(atr),
                 ),
                 "atr_pct": make_metric(
-                    "ATR (% of price)",
+                    "14d ATR (% of price)",
                     "The typical daily move as a percent of price, "
                     "comparable across stocks. Above about 6% is a "
                     "high-volatility name — consider smaller size.",
@@ -1022,50 +984,108 @@ class TechnicalsProvider(DimensionProvider):
                     "else stable.",
                     atr_trend(bars),
                 ),
-            },
-            "volume": {
-                "avg_vol_60d": make_metric(
-                    "average volume (60d)",
-                    "Mean daily share volume over the last 60 bars — the "
-                    "liquidity baseline an order size is judged against.",
-                    _round(avg_vol_60, 0),
+                "typical_pullback_atr": make_metric(
+                    "typical price drop (6m)",
+                    "Median depth of the last few completed pullbacks "
+                    "(pivot high to the next pivot low, scanned over the "
+                    f"last {DAILY_PIVOT_LOOKBACK} trading days ≈ 6 "
+                    "months), in ATR units. A stop closer than this sits "
+                    "inside normal noise.",
+                    pullback,
                 ),
-                "vol_ratio_5_60": make_metric(
-                    "volume ratio (5d ÷ 60d)",
-                    "Average volume of the last 5 bars over the 60-bar "
-                    "average. Above about 1.5 on a breakout = confirmed; "
-                    "below about 0.7 = suspect move.",
-                    vol_ratio,
+                "worst_day_pct_1y": make_metric(
+                    "worst price drop (1y)",
+                    "Worst close-to-close daily return of the last year, "
+                    "in %. Gap risk: how far an overnight surprise has "
+                    "actually blown through this stock's stops.",
+                    worst_day,
+                ),
+            },
+            "weekly": {
+                "sma_10w": make_metric(
+                    "10w SMA",
+                    "10-week simple moving average — the intermediate "
+                    "trend line the weekly stretch is measured from.",
+                    _round(sma_fast_w),
+                ),
+                "stretch_10w_atr": make_metric(
+                    "diff: closing price vs 10w SMA",
+                    "Distance of the close from the 10-week average, in "
+                    "weekly ATR units (weekly ATR ≈ daily ATR × √5). Above "
+                    "about +1.5 = extended, wait for a pullback; -0.5 to "
+                    "+1 in an uptrend = pullback-buy zone.",
+                    stretch_10w,
+                ),
+                "trend": make_metric(
+                    "weekly trend (SMA + pivots)",
+                    _trend_explanation(
+                        weekly_trend, weekly_stack, weekly_struct,
+                        f"{WEEKLY_SMA_FAST}-week", f"{WEEKLY_SMA_SLOW}-week",
+                        tail=weekly_tail,
+                    ),
+                    weekly_trend,
+                ),
+            },
+            "daily": {
+                "sma_50": make_metric(
+                    "50d SMA",
+                    "50-day simple moving average — the classic swing "
+                    "pullback level.",
+                    _round(sma_mid_d),
+                ),
+                "sma_200": make_metric(
+                    "200d SMA",
+                    "200-day simple moving average — the most-watched "
+                    "long-term line in finance; it acts as support or "
+                    "resistance whatever the holding period.",
+                    _round(sma_long_d),
+                ),
+                "stretch_50d_atr": make_metric(
+                    "diff: closing price vs 50d SMA",
+                    "Distance of the close from the 50-day average, in ATR "
+                    "units. -1 to +1 in an uptrend = pullback entry zone; "
+                    "above +3 = extended, chasing.",
+                    stretch_50d,
+                ),
+                "trend": make_metric(
+                    "daily trend (SMA + pivots)",
+                    _trend_explanation(
+                        daily_trend, daily_stack, daily_struct,
+                        f"{DAILY_SMA_FAST}-day", f"{DAILY_SMA_MID}-day",
+                    ),
+                    daily_trend,
+                ),
+                "rsi_14": make_metric(
+                    "14d RSI",
+                    "14-day relative strength index. Above 70 = risen too "
+                    "fast, below 30 = fallen too fast, 50 neutral. In "
+                    "strong trends it can stay pinned high — do not "
+                    "auto-fade it.",
+                    rsi,
+                ),
+                "momentum": make_metric(
+                    "momentum",
+                    "One label resolving RSI and MACD together: strong "
+                    f"(RSI > {MOMENTUM_RSI_STRONG}, MACD histogram rising, "
+                    "MACD line above zero), weak (the mirror image), "
+                    "fading (price strong but the histogram falling), "
+                    "basing (price weak but the histogram rising), else "
+                    "neutral.",
+                    momentum_label(rsi, histogram, macd_line),
                 ),
             },
             "levels": {
                 "support_1": make_metric(
-                    "support 1",
+                    "nearest support",
                     "Nearest pivot low below the close — a stop belongs "
                     "below a level like this, not at an arbitrary percent.",
                     _round(support),
                 ),
                 "resistance_1": make_metric(
-                    "resistance 1",
+                    "nearest resistance",
                     "Nearest pivot high above the close — the first "
                     "target candidate.",
                     _round(resistance),
-                ),
-                "typical_pullback_atr": make_metric(
-                    "typical pullback (ATR)",
-                    "Median depth of the last few completed pullbacks "
-                    "(pivot high to the next pivot low), in ATR units. A "
-                    "stop closer than this sits inside normal noise.",
-                    pullback,
-                ),
-            },
-            "risk": {
-                "worst_day_pct_1y": make_metric(
-                    "worst single-day drop (1y)",
-                    "Worst close-to-close daily return of the last year, "
-                    "in %. Gap risk: how far an overnight surprise has "
-                    "actually blown through this stock's stops.",
-                    worst_day,
                 ),
             },
         }
@@ -1155,7 +1175,7 @@ class TechnicalsProvider(DimensionProvider):
             formulas[path] = entry
 
         add(
-            "regime.regime",
+            "market.regime",
             inputs=bench_receipts.get("regime"),
             branches=[
                 {"label": "bullish",
@@ -1168,12 +1188,17 @@ class TechnicalsProvider(DimensionProvider):
             ],
         )
         add(
-            "relative_strength.rs_3m",
+            "market.rs_1m",
+            "stock_return_1m − index_return_1m",
+            bench_receipts.get("rs_1m"),
+        )
+        add(
+            "market.rs_3m",
             "stock_return_3m − index_return_3m",
             bench_receipts.get("rs_3m"),
         )
         add(
-            "relative_strength.rs_label",
+            "market.rs_label",
             inputs=bench_receipts.get("rs_label"),
             branches=[
                 {"label": "leader",
@@ -1200,6 +1225,10 @@ class TechnicalsProvider(DimensionProvider):
             "price.high_1y",
             f"the highest traded price of the last {YEAR_BARS} daily bars",
         )
+        add(
+            "price.low_1y",
+            f"the lowest traded price of the last {YEAR_BARS} daily bars",
+        )
         trend_branches = [
             {"label": "bullish",
              "condition": "moving-average check = up && "
@@ -1214,6 +1243,11 @@ class TechnicalsProvider(DimensionProvider):
             inputs={"ma_stack": weekly_stack,
                     "pivot_structure": weekly_struct},
             branches=trend_branches,
+        )
+        add(
+            "weekly.sma_10w",
+            f"the sum of the last {WEEKLY_SMA_FAST} weekly closes"
+            f" / {WEEKLY_SMA_FAST}",
         )
         add(
             "weekly.stretch_10w_atr",
@@ -1301,9 +1335,14 @@ class TechnicalsProvider(DimensionProvider):
             f" / {VOLUME_BASE_BARS}",
         )
         add(
+            "volume.avg_vol_5d",
+            f"the sum of the last {VOLUME_RECENT_BARS} daily volumes"
+            f" / {VOLUME_RECENT_BARS}",
+        )
+        add(
             "volume.vol_ratio_5_60",
-            "avg_vol_5 / avg_vol_60d",
-            {"avg_vol_5": avg_vol_5, "avg_vol_60d": avg_vol_60},
+            "avg_vol_5d / avg_vol_60d",
+            {"avg_vol_5d": avg_vol_5, "avg_vol_60d": avg_vol_60},
             digits=0,
         )
         add(
@@ -1319,14 +1358,15 @@ class TechnicalsProvider(DimensionProvider):
             f"high tops the {PIVOT_FRINGE} days on each side)",
         )
         add(
-            "levels.typical_pullback_atr",
-            "median depth of the last completed pullbacks "
+            "volatility.typical_pullback_atr",
+            "median depth of the completed pullbacks of the last "
+            f"{DAILY_PIVOT_LOOKBACK} trading days "
             "(each pivot high − the next pivot low) / atr_14",
             {"atr_14": atr},
         )
         if worst_detail is not None:
             add(
-                "risk.worst_day_pct_1y",
+                "volatility.worst_day_pct_1y",
                 "(worst_close − prev_close) / prev_close × 100",
                 {"worst_close": worst_detail[2],
                  "prev_close": worst_detail[1]},
@@ -1337,17 +1377,23 @@ class TechnicalsProvider(DimensionProvider):
     def _benchmark_fields(
         self, closes: List[float], warnings: List[str]
     ) -> Tuple[
-        Dict[str, Any], Dict[str, Any], Dict[str, Any],
+        Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any],
         Dict[str, Dict[str, Any]],
     ]:
-        """(regime, rs_3m, rs_label, receipt inputs) — envelopes with
-        None values + a warning when the benchmark is unwired or its
-        fetch fails; the fourth element maps "rs_3m" / "rs_label" /
-        "regime" to that receipt's plugged-in inputs (a key is absent
-        when its ingredients are)."""
-        regime_name = "market regime"
-        rs_name = "relative strength vs benchmark (3m)"
-        rs_label_name = "relative strength label"
+        """(regime, rs_1m, rs_3m, rs_label, receipt inputs) — envelopes
+        with None values + a warning when the benchmark is unwired or
+        its fetch fails; the last element maps "rs_1m" / "rs_3m" /
+        "rs_label" / "regime" to that receipt's plugged-in inputs (a key
+        is absent when its ingredients are)."""
+        regime_name = "benchmark: market"
+        rs_1m_name = "1m return diff: stock vs market"
+        rs_name = "3m return diff: stock vs market"
+        rs_label_name = "relative strength: stock"
+        rs_1m_explanation = (
+            "Stock return minus benchmark return over the last "
+            f"{RS_WINDOW_1M} trading days (about 1 month), in percentage "
+            "points. Positive = leading the market."
+        )
         rs_explanation = (
             "Stock return minus benchmark return over the last "
             f"{RS_WINDOW_3M} trading days (about 3 months), in percentage "
@@ -1368,6 +1414,7 @@ class TechnicalsProvider(DimensionProvider):
                     f"What the overall market is doing. {reason}.",
                     None,
                 ),
+                make_metric(rs_1m_name, rs_1m_explanation, None),
                 make_metric(rs_name, rs_explanation, None),
                 make_metric(rs_label_name, label_explanation, None),
                 {},
@@ -1411,6 +1458,13 @@ class TechnicalsProvider(DimensionProvider):
                 None,
             )
         receipts: Dict[str, Dict[str, Any]] = {}
+        stock_return_1m = pct_change(closes, RS_WINDOW_1M)
+        index_return_1m = pct_change(index_closes, RS_WINDOW_1M)
+        if stock_return_1m is not None and index_return_1m is not None:
+            receipts["rs_1m"] = {
+                "stock_return_1m": stock_return_1m,
+                "index_return_1m": index_return_1m,
+            }
         stock_return_3m = pct_change(closes, RS_WINDOW_3M)
         index_return_3m = pct_change(index_closes, RS_WINDOW_3M)
         if stock_return_3m is not None and index_return_3m is not None:
@@ -1428,6 +1482,7 @@ class TechnicalsProvider(DimensionProvider):
             }
         return (
             regime_env,
+            make_metric(rs_1m_name, rs_1m_explanation, rs_1m),
             make_metric(rs_name, rs_explanation, rs_3m),
             make_metric(
                 rs_label_name,

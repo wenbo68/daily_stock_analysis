@@ -24,18 +24,18 @@ function makeTechnicals(): TieredDimension {
     citations: [],
     payload: {
       meta: { as_of: env('as of', '2026-07-24') },
-      regime: { regime: env('market regime', 'bullish') },
+      market: { regime: env('benchmark: market', 'bullish') },
       price: { close: env('closing price', 157.79) },
       daily: {
-        trend: env('daily trend', 'neutral'),
-        sma_50: env('50-day average', 156.36),
-        stretch_50d_atr: env('stretch vs 50-day average (ATR)', 0.45),
-        rsi_14: env('RSI (14d)', 38.89),
+        trend: env('daily trend (SMA + pivots)', 'neutral'),
+        sma_50: env('50d SMA', 156.36),
+        stretch_50d_atr: env('diff: closing price vs 50d SMA', 0.45),
+        rsi_14: env('14d RSI', 38.89),
       },
-      volatility: { atr_14: env('ATR (14d)', 3.17) },
+      volatility: { atr_14: env('14d ATR', 3.17) },
     },
     formulas: {
-      'regime.regime': {
+      'market.regime': {
         branches: [
           { label: 'bullish', condition: 'index_close > index_sma_200 && index_range_pct > 50' },
           { label: 'bearish', condition: 'index_close < index_sma_200 && index_range_pct < 50' },
@@ -101,9 +101,9 @@ describe('AltMetricFormula', () => {
     fireEvent.click(screen.getByTestId('alt-metric-formula-stretch_50d_atr'));
     const modal = screen.getByTestId('alt-metric-formula-modal');
     // close / sma 50 / atr 14 all exist as rows on the card → buttons.
-    expect(within(modal).getByRole('button', { name: 'Close' })).toBeInTheDocument();
-    expect(within(modal).getByRole('button', { name: 'SMA 50' })).toBeInTheDocument();
-    expect(within(modal).getByRole('button', { name: 'ATR 14' })).toBeInTheDocument();
+    expect(within(modal).getByRole('button', { name: 'Closing price' })).toBeInTheDocument();
+    expect(within(modal).getByRole('button', { name: '50d SMA' })).toBeInTheDocument();
+    expect(within(modal).getByRole('button', { name: '14d ATR' })).toBeInTheDocument();
   });
 
   it('renders words-only receipts without a plugged line', () => {
@@ -122,6 +122,19 @@ describe('AltMetricFormula', () => {
     renderTechnicals();
     expect(screen.getByText('2026-07-24')).toBeInTheDocument();
     expect(screen.queryByTestId('alt-metric-formula-as_of')).toBeNull();
+  });
+
+  it('appends units to displayed values', () => {
+    renderTechnicals();
+    // ATR-denominated stretch: "0.45 ATR" on the row's value button …
+    const stretch = screen.getByTestId('alt-metric-formula-stretch_50d_atr');
+    expect(stretch.textContent).toBe('0.45 ATR');
+    // … and on the receipt's result line.
+    fireEvent.click(stretch);
+    const modal = screen.getByTestId('alt-metric-formula-modal');
+    expect(within(modal).getByText('= 0.45 ATR')).toBeInTheDocument();
+    // Unitless values stay bare.
+    expect(screen.getByTestId('alt-metric-formula-rsi_14').textContent).toBe('38.89');
   });
 
   it('renders a numeric rule as one line per outcome, twice (regime)', () => {

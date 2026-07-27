@@ -1,5 +1,35 @@
 // Number-to-text helpers shared across the alt page.
 import type { TieredDebateLink } from '../../api/tiered';
+import { formatValue } from '../tiered/termHelpers';
+
+// Display units per technicals payload key (owner request 2026-07-28):
+// numbers render as "2.88 ATR", "-6.82 %". Unitless numbers (RSI, a
+// ranking, counts) and labels stay bare.
+const METRIC_UNIT: Record<string, string> = {
+  chg_5d_pct: '%',
+  range_pct_1y: '%',
+  atr_pct: '%',
+  worst_day_pct_1y: '%',
+  rs_1m: '%',
+  rs_3m: '%',
+  stretch_10w_atr: 'ATR',
+  stretch_50d_atr: 'ATR',
+  typical_pullback_atr: 'ATR',
+  avg_vol_60d: 'shares',
+  avg_vol_5d: 'shares',
+  vol_ratio_5_60: '×',
+  // Stored-run keys that carry the same units.
+  volatility_pct: '%',
+  bias_20: '%',
+  avg_volume_20: 'shares',
+};
+
+// A metric value with its unit appended when it has one.
+export const formatMetricValue = (key: string, value: unknown): string => {
+  const text = formatValue(value);
+  const unit = typeof value === 'number' ? METRIC_UNIT[key] : undefined;
+  return unit ? `${text} ${unit}` : text;
+};
 
 // 0.01 -> '1', 0.005 -> '0.5' — a stored risk fraction as the percent the
 // user typed, without float noise (0.01 * 100 === 1.0000000000000002).

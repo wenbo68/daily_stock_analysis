@@ -366,19 +366,19 @@ class TestTechnicalsProvider(unittest.TestCase):
         }
         self.assertEqual(leaves, {
             "meta.as_of", "meta.bars_daily", "meta.bars_weekly",
-            "regime.regime",
-            "relative_strength.rs_3m", "relative_strength.rs_label",
-            "price.close", "price.chg_5d_pct", "price.range_pct_1y",
-            "price.high_1y",
-            "weekly.trend", "weekly.stretch_10w_atr",
-            "daily.trend", "daily.sma_50", "daily.stretch_50d_atr",
-            "daily.sma_200", "daily.momentum", "daily.rsi_14",
+            "market.regime", "market.rs_1m", "market.rs_3m",
+            "market.rs_label",
+            "price.close", "price.chg_5d_pct", "price.high_1y",
+            "price.low_1y", "price.range_pct_1y",
+            "volume.avg_vol_60d", "volume.avg_vol_5d",
+            "volume.vol_ratio_5_60",
             "volatility.atr_14", "volatility.atr_pct",
-            "volatility.atr_trend",
-            "volume.avg_vol_60d", "volume.vol_ratio_5_60",
+            "volatility.atr_trend", "volatility.typical_pullback_atr",
+            "volatility.worst_day_pct_1y",
+            "weekly.sma_10w", "weekly.stretch_10w_atr", "weekly.trend",
+            "daily.sma_50", "daily.sma_200", "daily.stretch_50d_atr",
+            "daily.trend", "daily.rsi_14", "daily.momentum",
             "levels.support_1", "levels.resistance_1",
-            "levels.typical_pullback_atr",
-            "risk.worst_day_pct_1y",
         })
 
     def test_every_metric_is_an_envelope(self):
@@ -418,9 +418,9 @@ class TestTechnicalsProvider(unittest.TestCase):
     def test_benchmark_unwired_degrades_to_none_with_warning(self):
         result = _full_provider(_wave_bars(320)).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)  # optional fields
-        self.assertIsNone(result.payload["regime"]["regime"]["value"])
+        self.assertIsNone(result.payload["market"]["regime"]["value"])
         self.assertIsNone(
-            result.payload["relative_strength"]["rs_3m"]["value"]
+            result.payload["market"]["rs_3m"]["value"]
         )
         self.assertTrue(
             any("benchmark index not configured" in w for w in result.warnings)
@@ -435,7 +435,7 @@ class TestTechnicalsProvider(unittest.TestCase):
         )
         result = provider.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertIsNone(result.payload["regime"]["regime"]["value"])
+        self.assertIsNone(result.payload["market"]["regime"]["value"])
         self.assertTrue(
             any("index source down" in w for w in result.warnings)
         )
@@ -446,16 +446,16 @@ class TestTechnicalsProvider(unittest.TestCase):
                  for i in range(320)]
         payload = _full_provider(bars, index).collect("AAPL").payload
         self.assertIn(
-            payload["regime"]["regime"]["value"],
+            payload["market"]["regime"]["value"],
             ("bullish", "bearish", "mixed"),
         )
         self.assertIsInstance(
-            payload["relative_strength"]["rs_3m"]["value"], float
+            payload["market"]["rs_3m"]["value"], float
         )
         # The regime explanation embeds the benchmark's name and its
         # ingredients (the label is the only citable field).
-        self.assertIn("S&P 500", payload["regime"]["regime"]["explanation"])
-        self.assertIn("200-day", payload["regime"]["regime"]["explanation"])
+        self.assertIn("S&P 500", payload["market"]["regime"]["explanation"])
+        self.assertIn("200-day", payload["market"]["regime"]["explanation"])
 
     def test_collect_insufficient_bars_is_unavailable_not_silent(self):
         provider = TechnicalsProvider(bars_loader=lambda symbol: _flat_bars(3))
@@ -524,7 +524,7 @@ class TestTechnicalsProvider(unittest.TestCase):
         payload = TechnicalsProvider(
             bars_loader=lambda s: _trend_bars(closes)
         ).collect("AAPL").payload
-        worst = payload["risk"]["worst_day_pct_1y"]["value"]
+        worst = payload["volatility"]["worst_day_pct_1y"]["value"]
         self.assertAlmostEqual(worst, -15.0)
         self.assertLess(worst, -1.0)  # percent, not a fraction
 
@@ -576,10 +576,10 @@ class TestFormulaReceipts(unittest.TestCase):
             "daily.rsi_14": lambda i: (
                 100 - 100 / (1 + i["avg_gain_14"] / i["avg_loss_14"])
             ),
-            "risk.worst_day_pct_1y": lambda i: (
+            "volatility.worst_day_pct_1y": lambda i: (
                 (i["worst_close"] - i["prev_close"]) / i["prev_close"] * 100
             ),
-            "relative_strength.rs_3m": lambda i: (
+            "market.rs_3m": lambda i: (
                 i["stock_return_3m"] - i["index_return_3m"]
             ),
         }
@@ -611,7 +611,7 @@ class TestFormulaReceipts(unittest.TestCase):
         # {label, condition} branches, catch-all (condition None) last,
         # and the published label is always one of the branch labels.
         result = self._result()
-        for path in ("regime.regime", "relative_strength.rs_label",
+        for path in ("market.regime", "market.rs_label",
                      "weekly.trend", "daily.trend", "daily.momentum",
                      "volatility.atr_trend"):
             receipt = result.formulas[path]
@@ -660,7 +660,7 @@ class TestFormulaReceipts(unittest.TestCase):
 
     def test_regime_receipt_reproduces_the_label(self):
         result = self._result()
-        receipt = result.formulas["regime.regime"]
+        receipt = result.formulas["market.regime"]
         i = receipt["inputs"]
         above = i["index_close"] > i["index_sma_200"]
         if above and i["index_range_pct"] > 50:
@@ -670,12 +670,12 @@ class TestFormulaReceipts(unittest.TestCase):
         else:
             expected = "mixed"
         self.assertEqual(
-            metric_value(result.payload["regime"]["regime"]), expected
+            metric_value(result.payload["market"]["regime"]), expected
         )
 
     def test_rs_label_receipt_reproduces_the_label(self):
         result = self._result()
-        i = result.formulas["relative_strength.rs_label"]["inputs"]
+        i = result.formulas["market.rs_label"]["inputs"]
         expected = (
             "leader" if i["rs_1m"] > 0 and i["rs_3m"] > 0
             else "laggard" if i["rs_1m"] < 0 and i["rs_3m"] < 0
@@ -683,14 +683,14 @@ class TestFormulaReceipts(unittest.TestCase):
         )
         self.assertEqual(
             metric_value(
-                result.payload["relative_strength"]["rs_label"]
+                result.payload["market"]["rs_label"]
             ),
             expected,
         )
 
     def test_no_benchmark_means_no_rs_receipt_not_a_crash(self):
         result = _full_provider(_wave_bars(320)).collect("AAPL")
-        self.assertNotIn("relative_strength.rs_3m", result.formulas)
+        self.assertNotIn("market.rs_3m", result.formulas)
         self.assertIn("daily.stretch_50d_atr", result.formulas)
 
     def test_wilder_averages_match_the_rsi(self):

@@ -254,7 +254,7 @@ def build_plan_warnings(
     }
     entry, stop, target = levels.entry, levels.stop_loss, levels.take_profit
     atr = read_metric(tech, "volatility", "atr_14")
-    worst_day_pct = read_metric(tech, "risk", "worst_day_pct_1y")
+    worst_day_pct = read_metric(tech, "volatility", "worst_day_pct_1y")
     close = read_metric(tech, "price", "close")
     sma_50 = read_metric(tech, "daily", "sma_50")
 

@@ -4,12 +4,12 @@ import { useUiLanguage } from '../../contexts/UiLanguageContext';
 import type { UiTextKey } from '../../i18n/uiText';
 import {
   dedupeCitations,
-  formatValue,
   isMetricEnvelope,
   metricAnchorId,
   metricValue,
 } from '../tiered/termHelpers';
 import { MetricTerm } from '../tiered/terms';
+import { formatMetricValue } from './altFormat';
 import { AltMetricValue } from './AltMetricFormula';
 import { ALT_LINK } from './altStyles';
 import { AltCard, AltNarrative, AltNotesButton } from './AltUi';
@@ -156,7 +156,7 @@ const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: M
       {formula ? (
         <AltMetricValue term={term} value={value} formula={formula} />
       ) : (
-        formatValue(value)
+        formatMetricValue(term, value)
       )}
       {typeof date === 'string' ? (
         // The leading {' '} is a real space so copied text reads

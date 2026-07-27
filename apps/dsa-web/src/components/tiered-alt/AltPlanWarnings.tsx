@@ -29,7 +29,10 @@ const WARN_KEYWORD_KEYS: Record<string, UiTextKey> = {
 // stored runs still anchor at the old flat paths, so report jumps try
 // the new path first and fall back.
 const ATR_REFS = ['technicals.volatility.atr_14', 'technicals.atr_14'];
+// worst_day_pct_1y has lived in three homes: volatility (2026-07-28
+// regrouping), risk (early v2), and the flat v1 payload.
 const WORST_PCT_REFS = [
+  'technicals.volatility.worst_day_pct_1y',
   'technicals.risk.worst_day_pct_1y',
   'technicals.worst_day_pct_1y',
 ];
