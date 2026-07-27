@@ -25,7 +25,10 @@ function makeTechnicals(): TieredDimension {
     payload: {
       meta: { as_of: env('as of', '2026-07-24') },
       market: { regime: env('benchmark: market', 'bullish') },
-      price: { close: env('closing price', 157.79) },
+      price: {
+        close: env('closing price', 157.79),
+        range_pct_1y: env('current price ranking (1y)', 30.4),
+      },
       daily: {
         trend: env('daily trend (SMA + pivots)', 'neutral'),
         sma_50: env('50d SMA', 156.36),
@@ -135,6 +138,11 @@ describe('AltMetricFormula', () => {
     expect(within(modal).getByText('= 0.45 ATR')).toBeInTheDocument();
     // Unitless values stay bare.
     expect(screen.getByTestId('alt-metric-formula-rsi_14').textContent).toBe('38.89');
+  });
+
+  it('renders the 1y price ranking as a position out of 100', () => {
+    renderTechnicals();
+    expect(screen.getByText('30/100')).toBeInTheDocument();
   });
 
   it('renders a numeric rule as one line per outcome, twice (regime)', () => {

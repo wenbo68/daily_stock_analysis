@@ -7,7 +7,6 @@ import { formatValue } from '../tiered/termHelpers';
 // ranking, counts) and labels stay bare.
 const METRIC_UNIT: Record<string, string> = {
   chg_5d_pct: '%',
-  range_pct_1y: '%',
   atr_pct: '%',
   worst_day_pct_1y: '%',
   rs_1m: '%',
@@ -26,6 +25,11 @@ const METRIC_UNIT: Record<string, string> = {
 
 // A metric value with its unit appended when it has one.
 export const formatMetricValue = (key: string, value: unknown): string => {
+  // The 1y price ranking reads as a position on a 0-100 scale: "30/100"
+  // (owner format 2026-07-28).
+  if (key === 'range_pct_1y' && typeof value === 'number') {
+    return `${Math.round(value)}/100`;
+  }
   const text = formatValue(value);
   const unit = typeof value === 'number' ? METRIC_UNIT[key] : undefined;
   return unit ? `${text} ${unit}` : text;
