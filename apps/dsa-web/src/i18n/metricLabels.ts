@@ -14,7 +14,7 @@ const en: Record<string, MetricEntry> = {
   // ---- technicals ----
   close: {
     short: 'Close',
-    full: 'Latest closing price — the last traded price of the most recent trading day.',
+    full: "The last traded price of the most recent trading day — every distance in this report is measured from here.\nUnit: the stock's own currency (USD for US stocks).",
   },
   bars_count: {
     short: 'Bars',
@@ -38,7 +38,7 @@ const en: Record<string, MetricEntry> = {
   },
   rsi_14: {
     short: 'RSI 14',
-    full: 'Relative Strength Index over 14 days — a momentum gauge from 0 to 100.\nAbove 70 usually means overheated (price may pull back); below 30 means oversold (price may bounce).',
+    full: 'Relative Strength Index (14 days) — a 0-to-100 speedometer for how fast the price has been rising or falling.\nRange: 0–100. Above 70 = rose unusually fast; below 30 = fell unusually fast; around 50 = calm.\nCaution: in strong trends it can stay above 70 for weeks — high alone is not a sell signal.',
   },
   macd: {
     short: 'MACD',
@@ -54,7 +54,7 @@ const en: Record<string, MetricEntry> = {
   },
   atr_14: {
     short: 'ATR 14',
-    full: 'Average True Range over 14 days — the typical daily price swing in dollars.\nA volatility measure often used to place stop-loss levels.',
+    full: "Average True Range (14 days) — the typical size of one day's price move.\nUnit: the stock's currency; e.g. an ATR of $19 means a normal day moves the price about $19.\nThis is the ruler stops and position sizes are measured with.",
   },
   volatility_pct: {
     short: 'Volatility %',
@@ -94,7 +94,7 @@ const en: Record<string, MetricEntry> = {
   },
   worst_day_pct_1y: {
     short: 'Worst day 1y',
-    full: 'The worst single-day price drop over the last trading year, as a percent.\nThe gap-risk check stresses the plan with this drop landing overnight.',
+    full: 'The single worst day of the past year, close to close.\nUnit: percent, negative — e.g. -14.5 means that day lost 14.5%.\nShows how far an overnight surprise (bad earnings, bad news) can jump straight past a stop-loss.',
   },
   worst_day_1y: {
     short: 'Worst day 1y',
@@ -112,110 +112,119 @@ const en: Record<string, MetricEntry> = {
   // ---- technicals v2 groups + fields (2026-07-27) ----
   regime: {
     short: 'Market regime',
-    full: 'What the overall market is doing, judged on the benchmark index (S&P 500 for US stocks): above/below its 200-day average and its position in its one-year range.\nMost long setups fail in a falling market regardless of the individual chart.',
+    full: "Whether the overall market — not this stock — is healthy, judged on the benchmark index (S&P 500 for US stocks): is it above its 200-day average, and in the upper or lower half of its one-year range?\nValues: bullish / bearish / mixed (blank when this market has no benchmark wired).\nMost stocks follow the market, so buying in a bearish market usually fails even when the stock's own chart looks good.",
   },
   relative_strength: {
     short: 'Relative strength',
-    full: 'The stock\'s return minus the benchmark index\'s return over the same window — is this stock leading or lagging the market.',
+    full: 'Is this stock doing better or worse than the market itself?',
   },
-  price: { short: 'Price', full: 'The current price and where it sits in its recent history.' },
+  price: {
+    short: 'Price',
+    full: 'The current price and where it sits in its own recent history.',
+  },
   weekly: {
     short: 'Weekly timeframe',
-    full: 'The zoomed-out read (weeks per bar) — sets the outlook; daily signals should only generate trades in its direction.',
+    full: 'The zoomed-out view (one bar = one week). It sets the direction — trades should only go this way.',
   },
   daily: {
     short: 'Daily timeframe',
-    full: 'The trade-plan timeframe (one bar per day) — trend, momentum and the levels the plan is written against.',
+    full: 'The zoomed-in view (one bar = one day) — used to time the entry and write the trade plan.',
   },
   volatility: {
     short: 'Volatility',
-    full: 'How much the stock typically moves — the unit stops and position sizes are measured in.',
+    full: 'How jumpy this stock is — the ruler stops and position sizes are measured with.',
   },
-  volume: { short: 'Volume', full: 'Trading activity — whether moves are backed by real participation and whether an order can exit cleanly.' },
+  volume: {
+    short: 'Volume',
+    full: 'How much is actually traded — can an order get in and out easily, and is a move backed by real buying?',
+  },
   levels: {
     short: 'Levels',
-    full: 'Price levels from the stock\'s own turning points — where entries, stops and targets anchor.',
+    full: "Actual price levels from the stock's past turning points — where the entry, stop and target anchor.",
   },
-  risk: { short: 'Risk', full: 'Tail behavior — how bad this stock\'s bad days actually get.' },
+  risk: {
+    short: 'Risk',
+    full: "How bad this stock's bad days actually get.",
+  },
   bars_daily: {
     short: 'Daily bars',
-    full: 'Trading days of history loaded. Below 253 (one trading year) the one-year fields only cover what exists.',
+    full: "How many days of price history were loaded (one 'bar' = one trading day).\nUnit: a count; the target is 300. Below about 253 (one trading year), the one-year fields only cover the history that exists.",
   },
   bars_weekly: {
     short: 'Weekly bars',
-    full: 'Weekly bars resampled from the daily history. Below 60 the weekly structure read is unreliable.',
+    full: 'How many weeks of history, built by combining the daily data.\nUnit: a count; the target is 60. With fewer, the weekly trend read is shaky.',
   },
   rs_3m: {
     short: 'vs index (3m)',
-    full: 'Stock return minus benchmark return over ~3 months (63 trading days), in percentage points.\nPositive = leading the market.',
+    full: "The stock's 3-month return minus the market's 3-month return: +5 means it beat the market by 5 points, -20 means it lost to it by 20.\nUnit: percentage points; usually between -30 and +30, with no hard limit.",
   },
   rs_label: {
     short: 'RS label',
-    full: 'leader = outperforming the benchmark over both 1 and 3 months; laggard = underperforming over both; else neutral.\nPrefer longs in leaders.',
+    full: 'One-word verdict: leader = beat the market over both 1 and 3 months (good); laggard = lost to it over both (avoid); neutral = mixed.\nComputed from the 3-month number shown here plus a 1-month check that is not shown.',
   },
   chg_5d_pct: {
     short: '% change (5d)',
-    full: 'Closing-price change over the last 5 trading days, in %.\nA large move means the easy entry may already be gone.',
+    full: 'How much the price moved over the last 5 trading days.\nUnit: percent; usually -15 to +15.\nA big jump means the cheap entry may already be gone.',
   },
   range_pct_1y: {
     short: 'Ranking (1y)',
-    full: 'Where the close sits in its one-year range: 0 = at the low, 100 = at the high.',
+    full: "Where today's price sits inside its past-year range.\nRange: 0 to 100. 0 = at the year's low, 100 = at the year's high.\nAbove ~80 = strong but risky to chase; below ~20 = falling knife unless it is clearly bottoming.",
   },
   high_1y: {
     short: 'Highest (1y)',
-    full: 'Highest traded price of the last year — the most-watched resistance landmark.\nA target above it needs breakout logic, not pullback logic.',
+    full: "The highest price touched in the last year.\nUnit: the stock's currency.\nPrices often stall just below it — people who bought there are waiting to get out even.",
   },
   trend: {
     short: 'Trend',
-    full: 'Combined from the moving-average check and the pivot structure; both must agree for a bullish/bearish label, otherwise neutral.',
+    full: "Overall direction, from two independent checks that must agree: (1) is the price above or below its own moving averages, and (2) are the chart's recent peaks and dips stepping higher or lower?\nValues: bullish / bearish / neutral (neutral = the two checks disagree).",
   },
   stretch_10w_atr: {
     short: 'Stretch vs 10w (ATR)',
-    full: 'Distance of the close from the 10-week average, in weekly ATR units.\nAbove ~+1.5 = extended, wait for a pullback; -0.5 to +1 in an uptrend = pullback-buy zone.',
+    full: "How far the price is above (+) or below (-) its 10-week average, measured in normal weekly moves (ATR units).\nRange: usually -4 to +4.\nAbove ~+1.5 = stretched too far, wait; -0.5 to +1 in an uptrend = good dip-buy zone.",
   },
   sma_50: {
     short: 'SMA 50',
-    full: '50-day simple moving average — the classic swing pullback level.',
+    full: "The average price of the last 50 trading days.\nUnit: the stock's currency.\nRising stocks often dip back to this line before continuing — the classic buy-the-dip level.",
   },
   stretch_50d_atr: {
     short: 'Stretch vs 50d (ATR)',
-    full: 'Distance of the close from the 50-day average, in ATR units.\n-1 to +1 in an uptrend = pullback entry zone; above +3 = extended, chasing.',
+    full: 'How far the price is above (+) or below (-) its 50-day average, in normal daily moves (ATR units).\nRange: usually -5 to +5.\n-1 to +1 in an uptrend = good entry zone; above +3 = chasing.',
   },
   sma_200: {
     short: 'SMA 200',
-    full: '200-day simple moving average — the most-watched long-term line in finance; acts as support or resistance whatever the holding period.',
+    full: "The average price of the last 200 trading days — the most-watched line in finance.\nUnit: the stock's currency.\nPrice above it = long-term healthy; the line itself often acts as support or resistance.",
   },
   momentum: {
     short: 'Momentum',
-    full: 'One label resolving RSI and MACD together: strong / weak / fading (price strong but momentum draining) / basing (price weak but momentum building) / neutral.',
+    full: 'One-word verdict combining the RSI and MACD momentum gauges:\nstrong = pushing up hard; weak = pushing down; fading = price still high but the push is dying; basing = price still low but the push is building; neutral = neither.',
   },
   atr_pct: {
     short: 'ATR %',
-    full: 'The typical daily move as a percent of price, comparable across stocks.\nAbove ~6% is a high-volatility name — consider smaller size.',
+    full: 'The typical daily move as a percent of the price — lets you compare a $10 stock with a $500 stock.\nUnit: percent; typically 1 to 6.\nAbove ~6 = wild stock, consider trading smaller.',
   },
   atr_trend: {
     short: 'ATR trend',
-    full: 'ATR now vs 20 bars ago (±10% band): expanding = widen stops and shrink size; contracting = a squeeze that often precedes a move; else stable.',
+    full: 'Is the daily jumpiness growing or shrinking versus about a month ago?\nValues: expanding = widen stops and buy fewer shares; contracting = the stock is coiling up, a big move often follows; stable = no real change.',
   },
   avg_vol_60d: {
     short: 'Avg volume (60d)',
-    full: 'Mean daily share volume over the last 60 bars — the liquidity baseline an order size is judged against.',
+    full: 'Average shares traded per day over about 3 months.\nUnit: shares (often millions).\nTells you whether a position can get in and out without moving the price.',
   },
   vol_ratio_5_60: {
     short: 'Volume ratio (5÷60)',
-    full: 'Average volume of the last 5 bars over the 60-bar average.\nAbove ~1.5 on a breakout = confirmed; below ~0.7 = suspect move.',
+    full: "This week's average volume versus the 3-month normal.\nUnit: a ratio; usually 0.5 to 2, where 1.0 = normal.\nAbove ~1.5 during a breakout = real interest confirms the move; below ~0.7 = the move is suspect.",
   },
   support_1: {
     short: 'Support 1',
-    full: 'Nearest pivot low below the close — a stop belongs below a level like this, not at an arbitrary percent.',
+    full: "The nearest price BELOW today's where buyers stepped in before (a past dip-bottom).\nUnit: the stock's currency.\nA protective stop-loss belongs just below a level like this, not at a random percent.\nBlank when the price sits at its lowest point in ~6 months — there is no past floor beneath it.",
   },
   resistance_1: {
     short: 'Resistance 1',
-    full: 'Nearest pivot high above the close — the first target candidate.',
+    full: "The nearest price ABOVE today's where sellers showed up before (a past peak).\nUnit: the stock's currency.\nThe first realistic profit target.\nBlank when the price sits at its highest point in ~6 months — there is no past ceiling above it.",
   },
   typical_pullback_atr: {
     short: 'Typical pullback (ATR)',
-    full: 'Median depth of the last few completed pullbacks (pivot high to the next pivot low), in ATR units.\nA stop closer than this sits inside normal noise.',
+    full: "How deep this stock's normal dips have been lately — from each local top down to the next local bottom — in normal daily moves (ATR units).\nRange: usually 1 to 5.\nIf a stop is closer than this, ordinary wiggling will hit it even when the trade idea is right.",
   },
 
   // ---- fundamentals ----
