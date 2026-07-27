@@ -10,3 +10,117 @@
     - position: weeks to months
     - investing: years
   - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
+
+- technical fields
+  - meta
+    - as of
+    - number of daily/weekly bars
+      - daily bars #
+      - weekly bars #
+  - price
+    - closing price: closing price of most recent bar
+      - value
+      - % change (1d): closing price change for 1 or 5 days
+      - % change (5d)
+    - extremes: highest/lowest price (not necessarily closing price) within 1y
+      - highest price (1y)
+        - days since highest price
+      - lowest price (1y)
+        - days since lowest price
+    - current closing price ranking (1y): where the closing price sits between the above range (in percentage)
+  - weekly timeframe (for outlook mostly)
+    - simple moving average
+      - value (10w): average closing price of 10 weekly bars
+      - slope (10w): i don't undersand this; if sma 10w is a value, then where does the slope come from? 
+      - distance btw current close and sma: in %
+        - ok what's the significance of this? what can the model get from this value?
+      - trend: sma (10w) > sma (30w) > sma (40w)
+    - pivots: highest/lowest bar/price within a number of bars
+      - trend: determined using pitvots -> higher highes/lows | lower highes/lows | sideways?
+    - trend (ma + pivot): is ma up/down trend + pivot structure => bullish/bearish/neutral
+    - regarding momentum and atr
+      - weekly momentum (eg rsi) barely moves
+      - weekly atr is just daily atr x 2.2
+  - daily timeframe (for trade plan mostly)
+    - simple moving average
+    - pivots
+    - trend (ma + pivot)
+    - momentum: what's the difference between rsi and macd in terms of interpretation?
+      - relative strength index
+        - thresholds
+          - above 70: risen too fast = overbought
+          - below 30: fallen too fast = oversold
+          - 50: neutral
+        - value (14d)
+        - slope (5d): positive = strength building; negative = strength draining
+      - moving average convergence divergence: so for this we just have histogram (and histogram direction) and omit macd/signal lines?
+    - average true range: how much a stock moves per day
+      - $ value (14d)
+      - trend
+        - expanding: volativity expanding -> stops should widen; shares should shrink
+        - contracting: opposite
+  - volume
+    - average volume (60b): each bar has a volume; mean volume of the last 60 bars
+      - confirms liquidity of stock
+    - average volume (5b): mean volume of last 5 bars
+      - compare 5b with 60b
+        - sus: a breakout on 0.6x volume (60b)
+        - real: a breakout on 2x volume (60b)
+    - trend
+  - risk
+    - worst drop (1y): is this the lowest price 1y? or worst drop 1y? in $ or %?
+- for all the trends listed here, how are we calculating them? eg for atr trend, what are we doing? we only have atr 14d i think?
+
+- technical fields — FINAL (26 fields, 2026-07-27; supersedes the 55-field draft that was here)
+  - bars: fetch ~300 daily (253 for the 1y landmarks + margin), resample into ~60 weekly; the trim doesn't shrink the fetch because the 1y fields and sma 200d survive and they are what bind
+  - format: every field ships as { name, explanation, value }; only one citable field per judgment, so ingredients can't be double-counted as independent confirmations
+    - explanation style (amended 2026-07-27): method, not verdict-per-ingredient — an agreeing label gets static method text only ("combined from the 10w/20w ma relationship and pivot structure; both must agree"); re-listing each ingredient's verdict would smuggle the double-counting back in as prose
+    - exception: a neutral label states which ingredient said what — neutral collapses two opposite situations (ma up/structure sideways vs structure up/ma flipped down) and only the ingredients distinguish them
+  - core principle (from the 22-field critique, accepted): correlated fields get double-counted by the model as independent evidence — stack + structure + slope + combined trend reads as four confirmations of one fact and inflates confidence; so judgments ship only as their composite
+  - second principle (my correction to the 22): that logic applies to judgments, not to coordinates — price levels aren't confirmations of anything, they're the numbers the plan is written in; cutting them forces the model to derive levels by arithmetic, the one thing we never let it do
+  - meta
+    - as of: date of the last completed bar
+    - daily bars #: warn below 253
+    - weekly bars #: warn below 60
+    - (differs from the 22: their single data_ok boolean is replaced by our existing coverage system, which names which fields are unreliable)
+  - market regime (benchmark index per market via config: s&p 500 / csi 300 / hang seng)
+    - regime: bullish | bearish | mixed — explanation embeds above/below 200d and range position; in bearish, demand better setups and smaller size
+  - relative strength
+    - vs index (3m): stock return minus index return, in % — 3 months matches the swing hold-to-signal ratio
+    - label: leader | laggard | neutral
+  - price
+    - closing price
+    - % change (5d): 1d cut as noise at swing horizon
+    - current closing price ranking (1y): where the close sits in its 1y range, in %
+    - highest price (1y): kept as a coordinate (differs from the 22) — the most-watched resistance landmark; a target near it needs breakout logic
+  - weekly timeframe (outlook)
+    - trend: bullish | bearish | neutral — composite of ma check (10w vs 20w) + pivot structure
+      - 10w/20w chosen deliberately (amended 2026-07-27, was a resample side effect): 20w = 100d is already ~10x a 2-week hold; 30w = 150d is the position-scale ruler we cut; whipsaw from the faster pair is damped because an ma flip alone can't flip the label — pivot structure must agree, else neutral
+    - stretch vs 10w (atr): (close − sma 10w) ÷ weekly atr — extended vs pullback-zone
+  - daily timeframe (trade plan)
+    - trend: same composite method on daily bars
+    - sma (50d): kept as a coordinate (differs from the 22) — the classic pullback entry level; value only, no slope/stack (those live inside trend)
+    - stretch vs 50d (atr): entry timing; −1 to +1 in an uptrend = pullback zone, above +3 = chasing
+    - sma (200d): kept as a coordinate (differs from the 22) — the most-watched line in finance; value only
+    - momentum label: strong | fading | basing | weak | neutral — swallows rsi slope, macd histogram + direction + zero-line; ingredients in the explanation
+    - rsi (14d): the one raw momentum escape hatch, so an extreme reading (85) can override the label
+  - volatility
+    - atr ($, 14d): the unit for stops and sizing
+    - atr (% of price): kept (differs from the 22) — the cross-stock normalizer, already shipped today, one division
+    - atr trend: expanding | contracting | stable (now vs 20 bars ago, ±10% bands)
+  - volume
+    - dollar volume (60b): avg volume × price — the real liquidity gate
+    - volume ratio (5b ÷ 60b): above ~1.5 on a breakout = confirmed; below ~0.7 = suspect
+  - levels
+    - support 1: nearest pivot low below the close — stops go below this
+    - resistance 1: nearest pivot high above the close — target candidate
+    - typical pullback (atr): median depth of the last 4–5 completed dips — stops the model placing a stop inside normal noise (promoted to launch 2026-07-27: support/resistance already ships the pivot detector; the median is one line on top. needs a crisp "completed pullback" definition + its own tests)
+    - (differs from the 22: their rr_to_r1 rejected — pre-computed reward:risk with a baked-in stop rule pre-answers the plan and contradicts our pipeline, which computes stop/R:R/shares in code after the debate; same disease as the deleted tech score)
+  - events
+    - (differs from the 22: days_to_earnings rejected here — it already ships in the fundamentals report and the debate prompt already treats a near report as bearish; a second copy could disagree with the first)
+    - GAP found 2026-07-27: the earnings gate is display + prompt nudge only — earnings_warning() in src/tiered_analysis/earnings.py has no callers, and nothing in plan_review/sizing/stops/levels reads the date. build: plan_review emits a code-computed warning when the plan holds through a near report (same machinery as the gap-risk warning); consider promoting to a hard refusal after backtesting
+  - cut, and why (still computed where needed — they just don't leave the pipeline)
+    - swallowed by their composite: sma values/slopes/stacks (except the 3 coordinate values above), pivot structure labels, weekly pivot lists, rsi slope, macd histogram + direction + zero-line + days-since-flip, regime ingredients, bias 20 (replaced by atr-stretch)
+    - redundant pairs: % change (1d), rs 1m/6m, support 2 / resistance 2, avg volume 5b (the ratio is it), volume trend, days since lowest price
+    - rarely flips a decision (~1-in-20): days since highest price (first one back if missed), max drawdown 1y, gap frequency, up/down volume ratio, divergence
+  - retires from today's 19-field payload: ema 12/26, macd's three lines, the four swing high/low fields (→ support/resistance), bias 20, raw sma 20/60 (60 → 50 coordinate)
