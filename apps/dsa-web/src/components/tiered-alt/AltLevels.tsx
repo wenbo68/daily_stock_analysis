@@ -9,9 +9,10 @@ import type {
   TieredReviewFailure,
 } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
+import { metricEntry } from '../../i18n/metricLabels';
 import type { UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
-import { flashElement, formatPrice, jumpToMetric } from '../tiered/termHelpers';
+import { flashElement, formatPrice, jumpToMetricFirst } from '../tiered/termHelpers';
 import { HelpTerm as BaseHelpTerm } from '../tiered/terms';
 import { LinkedTextV8 } from './AltDebateTree';
 import { AltWarningsCell } from './AltPlanWarnings';
@@ -113,11 +114,28 @@ const AdjustReasonList = ({
   );
 };
 
-// Formula inputs with a source row on the technicals card.
-const TECHNICALS_INPUT_KEYS = new Set([
-  'close', 'sma_20', 'sma_60', 'swing_low_20', 'swing_low_60',
-  'swing_high_20', 'swing_high_60', 'high_52w', 'atr_14',
-]);
+// Formula inputs with a source row on the technicals card, and the
+// payload path(s) that row anchors at. The technicals payload moved
+// metrics into groups (v2, 2026-07-27); stored runs still anchor at the
+// old flat paths, so jumps try the new path first and fall back.
+const TECHNICALS_INPUT_REFS: Record<string, string[]> = {
+  close: ['technicals.price.close', 'technicals.close'],
+  atr_14: ['technicals.volatility.atr_14', 'technicals.atr_14'],
+  // v2 level anchors (2026-07-27)
+  sma_50: ['technicals.daily.sma_50'],
+  sma_200: ['technicals.daily.sma_200'],
+  support_1: ['technicals.levels.support_1'],
+  resistance_1: ['technicals.levels.resistance_1'],
+  high_1y: ['technicals.price.high_1y'],
+  // v1 anchors old stored runs still carry
+  sma_20: ['technicals.sma_20'],
+  sma_60: ['technicals.sma_60'],
+  swing_low_20: ['technicals.swing_low_20'],
+  swing_low_60: ['technicals.swing_low_60'],
+  swing_high_20: ['technicals.swing_high_20'],
+  swing_high_60: ['technicals.swing_high_60'],
+  high_52w: ['technicals.high_52w'],
+};
 
 // Formula inputs that ARE another computed level of this same table (the
 // stop uses the computed entry, the target uses the computed stop) — their
@@ -128,29 +146,35 @@ const COMPUTED_CELL_INPUTS: Record<string, LevelKey> = {
   stop_loss: 'stop_loss',
 };
 
-// On-screen names for formula variables — never raw underscore tokens.
-const VAR_LABEL: Record<string, string> = {
-  close: 'close',
-  sma_20: 'sma 20',
-  sma_60: 'sma 60',
-  swing_low_20: 'swing low 20',
-  swing_low_60: 'swing low 60',
-  swing_high_20: 'swing high 20',
-  swing_high_60: 'swing high 60',
-  high_52w: '52w high',
-  round_level: 'round level',
-  atr_14: 'atr 14',
-  // The backend key stays ideal_entry (old stored runs carry it); the
-  // display name is just "entry" (owner rename 2026-07-22).
-  ideal_entry: 'entry',
-  stop_loss: 'stop loss',
+// On-screen names for formula variables: report inputs carry the exact
+// label their technicals row shows (metricLabels shorts, owner decision
+// 2026-07-28) — never raw underscore tokens. Variables that are the
+// plan's own numbers reuse the card's uiText names (the backend key
+// stays ideal_entry for old stored runs; it displays as the entry).
+const useVarLabel = (): ((key: string) => string) => {
+  const { language, t } = useUiLanguage();
+  return (key: string): string => {
+    if (key === 'ideal_entry') return t('tiered.alt.f.entry');
+    if (key === 'stop_loss') return t('tiered.alt.f.stop');
+    if (key === 'round_level') return t('tiered.alt.roundLevelTitle');
+    return metricEntry(key, language)?.short ?? key;
+  };
 };
 
 // The stored formulas name two input GROUPS in prose. Expanding the
 // phrases into the run's actual input keys lets the split-and-link
 // machinery below turn every one of them into a real, clickable number.
-const SUPPORT_KEYS = ['sma_20', 'sma_60', 'swing_low_20', 'swing_low_60', 'round_level'];
-const RESISTANCE_KEYS = ['swing_high_20', 'swing_high_60', 'high_52w'];
+// Each list carries both generations: v2 keys (2026-07-27) and the v1
+// keys old stored runs still hold — a run only ever has one set.
+const SUPPORT_KEYS = [
+  'sma_50', 'sma_200', 'support_1',
+  'sma_20', 'sma_60', 'swing_low_20', 'swing_low_60',
+  'round_level',
+];
+const RESISTANCE_KEYS = [
+  'resistance_1', 'high_1y',
+  'swing_high_20', 'swing_high_60', 'high_52w',
+];
 
 const expandProse = (formula: string, inputs: Record<string, number>): string => {
   let expanded = formula;
@@ -186,7 +210,7 @@ const RoundLevelNumber = ({ value }: { value: number }) => {
     <>
       <button
         type="button"
-        aria-label={VAR_LABEL.round_level}
+        aria-label={t('tiered.alt.roundLevelTitle')}
         data-testid="alt-round-level"
         className={cn('cursor-pointer tabular-nums', ALT_LINK)}
         onClick={() => setIsOpen(true)}
@@ -217,12 +241,14 @@ const InputNumberLink = ({
   value: number;
   onNavigate: () => void;
 }) => {
+  const varLabel = useVarLabel();
   if (inputKey === 'round_level') {
     return <RoundLevelNumber value={value} />;
   }
   const computedTarget = COMPUTED_CELL_INPUTS[inputKey];
-  const jump = TECHNICALS_INPUT_KEYS.has(inputKey)
-    ? () => jumpToMetric(`technicals.${inputKey}`)
+  const technicalsRefs = TECHNICALS_INPUT_REFS[inputKey];
+  const jump = technicalsRefs
+    ? () => jumpToMetricFirst(technicalsRefs)
     : computedTarget
       ? () => flashElement(computedCellId(computedTarget))
       : null;
@@ -232,7 +258,7 @@ const InputNumberLink = ({
   return (
     <button
       type="button"
-      aria-label={VAR_LABEL[inputKey] ?? inputKey}
+      aria-label={varLabel(inputKey)}
       className={cn('cursor-pointer tabular-nums', ALT_LINK)}
       onClick={() => {
         onNavigate();
@@ -252,17 +278,20 @@ interface AltFormulaProps {
 }
 
 // The formula in words: variables italic, everything else as written.
-const AltFormulaWords = ({ formula, inputs }: Omit<AltFormulaProps, 'onNavigate'>) => (
-  <>
-    {splitOnInputs(formula, inputs).map((part, index) =>
-      inputs[part] === undefined ? (
-        <span key={index}>{part}</span>
-      ) : (
-        <FVar key={index}>{VAR_LABEL[part] ?? part}</FVar>
-      ),
-    )}
-  </>
-);
+const AltFormulaWords = ({ formula, inputs }: Omit<AltFormulaProps, 'onNavigate'>) => {
+  const varLabel = useVarLabel();
+  return (
+    <>
+      {splitOnInputs(formula, inputs).map((part, index) =>
+        inputs[part] === undefined ? (
+          <span key={index}>{part}</span>
+        ) : (
+          <FVar key={index}>{varLabel(part)}</FVar>
+        ),
+      )}
+    </>
+  );
+};
 
 // The formula with each input replaced by this run's number.
 const AltFormula = ({ formula, inputs, onNavigate }: AltFormulaProps) => {

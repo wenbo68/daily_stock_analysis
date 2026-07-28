@@ -817,49 +817,112 @@ describe('AltResult', () => {
   });
 
   it('clicking a computed level opens its formula with every number linked to a source', () => {
+    window.localStorage.setItem('dsa.uiLanguage', 'en');
     renderResult(makeDeepResult());
     fireEvent.click(screen.getByTestId('alt-level-computed-stop_loss'));
     const dialog = screen.getByRole('dialog');
     // title in the `<level>: formula` shape
     expect(within(dialog).getByRole('heading')).toHaveTextContent(/(止损：公式|Stop loss: formula)/);
-    // the formula in words (variables without underscores), plugged in, result
+    // the formula in words — report-exact variable names, never raw tokens
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
-      'entry − 2 × atr 14',
+      'entry − 2 × 14d ATR',
     );
-    // the entry came from the computed entry cell, atr 14 from technicals
+    // the entry came from the computed entry cell, the ATR from technicals
     expect(within(dialog).getByRole('button', { name: 'entry' })).toHaveTextContent('95');
-    expect(within(dialog).getByRole('button', { name: 'atr 14' })).toHaveTextContent('2.50');
+    expect(within(dialog).getByRole('button', { name: '14d ATR' })).toHaveTextContent('2.50');
     expect(within(dialog).getByText('= 90')).toBeInTheDocument();
   });
 
   it('expands "support candidates" in the entry formula into the actual values', () => {
+    window.localStorage.setItem('dsa.uiLanguage', 'en');
     renderResult(makeDeepResult());
     fireEvent.click(screen.getByTestId('alt-level-computed-entry'));
     const dialog = screen.getByRole('dialog');
-    // the prose phrase is expanded into the run's support inputs
+    // the prose phrase is expanded into the run's support inputs, each
+    // named exactly as its technicals row is in the report
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
-      'min(close, max(sma 20, swing low 20))',
+      'min(Closing price, max(SMA 20, Swing low 20))',
     );
     expect(within(dialog).queryByText(/support candidates/)).not.toBeInTheDocument();
     // every plugged number is a link to its source row
-    expect(within(dialog).getByRole('button', { name: 'close' })).toHaveTextContent('100');
-    expect(within(dialog).getByRole('button', { name: 'sma 20' })).toHaveTextContent('95');
-    expect(within(dialog).getByRole('button', { name: 'swing low 20' })).toHaveTextContent('92');
+    expect(within(dialog).getByRole('button', { name: 'Closing price' })).toHaveTextContent('100');
+    expect(within(dialog).getByRole('button', { name: 'SMA 20' })).toHaveTextContent('95');
+    expect(within(dialog).getByRole('button', { name: 'Swing low 20' })).toHaveTextContent('92');
     expect(within(dialog).getByText('= 95')).toBeInTheDocument();
   });
 
   it('expands "nearest overhead resistance" in the target formula into the actual values', () => {
+    window.localStorage.setItem('dsa.uiLanguage', 'en');
     renderResult(makeDeepResult());
     fireEvent.click(screen.getByTestId('alt-level-computed-take_profit'));
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
-      'min(entry + 2 × (entry − stop loss), nearest of (swing high 20, 52w high))',
+      'min(entry + 2 × (entry − stop loss), nearest of (Swing high 20, 52w high))',
     );
     expect(within(dialog).queryByText(/overhead resistance/)).not.toBeInTheDocument();
     // resistance values link to their technicals rows
-    expect(within(dialog).getByRole('button', { name: 'swing high 20' })).toHaveTextContent('105');
+    expect(within(dialog).getByRole('button', { name: 'Swing high 20' })).toHaveTextContent('105');
     expect(within(dialog).getByRole('button', { name: '52w high' })).toHaveTextContent('110');
     expect(within(dialog).getByText('= 105')).toBeInTheDocument();
+  });
+
+  it('expands the v2 (grouped-payload) formulas: pivot supports, nearest resistance', () => {
+    window.localStorage.setItem('dsa.uiLanguage', 'en');
+    const deep = makeDeepResult();
+    deep.levels_detail = {
+      levels: {
+        entry: {
+          base: 170,
+          formula: 'min(close, max(support candidates))',
+          inputs: { close: 171, sma_50: 168, sma_200: 150, support_1: 169.5, round_level: 170 },
+          adjusted: null, reason: null, evidence: [], rejection: null, final: 170,
+        },
+        stop_loss: {
+          base: 165.96,
+          formula: 'ideal_entry − 2 × atr_14',
+          inputs: { ideal_entry: 170, atr_14: 2.02, multiplier: 2 },
+          adjusted: null, reason: null, evidence: [], rejection: null, final: 165.96,
+        },
+        take_profit: {
+          base: 173.35,
+          formula: 'min(ideal_entry + 2 × (ideal_entry − stop_loss), nearest overhead resistance)',
+          inputs: {
+            ideal_entry: 170, stop_loss: 165.96, geometric_target: 178.08,
+            resistance_1: 173.35, high_1y: 180,
+          },
+          adjusted: null, reason: null, evidence: [], rejection: null, final: 173.35,
+        },
+      },
+      warnings: [],
+    };
+    renderResult(deep);
+
+    fireEvent.click(screen.getByTestId('alt-level-computed-entry'));
+    let dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
+      'min(Closing price, max(50d SMA, 200d SMA, Nearest support, Round level))',
+    );
+    expect(within(dialog).getByRole('button', { name: '50d SMA' })).toHaveTextContent('168');
+    expect(within(dialog).getByRole('button', { name: 'Nearest support' })).toHaveTextContent(
+      '169.50',
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    fireEvent.click(screen.getByTestId('alt-level-computed-take_profit'));
+    dialog = screen.getByRole('dialog');
+    // the prose tail expands into the run's actual resistance inputs…
+    expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
+      'min(entry + 2 × (entry − stop loss), nearest of (Nearest resistance, 1y highest price))',
+    );
+    expect(within(dialog).queryByText(/overhead resistance/)).not.toBeInTheDocument();
+    // …and each plugged number links to its technicals row
+    expect(within(dialog).getByRole('button', { name: 'Nearest resistance' })).toHaveTextContent(
+      '173.35',
+    );
+    expect(within(dialog).getByRole('button', { name: '1y highest price' })).toHaveTextContent(
+      '180',
+    );
+    expect(within(dialog).getByText('= 173.35')).toBeInTheDocument();
   });
 
   it('clicking an adjusted level opens the AI reason with its references, nothing else', () => {

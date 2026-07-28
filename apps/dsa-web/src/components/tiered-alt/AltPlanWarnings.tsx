@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import type { TieredPlanWarning } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
-import type { UiTextKey } from '../../i18n/uiText';
+import { metricEntry } from '../../i18n/metricLabels';
+import type { UiLanguage, UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, jumpToMetric, jumpToMetricFirst } from '../tiered/termHelpers';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
@@ -45,6 +46,11 @@ const wNum = (value: unknown): string =>
 const wPrice = (value: unknown): string =>
   typeof value === 'number' ? formatPrice(value) : '—';
 
+// Formula variables that are report metrics carry the exact label their
+// technicals row shows (metricLabels shorts) — never shorthand.
+const metricName = (key: string, language: UiLanguage): string =>
+  metricEntry(key, language)?.short ?? key;
+
 interface WarnEnv {
   values: Record<string, unknown>;
   /** The run's task id — lets the goal value flash the run-row reward. */
@@ -54,6 +60,7 @@ interface WarnEnv {
   /** Close the warnings modal before scrolling to something behind it. */
   closeAll: () => void;
   t: (key: UiTextKey, params?: Record<string, string | number>) => string;
+  language: UiLanguage;
 }
 
 // A value that closes the popup stack and scrolls/flashes its source.
@@ -146,7 +153,7 @@ const warningNodes = (
   warning: TieredPlanWarning,
   env: WarnEnv,
 ): { templateKey: UiTextKey; nodes: Record<string, ReactNode> } | null => {
-  const { values: v, t, closeAll } = env;
+  const { values: v, t, language, closeAll } = env;
   const title = (nameKey: UiTextKey) =>
     t('tiered.levelModal.formulaTitle', { level: t(nameKey) });
 
@@ -260,7 +267,7 @@ const warningNodes = (
                   words={
                     <>
                       <FVar>{t('tiered.alt.f.stop')}</FVar> − {wNum(v.gap_atr_multiple)} ×{' '}
-                      <FVar>atr 14</FVar>
+                      <FVar>{metricName('atr_14', language)}</FVar>
                     </>
                   }
                   plugged={
@@ -319,6 +326,11 @@ const warningNodes = (
         typeof v.worst_day_pct === 'number'
           ? WORST_PCT_REFS
           : ['technicals.worst_day_1y'];
+      // Name the variable after the report row the value links to.
+      const worstName = metricName(
+        typeof v.worst_day_pct === 'number' ? 'worst_day_pct_1y' : 'worst_day_1y',
+        language,
+      );
       return {
         templateKey: 'tiered.alt.warn.gap_worst',
         nodes: {
@@ -333,7 +345,7 @@ const warningNodes = (
                   words={
                     <>
                       <FVar>{t('tiered.alt.f.entry')}</FVar> × (1 +{' '}
-                      <FVar>worst day 1y</FVar> ÷ 100)
+                      <FVar>{worstName}</FVar> ÷ 100)
                     </>
                   }
                   plugged={
@@ -442,7 +454,7 @@ export const AltWarningsCell = ({
   taskId,
   cellTarget,
 }: AltWarningsCellProps) => {
-  const { t } = useUiLanguage();
+  const { language, t } = useUiLanguage();
   const [isOpen, setIsOpen] = useState(false);
 
   if (warnings.length === 0) {
@@ -459,6 +471,7 @@ export const AltWarningsCell = ({
     cellTarget,
     closeAll: () => setIsOpen(false),
     t,
+    language,
   };
   return (
     <>
