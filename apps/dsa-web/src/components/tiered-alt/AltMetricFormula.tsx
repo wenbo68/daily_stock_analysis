@@ -18,10 +18,10 @@ import { AltModal, FVar, MODAL_STRONG } from './AltUi';
 //   bullish: index_close > index_sma_200 && …
 //   bearish: index_close < index_sma_200 && …
 //   mixed:   else
-// The plugged-line style is picked by inspecting the words (see
-// TieredMetricFormula in api/tiered): substitution (numbers replace
-// their tokens in place) or an "ingredient = value" list (rules whose
-// ingredients are words).
+// Rules with all-numeric ingredients substitute the numbers into each
+// branch line; rules with word ingredients ("rising") instead fold the
+// ingredients into the result line (owner format 2026-07-28):
+//   = neutral: 14d RSI = 49.31 && MACD histogram = falling && …
 
 // Inputs that ARE payload rows on the same card — their plugged numbers
 // jump to that row, so every number in a receipt points at a place it
@@ -167,19 +167,22 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
   const close = () => setIsOpen(false);
   const branches = formula.branches ?? null;
   const entries = Object.entries(formula.inputs);
-  // Substitution style: every ingredient token appears in the words, so
-  // the plugged line(s) can replace them in place. Otherwise the
-  // ingredients are listed as "name = value" pairs (rule receipts whose
-  // ingredients are words).
+  // Substitution style: every ingredient is a number AND its token
+  // appears in the words, so the plugged line(s) can replace them in
+  // place. Rules with word ingredients ("rising") instead fold the
+  // "name = value" pairs into the result line.
   const wordsText = branches
     ? branches.map((branch) => branch.condition ?? '').join(' ')
     : formula.formula ?? '';
+  const hasWordInput = entries.some(([, input]) => typeof input === 'string');
   const isSubstituted =
-    entries.length > 0 && entries.every(([key]) => wordsText.includes(key));
+    entries.length > 0 && !hasWordInput && entries.every(([key]) => wordsText.includes(key));
   const label = metricEntry(term, language)?.short ?? term;
 
   // One branch line: "label: condition" (or "label: else"); the plugged
-  // variant leads with "=" on the first line, indents the rest.
+  // variant leads with "= " on the first line and indents the rest by
+  // the same "= " (kept invisible so every line's spacing is identical
+  // to the result line's own "= ").
   const branchLine = (
     branch: { label: string; condition: string | null },
     index: number,
@@ -187,7 +190,7 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
   ): ReactNode => (
     <p key={`${mode}-${index}`} className={FORMULA_LINE}>
       {mode === 'plugged' ? (
-        <span className="inline-block w-4">{index === 0 ? '=' : ''}</span>
+        <span className={index === 0 ? undefined : 'invisible'}>{'= '}</span>
       ) : null}
       <span className={MODAL_STRONG}>{branch.label}</span>
       {': '}
@@ -209,20 +212,27 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
         <TokenText text={formula.formula} inputs={formula.inputs} mode="plugged" onNavigate={close} />
       </p>
     );
-  } else if (entries.length > 0) {
-    plugged = (
-      <p className={FORMULA_LINE}>
-        {entries.map(([key, input], index) => (
-          <span key={key}>
-            {index > 0 ? '; ' : ''}
-            <FVar>{varLabel(key, language)}</FVar>
-            {' = '}
-            <PluggedValue inputKey={key} value={input} onNavigate={close} />
-          </span>
-        ))}
-      </p>
-    );
   }
+
+  // Word-ingredient rules skip the plugged section: the ingredients ride
+  // on the result line as "= label: name = value && name = value".
+  const mergedIngredients = !isSubstituted && entries.length > 0;
+  const resultLine = mergedIngredients ? (
+    <p className={FORMULA_LINE}>
+      <span className={MODAL_STRONG}>= {formatMetricValue(term, value)}</span>
+      {': '}
+      {entries.map(([key, input], index) => (
+        <span key={key}>
+          {index > 0 ? ' && ' : ''}
+          <FVar>{varLabel(key, language)}</FVar>
+          {' = '}
+          <PluggedValue inputKey={key} value={input} onNavigate={close} />
+        </span>
+      ))}
+    </p>
+  ) : (
+    <p className={FORMULA_RESULT}>= {formatMetricValue(term, value)}</p>
+  );
 
   return (
     <>
@@ -257,7 +267,7 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
             )}
           </div>
           {plugged ? <div className="flex flex-col gap-0.5">{plugged}</div> : null}
-          <p className={FORMULA_RESULT}>= {formatMetricValue(term, value)}</p>
+          {resultLine}
         </div>
       </AltModal>
     </>

@@ -1137,12 +1137,15 @@ class TechnicalsProvider(DimensionProvider):
         formulas ship a "formula" string; rules with several possible
         outcomes ship "branches" instead — one {label, condition} per
         outcome, the catch-all with condition None — so the UI renders
-        one line per outcome (owner format 2026-07-28). The frontend
-        picks the plugged-line style by inspecting the words: when every
-        input token appears, numbers substitute in place; otherwise
-        (rules whose ingredients are words themselves) it lists
-        "ingredient = value" pairs. Aggregate fields whose ingredients
-        are whole series (a 50-close average) get words only, no inputs.
+        one line per outcome (owner format 2026-07-28). Conditions spell
+        every ingredient as its input token with an explicit comparator
+        ("rsi_14 > 55", "macd_hist = rising") so the UI can swap tokens
+        for the exact on-screen names. The frontend picks the plugged
+        style from the ingredients: all numeric → numbers substitute in
+        place per branch line; any word ingredient → the pairs fold into
+        the result line ("= neutral: 14d RSI = 49.31 && …"). Aggregate
+        fields whose ingredients are whole series (a 50-close average)
+        get words only, no inputs.
         A receipt is published only when its metric has a value and
         every input is present — a partial receipt would show broken
         arithmetic."""
@@ -1231,11 +1234,11 @@ class TechnicalsProvider(DimensionProvider):
         )
         trend_branches = [
             {"label": "bullish",
-             "condition": "moving-average check = up && "
-                          "pivot structure = higher highs and lows"},
+             "condition": "ma_stack = up && "
+                          "pivot_structure = higher highs and lows"},
             {"label": "bearish",
-             "condition": "moving-average check = down && "
-                          "pivot structure = lower highs and lows"},
+             "condition": "ma_stack = down && "
+                          "pivot_structure = lower highs and lows"},
             {"label": "neutral", "condition": None},
         ]
         add(
@@ -1284,17 +1287,17 @@ class TechnicalsProvider(DimensionProvider):
             },
             branches=[
                 {"label": "strong",
-                 "condition": f"RSI > {MOMENTUM_RSI_STRONG} && "
-                              "MACD histogram rising && MACD line > 0"},
+                 "condition": f"rsi_14 > {MOMENTUM_RSI_STRONG} && "
+                              "macd_hist = rising && macd_line > 0"},
                 {"label": "weak",
-                 "condition": f"RSI < {MOMENTUM_RSI_WEAK} && "
-                              "MACD histogram falling && MACD line < 0"},
+                 "condition": f"rsi_14 < {MOMENTUM_RSI_WEAK} && "
+                              "macd_hist = falling && macd_line < 0"},
                 {"label": "fading",
-                 "condition": f"RSI > {MOMENTUM_RSI_STRONG} && "
-                              "MACD histogram falling"},
+                 "condition": f"rsi_14 > {MOMENTUM_RSI_STRONG} && "
+                              "macd_hist = falling"},
                 {"label": "basing",
-                 "condition": f"RSI < {MOMENTUM_RSI_WEAK} && "
-                              "MACD histogram rising"},
+                 "condition": f"rsi_14 < {MOMENTUM_RSI_WEAK} && "
+                              "macd_hist = rising"},
                 {"label": "neutral", "condition": None},
             ],
         )

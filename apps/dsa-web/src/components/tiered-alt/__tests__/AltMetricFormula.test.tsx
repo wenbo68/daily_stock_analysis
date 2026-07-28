@@ -34,6 +34,7 @@ function makeTechnicals(): TieredDimension {
         sma_50: env('50d SMA', 156.36),
         stretch_50d_atr: env('diff: closing price vs 50d SMA', 0.45),
         rsi_14: env('14d RSI', 38.89),
+        momentum: env('momentum', 'weak'),
       },
       volatility: { atr_14: env('14d ATR', 3.17) },
     },
@@ -50,15 +51,25 @@ function makeTechnicals(): TieredDimension {
         branches: [
           {
             label: 'bullish',
-            condition: 'moving-average check = up && pivot structure = higher highs and lows',
+            condition: 'ma_stack = up && pivot_structure = higher highs and lows',
           },
           {
             label: 'bearish',
-            condition: 'moving-average check = down && pivot structure = lower highs and lows',
+            condition: 'ma_stack = down && pivot_structure = lower highs and lows',
           },
           { label: 'neutral', condition: null },
         ],
         inputs: { ma_stack: 'mixed', pivot_structure: 'sideways' },
+      },
+      'daily.momentum': {
+        branches: [
+          { label: 'strong', condition: 'rsi_14 > 55 && macd_hist = rising && macd_line > 0' },
+          { label: 'weak', condition: 'rsi_14 < 45 && macd_hist = falling && macd_line < 0' },
+          { label: 'fading', condition: 'rsi_14 > 55 && macd_hist = falling' },
+          { label: 'basing', condition: 'rsi_14 < 45 && macd_hist = rising' },
+          { label: 'neutral', condition: null },
+        ],
+        inputs: { rsi_14: 38.89, macd_hist: 'falling', macd_line: -1.02 },
       },
       'daily.rsi_14': {
         formula: '100 − 100 / (1 + avg_gain_14 / avg_loss_14)',
@@ -155,34 +166,79 @@ describe('AltMetricFormula', () => {
     expect(within(modal).getAllByText('mixed')).toHaveLength(2);
     expect(
       within(modal).getAllByText(
-        (_, element) => element?.tagName === 'P' && element.textContent === 'mixed: else',
+        (_, element) =>
+          element?.tagName === 'P' &&
+          (element.textContent === 'mixed: else' || element.textContent === '= mixed: else'),
       ),
     ).toHaveLength(2);
-    // Plugged lines: the index numbers in place (bullish + bearish rows).
+    // Plugged lines: the index numbers in place (bullish + bearish rows),
+    // the first line led by the same plain "= " the result line uses.
     expect(within(modal).getAllByText('6234.5')).toHaveLength(2);
     expect(within(modal).getAllByText('5890.2')).toHaveLength(2);
+    expect(
+      within(modal).getByText(
+        (_, element) =>
+          element?.tagName === 'P' && element.textContent === '= bullish: 6234.5 > 5890.2 && 78 > 50',
+      ),
+    ).toBeInTheDocument();
     expect(within(modal).getByText('= bullish')).toBeInTheDocument();
   });
 
-  it('lists word ingredients for rule labels (trend)', () => {
+  it('folds word ingredients into the result line (trend)', () => {
     renderTechnicals();
     fireEvent.click(screen.getByTestId('alt-metric-formula-trend'));
     const modal = screen.getByTestId('alt-metric-formula-modal');
-    // One line per outcome in words, then "ingredient = value" pairs.
+    // Words: one line per outcome, tokens swapped for on-screen names
+    // with an explicit sign.
     expect(
-      within(modal).getByText(/moving-average check = up/),
-    ).toBeInTheDocument();
-    expect(
-      within(modal).getByText(/moving-average check = down/),
+      within(modal).getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          element.textContent ===
+            'bullish: moving-average check = up && pivot structure = higher highs and lows',
+      ),
     ).toBeInTheDocument();
     expect(
       within(modal).getByText(
         (_, element) => element?.tagName === 'P' && element.textContent === 'neutral: else',
       ),
     ).toBeInTheDocument();
-    expect(within(modal).getByText('moving-average check')).toBeInTheDocument();
-    expect(within(modal).getByText('mixed')).toBeInTheDocument();
-    expect(within(modal).getByText('sideways')).toBeInTheDocument();
-    expect(within(modal).getByText('= neutral')).toBeInTheDocument();
+    // No separate plugged section: the ingredients ride the result line.
+    expect(
+      within(modal).getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          element.textContent ===
+            '= neutral: moving-average check = mixed && pivot structure = sideways',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(modal).queryByText(
+        (_, element) => element?.tagName === 'P' && element.textContent === '= neutral',
+      ),
+    ).toBeNull();
+  });
+
+  it('folds mixed word/number ingredients into the result line (momentum)', () => {
+    renderTechnicals();
+    fireEvent.click(screen.getByTestId('alt-metric-formula-momentum'));
+    const modal = screen.getByTestId('alt-metric-formula-modal');
+    // Words use the report's exact names and a sign for every ingredient.
+    expect(
+      within(modal).getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          element.textContent === 'strong: 14d RSI > 55 && MACD histogram = rising && MACD line > 0',
+      ),
+    ).toBeInTheDocument();
+    // Result: "= weak: 14d RSI = 38.89 && MACD histogram = falling && …".
+    expect(
+      within(modal).getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          element.textContent ===
+            '= weak: 14d RSI = 38.89 && MACD histogram = falling && MACD line = -1.02',
+      ),
+    ).toBeInTheDocument();
   });
 });
