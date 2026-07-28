@@ -175,8 +175,8 @@ const en: Record<string, MetricEntry> = {
     full: 'How much the price moved over the last 5 trading days.\nUnit: percent; usually -15 to +15.\nA big jump means the cheap entry may already be gone.',
   },
   range_pct_1y: {
-    short: 'Current price ranking: 1y',
-    full: "Where today's price sits inside its past-year range.\nRange: 0 to 100. 0 = at the year's low, 100 = at the year's high.\nAbove ~80 = strong but risky to chase; below ~20 = falling knife unless it is clearly bottoming.",
+    short: 'Current price ranking: 1y range',
+    full: "Where today's price sits inside its past-year range, shown as a position out of 100.\n0/100 = at the year's low, 100/100 = at the year's high.\nAbove ~80/100 = strong but risky to chase; below ~20/100 = falling knife unless it is clearly bottoming.",
   },
   high_1y: {
     short: '1y highest price',
@@ -593,7 +593,7 @@ const zh: Record<string, MetricEntry> = {
   rs_3m: { short: '对比指数（3月）', full: '约3个月（63个交易日）内个股收益减基准指数收益，单位为百分点。\n为正 = 跑赢大盘。' },
   rs_label: { short: '强弱标签', full: 'leader = 1个月和3个月都跑赢基准；laggard = 都跑输；否则 neutral。\n做多优先选 leader。' },
   chg_5d_pct: { short: '涨跌幅（5日）', full: '最近5个交易日收盘价变化（%）。\n涨幅过大意味着好的买点可能已经错过。' },
-  range_pct_1y: { short: '一年区间位置', full: '收盘价在一年区间中的位置：0 = 最低点，100 = 最高点。' },
+  range_pct_1y: { short: '一年区间位置', full: '收盘价在一年区间中的排位，以 X/100 表示：0/100 = 最低点，100/100 = 最高点。' },
   high_1y: { short: '一年最高价', full: '过去一年的最高成交价——最受关注的阻力位。\n目标价高于它需要按突破逻辑而非回调逻辑。' },
   trend: { short: '趋势', full: '由均线检查与转折点结构共同判定；两者一致才给出多/空方向，否则为中性。' },
   stretch_10w_atr: { short: '偏离10周线（ATR）', full: '收盘价距10周均线的距离，以周ATR为单位。\n约+1.5以上 = 过度伸展，等回调；上升趋势中-0.5到+1 = 回调买入区。' },

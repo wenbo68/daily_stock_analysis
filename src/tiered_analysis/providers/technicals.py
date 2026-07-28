@@ -933,25 +933,28 @@ class TechnicalsProvider(DimensionProvider):
                     _round(low_1y),
                 ),
                 "range_pct_1y": make_metric(
-                    "current price ranking (1y)",
-                    "Where the close sits in its one-year range: 0 = at "
-                    "the low, 100 = at the high.",
+                    "current price ranking (1y range)",
+                    "Where the close sits in its one-year range, as a "
+                    "position out of 100: 0/100 = at the low, 100/100 = "
+                    "at the high.",
                     range_pct,
                 ),
             },
             "volume": {
-                "avg_vol_60d": make_metric(
-                    "60d avg volume",
-                    "Mean daily share volume over the last 60 bars — the "
-                    "liquidity baseline an order size is judged against.",
-                    _round(avg_vol_60, 0),
-                ),
+                # 5d before 60d (owner order 2026-07-29): the recent read
+                # first, then the baseline it is compared against.
                 "avg_vol_5d": make_metric(
                     "5d avg volume",
                     "Mean daily share volume over the last 5 bars — the "
                     "recent-activity read the volume ratio compares "
                     "against the 60-day baseline.",
                     _round(avg_vol_5, 0),
+                ),
+                "avg_vol_60d": make_metric(
+                    "60d avg volume",
+                    "Mean daily share volume over the last 60 bars — the "
+                    "liquidity baseline an order size is judged against.",
+                    _round(avg_vol_60, 0),
                 ),
                 "vol_ratio_5_60": make_metric(
                     "volume ratio (5d ÷ 60d)",
@@ -1221,7 +1224,10 @@ class TechnicalsProvider(DimensionProvider):
         )
         add(
             "price.range_pct_1y",
-            "(close − low_1y) / (high_1y − low_1y) × 100",
+            # The UI shows the value as a position out of 100 ("30/100"),
+            # so the receipt names the rounding that gets there.
+            "(close − low_1y) / (high_1y − low_1y) × 100, "
+            "rounded to a position out of 100",
             {"close": close, "low_1y": low_1y, "high_1y": high_1y},
         )
         add(
