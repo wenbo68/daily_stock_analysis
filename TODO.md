@@ -1,129 +1,16 @@
-- backtesting to verify how good the runs are
-  - if good enough, we can connect our system to real trading platforms to automate transactions
-- allow users to enter their entire portfolio for portfolio level decisions
-- agent that has access to all system apis so that it can read from and write to the system
-- currently the system only really support swing (and maybe position) trading
-  - holding times for different trades
-    - scalping: seconds to minutes
-    - day: within a day
-    - swing: days to weeks
-    - position: weeks to months
-    - investing: years
-  - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
-
-- technical fields
-  - meta
-    - as of
-    - number of daily/weekly bars
-      - daily bars #
-      - weekly bars #
-  - price
-    - closing price: closing price of most recent bar
-      - value
-      - % change (1d): closing price change for 1 or 5 days
-      - % change (5d)
-    - extremes: highest/lowest price (not necessarily closing price) within 1y
-      - highest price (1y)
-        - days since highest price
-      - lowest price (1y)
-        - days since lowest price
-    - current closing price ranking (1y): where the closing price sits between the above range (in percentage)
-  - weekly timeframe (for outlook mostly)
-    - simple moving average
-      - value (10w): average closing price of 10 weekly bars
-      - slope (10w): i don't undersand this; if sma 10w is a value, then where does the slope come from? 
-      - distance btw current close and sma: in %
-        - ok what's the significance of this? what can the model get from this value?
-      - trend: sma (10w) > sma (30w) > sma (40w)
-    - pivots: highest/lowest bar/price within a number of bars
-      - trend: determined using pitvots -> higher highes/lows | lower highes/lows | sideways?
-    - trend (ma + pivot): is ma up/down trend + pivot structure => bullish/bearish/neutral
-    - regarding momentum and atr
-      - weekly momentum (eg rsi) barely moves
-      - weekly atr is just daily atr x 2.2
-  - daily timeframe (for trade plan mostly)
-    - simple moving average
-    - pivots
-    - trend (ma + pivot)
-    - momentum: what's the difference between rsi and macd in terms of interpretation?
-      - relative strength index
-        - thresholds
-          - above 70: risen too fast = overbought
-          - below 30: fallen too fast = oversold
-          - 50: neutral
-        - value (14d)
-        - slope (5d): positive = strength building; negative = strength draining
-      - moving average convergence divergence: so for this we just have histogram (and histogram direction) and omit macd/signal lines?
-    - average true range: how much a stock moves per day
-      - $ value (14d)
-      - trend
-        - expanding: volativity expanding -> stops should widen; shares should shrink
-        - contracting: opposite
-  - volume
-    - average volume (60b): each bar has a volume; mean volume of the last 60 bars
-      - confirms liquidity of stock
-    - average volume (5b): mean volume of last 5 bars
-      - compare 5b with 60b
-        - sus: a breakout on 0.6x volume (60b)
-        - real: a breakout on 2x volume (60b)
-    - trend
-  - risk
-    - worst drop (1y): is this the lowest price 1y? or worst drop 1y? in $ or %?
-- for all the trends listed here, how are we calculating them? eg for atr trend, what are we doing? we only have atr 14d i think?
-
-- technical fields — FINAL (26 fields, 2026-07-27; supersedes the 55-field draft that was here)
-  - bars: fetch ~300 daily (253 for the 1y landmarks + margin), resample into ~60 weekly; the trim doesn't shrink the fetch because the 1y fields and sma 200d survive and they are what bind
-  - format: every field ships as { name, explanation, value }; only one citable field per judgment, so ingredients can't be double-counted as independent confirmations
-    - explanation style (amended 2026-07-27): method, not verdict-per-ingredient — an agreeing label gets static method text only ("combined from the 10w/20w ma relationship and pivot structure; both must agree"); re-listing each ingredient's verdict would smuggle the double-counting back in as prose
-    - exception: a neutral label states which ingredient said what — neutral collapses two opposite situations (ma up/structure sideways vs structure up/ma flipped down) and only the ingredients distinguish them
-  - core principle (from the 22-field critique, accepted): correlated fields get double-counted by the model as independent evidence — stack + structure + slope + combined trend reads as four confirmations of one fact and inflates confidence; so judgments ship only as their composite
-  - second principle (my correction to the 22): that logic applies to judgments, not to coordinates — price levels aren't confirmations of anything, they're the numbers the plan is written in; cutting them forces the model to derive levels by arithmetic, the one thing we never let it do
-  - meta
-    - as of: date of the last completed bar
-    - daily bars #: warn below 253
-    - weekly bars #: warn below 60
-    - (differs from the 22: their single data_ok boolean is replaced by our existing coverage system, which names which fields are unreliable)
-  - market regime (benchmark index per market via config: s&p 500 / csi 300 / hang seng)
-    - regime: bullish | bearish | mixed — explanation embeds above/below 200d and range position; in bearish, demand better setups and smaller size
-  - relative strength
-    - vs index (3m): stock return minus index return, in % — 3 months matches the swing hold-to-signal ratio
-    - label: leader | laggard | neutral
-  - price
-    - closing price
-    - % change (5d): 1d cut as noise at swing horizon
-    - current closing price ranking (1y): where the close sits in its 1y range, in %
-    - highest price (1y): kept as a coordinate (differs from the 22) — the most-watched resistance landmark; a target near it needs breakout logic
-  - weekly timeframe (outlook)
-    - trend: bullish | bearish | neutral — composite of ma check (10w vs 20w) + pivot structure
-      - 10w/20w chosen deliberately (amended 2026-07-27, was a resample side effect): 20w = 100d is already ~10x a 2-week hold; 30w = 150d is the position-scale ruler we cut; whipsaw from the faster pair is damped because an ma flip alone can't flip the label — pivot structure must agree, else neutral
-    - stretch vs 10w (atr): (close − sma 10w) ÷ weekly atr — extended vs pullback-zone
-  - daily timeframe (trade plan)
-    - trend: same composite method on daily bars
-    - sma (50d): kept as a coordinate (differs from the 22) — the classic pullback entry level; value only, no slope/stack (those live inside trend)
-    - stretch vs 50d (atr): entry timing; −1 to +1 in an uptrend = pullback zone, above +3 = chasing
-    - sma (200d): kept as a coordinate (differs from the 22) — the most-watched line in finance; value only
-    - momentum label: strong | fading | basing | weak | neutral — swallows rsi slope, macd histogram + direction + zero-line; ingredients in the explanation
-    - rsi (14d): the one raw momentum escape hatch, so an extreme reading (85) can override the label
-  - volatility
-    - atr ($, 14d): the unit for stops and sizing
-    - atr (% of price): kept (differs from the 22) — the cross-stock normalizer, already shipped today, one division
-    - atr trend: expanding | contracting | stable (now vs 20 bars ago, ±10% bands)
-  - volume
-    - dollar volume (60b): avg volume × price — the real liquidity gate
-    - volume ratio (5b ÷ 60b): above ~1.5 on a breakout = confirmed; below ~0.7 = suspect
-  - levels
-    - support 1: nearest pivot low below the close — stops go below this
-    - resistance 1: nearest pivot high above the close — target candidate
-    - typical pullback (atr): median depth of the last 4–5 completed dips — stops the model placing a stop inside normal noise (promoted to launch 2026-07-27: support/resistance already ships the pivot detector; the median is one line on top. needs a crisp "completed pullback" definition + its own tests)
-    - (differs from the 22: their rr_to_r1 rejected — pre-computed reward:risk with a baked-in stop rule pre-answers the plan and contradicts our pipeline, which computes stop/R:R/shares in code after the debate; same disease as the deleted tech score)
-  - events
-    - (differs from the 22: days_to_earnings rejected here — it already ships in the fundamentals report and the debate prompt already treats a near report as bearish; a second copy could disagree with the first)
-    - GAP found 2026-07-27: the earnings gate is display + prompt nudge only — earnings_warning() in src/tiered_analysis/earnings.py has no callers, and nothing in plan_review/sizing/stops/levels reads the date. build: plan_review emits a code-computed warning when the plan holds through a near report (same machinery as the gap-risk warning); consider promoting to a hard refusal after backtesting
-  - cut, and why (still computed where needed — they just don't leave the pipeline)
-    - swallowed by their composite: sma values/slopes/stacks (except the 3 coordinate values above), pivot structure labels, weekly pivot lists, rsi slope, macd histogram + direction + zero-line + days-since-flip, regime ingredients, bias 20 (replaced by atr-stretch)
-    - redundant pairs: % change (1d), rs 1m/6m, support 2 / resistance 2, avg volume 5b (the ratio is it), volume trend, days since lowest price
-    - rarely flips a decision (~1-in-20): days since highest price (first one back if missed), max drawdown 1y, gap frequency, up/down volume ratio, divergence
-  - retires from today's 19-field payload: ema 12/26, macd's three lines, the four swing high/low fields (→ support/resistance), bias 20, raw sma 20/60 (60 → 50 coordinate)
+- todos
+  - backtesting to verify how good the runs are
+    - if good enough, we can connect our system to real trading platforms to automate transactions
+  - allow users to enter their entire portfolio for portfolio level decisions
+  - agent that has access to all system apis so that it can read from and write to the system
+  - currently the system only really support swing (and maybe position) trading
+    - holding times for different trades
+      - scalping: seconds to minutes
+      - day: within a day
+      - swing: days to weeks
+      - position: weeks to months
+      - investing: years
+    - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
 
 - technicals
   - meta
@@ -165,3 +52,134 @@
   - levels
     - nearest support
     - nearest resistance
+
+- fundamentals
+  - earnings
+    - next earnings: next earnings date
+      - good: earnings are very important
+    - days until earnings
+      - good: drives the earnings_soon plan warning; a report inside the hold window is the biggest single-stock event risk
+    - earnings surprise history (last ~4 quarters: beat or miss, by how much)
+      - new: tells you whether this stock tends to beat and how it gaps on reports — sets expectations for holding into one
+    - analyst estimate revisions (EPS estimates being raised or cut)
+      - new: one of the best-documented medium-term signals; rising estimates support a swing long, cuts undermine it
+  - growth (currently annual 10-K numbers)
+    - revenue YoY
+      - bad: annual figures are up to a year stale for a days-to-weeks hold; the quarterly version below replaces it
+    - net income YoY
+      - bad: same staleness problem as revenue YoY
+    - EPS YoY
+      - bad: same staleness problem as revenue YoY
+    - quarterly revenue YoY + whether growth is accelerating or slowing
+      - new: fresh growth direction is what actually moves a stock over weeks; annual numbers can't show a turn
+    - quarterly EPS YoY + whether growth is accelerating or slowing
+      - new: same as quarterly revenue — the direction of change is the signal
+  - profitability
+    - gross margin
+      - good: pricing power; a shrinking gross margin is an early business-quality warning
+    - operating margin
+      - good: core business efficiency; the margin the market watches at earnings
+    - net margin
+      - bad: mostly duplicates operating margin plus one-off noise (taxes, write-offs); two margins are enough
+    - ROE
+      - good: capital efficiency; separates quality names from junk when the chart looks the same
+    - free cash flow (TTM)
+      - new: reported earnings can be engineered, cash generation can't; a standard professional quality check
+  - balance sheet
+    - current ratio
+      - good: near-term solvency; flags the stress cases where bad news hits hardest
+    - debt to equity
+      - good: leverage amplifies drawdowns and matters more when rates are high
+    - cash (raw dollar amount)
+      - bad: a raw dollar figure with no scale context is uninterpretable; current ratio + debt/equity already carry the health signal
+  - valuation
+    - trailing P/E
+      - good: how much hope is priced in; extreme values change how news lands
+    - forward P/E
+      - good: embeds analyst estimates; the gap vs trailing P/E shows expected growth
+    - P/S
+      - good: the valuation gauge for unprofitable names where P/E is meaningless
+    - P/B
+      - bad: only informative for banks and asset-heavy businesses; noise for most swing candidates
+    - market cap
+      - good: sizes the company; small caps trade, gap and squeeze differently
+  - meta: period end + basis (annual 10-K)
+    - good: tells the reader exactly how stale the statements are
+
+- positioning
+  - short interest
+    - short % of float
+      - good: crowdedness of the bear side — squeeze fuel and an informed bearish vote at once
+    - days to cover
+      - good: how many days of volume shorts need to exit; measures squeeze severity
+    - shares short (raw count)
+      - bad: duplicates short % of float without the denominator; the percentage is the interpretable one
+    - change vs prior month
+      - good: whether shorts are building or covering — direction beats level
+    - as-of date
+      - good: short interest lags ~2 weeks; without the date a stale print reads as current
+  - ownership
+    - institutional %
+      - good: institutional sponsorship confirms the name is investable; a very low number is a liquidity/quality red flag
+    - institutional % change vs prior quarter
+      - new: whether funds were adding or cutting last quarter is the signal; the level alone is static trivia
+    - insider %
+      - good: management alignment, and large insider holdings shrink the effective float
+    - top-10 institutions %
+      - good: concentration risk — one big fund exiting moves the price
+    - float shares
+      - good: squeeze math and liquidity sizing both run off float
+    - shares outstanding
+      - bad: redundant once float and market cap are shown
+  - insider activity (6m, open-market only)
+    - buy count
+      - good: open-market insider buys are the strongest insider signal — they only happen for one reason
+    - sell count
+      - good: context for the netting — routine scheduled selling vs a cluster dump
+    - net shares
+      - bad: net dollar value says the same thing in units comparable across stocks
+    - net value (USD)
+      - good: the interpretable netting of insider conviction
+  - options
+    - put/call open-interest ratio
+      - good: the standing balance of hedges and bets
+    - put/call volume ratio
+      - good: today's flow — faster-moving than open interest
+    - total open interest
+      - good: how much options attention the name has; validates the ratios' sample size
+    - expirations covered
+      - good: says how much of the option board was summed, so a partial read can't masquerade as the whole board
+    - at-the-money implied volatility (+ where it sits in its own 1y range)
+      - new: option prices say how big a move the market expects — high IV means an event is priced in; the CBOE feed we already fetch carries per-contract IV, so it's nearly free
+
+- macro econ
+  - rates
+    - fed funds rate
+      - good: the policy stance anchors everything else
+    - 10y treasury yield
+      - good: the discount rate for equities; growth stocks hurt when it climbs
+    - 2y treasury yield
+      - good: the market's view of the near-term Fed path
+    - 10y−2y curve spread
+      - good: the classic recession/regime flag
+  - inflation
+    - CPI YoY
+      - good: drives Fed policy expectations, which drive everything above
+  - labor
+    - unemployment rate
+      - good: the Fed's other mandate and a growth-health check
+  - markets
+    - VIX
+      - good: the risk-appetite regime — high VIX argues for wider stops and smaller size
+    - WTI oil
+      - good: inflation input and a direct driver for energy/transport names
+    - broad dollar index
+      - good: a strong dollar drags multinational earnings and risk appetite
+  - meta: as-of + per-series observation dates
+    - good: daily and monthly series mix here; the dates guard against reading a month-old print as fresh
+  - macro event calendar (next FOMC decision, CPI print, jobs report + days until each)
+    - new: a Fed meeting or CPI print inside the hold window is the same event risk as earnings but market-wide; enables a macro_event_soon plan warning mirroring earnings_soon — the highest-value add of the three reports
+  - 3-month trend direction per series (up / down / flat)
+    - new: "10y at 4.4%" is uninterpretable on its own; "10y up 40bp in 3 months" is evidence the debate can actually use — we already fetch the full series, so this is nearly free
+  - high-yield credit spread (FRED HY OAS)
+    - new: the credit market's risk appetite; tends to widen before equity stress shows up — same free FRED source as the rest
