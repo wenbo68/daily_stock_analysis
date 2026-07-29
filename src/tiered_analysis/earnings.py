@@ -136,14 +136,22 @@ def earnings_warning(info: EarningsInfo) -> Optional[str]:
 def earnings_from_dimensions(dimensions: Any) -> EarningsInfo:
     """The next earnings date the fundamentals provider already fetched
     (no second network call). Shared by the run-detail block and the
-    plan review's earnings gate (2026-07-27) so both read one source."""
+    plan review's earnings gate (2026-07-27) so both read one source.
+
+    Reads both payload generations: v2 (2026-07-29) nests the fields as
+    envelopes under ``earnings``; v1 stored runs carry them flat."""
+    from .providers.technicals import metric_value
+
     for dim in dimensions:
-        if getattr(dim, "dimension", None) == "fundamentals" and dim.payload:
-            date = dim.payload.get("next_earnings_date")
-            days = dim.payload.get("days_until_earnings")
-            if isinstance(date, str) and date:
-                return EarningsInfo(
-                    next_date=date,
-                    days_until=days if isinstance(days, int) else None,
-                )
+        if getattr(dim, "dimension", None) != "fundamentals" or not dim.payload:
+            continue
+        group = dim.payload.get("earnings")
+        source = group if isinstance(group, dict) else dim.payload
+        date = metric_value(source.get("next_earnings_date"))
+        days = metric_value(source.get("days_until_earnings"))
+        if isinstance(date, str) and date:
+            return EarningsInfo(
+                next_date=date,
+                days_until=days if isinstance(days, int) else None,
+            )
     return EarningsInfo(note="no upcoming earnings date found")

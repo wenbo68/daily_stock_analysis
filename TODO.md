@@ -11,8 +11,8 @@
       - position: weeks to months
       - investing: years
     - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
-  - define the hold window explicitly (e.g. 5–20 trading days as a documented constant, or a user input next to Capital/Risk/Reward)
-    - today the only horizon in the system is the hard-coded 7-day event-warning window (EARNINGS_WARNING_DAYS); every interpretation that says "inside the hold window" needs a real denominator, and macro_event_soon will need the same one
+  - hold window: RESOLVED (owner decision 2026-07-29) — no numeric constant and no new user input
+    - the app is swing trading only, so the AI prompts state the horizon in words ("swing trade, held days to weeks") and the AI uses its own judgement; the only place a number is needed is the deterministic event warnings (earnings_soon uses the 7-day EARNINGS_WARNING_DAYS; a future macro_event_soon should reuse the same constant)
 
 - technicals
   - meta

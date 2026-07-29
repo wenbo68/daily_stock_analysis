@@ -2,9 +2,9 @@
 import type { TieredDebateLink } from '../../api/tiered';
 import { formatValue } from '../tiered/termHelpers';
 
-// Display units per technicals payload key (owner request 2026-07-28):
-// numbers render as "2.88 ATR", "-6.82 %". Unitless numbers (RSI, a
-// ranking, counts) and labels stay bare.
+// Display units per payload key (owner request 2026-07-28): numbers
+// render as "2.88 ATR", "-6.82 %". Dimensionless numbers (RSI, P/E, a
+// ranking, ratios, counts) and labels stay bare.
 const METRIC_UNIT: Record<string, string> = {
   chg_5d_pct: '%',
   atr_pct: '%',
@@ -21,6 +21,25 @@ const METRIC_UNIT: Record<string, string> = {
   volatility_pct: '%',
   bias_20: '%',
   avg_volume_20: 'shares',
+  // Fundamentals v2 (2026-07-29).
+  days_until_earnings: 'days',
+  avg_surprise_pct_4q: '%',
+  reaction_avg_abs_pct: '%',
+  reaction_worst_pct: '%',
+  eps_rev_90d_pct: '%',
+  revenue_yoy_q: '%',
+  eps_yoy_q: '%',
+  gross_margin_pct: '%',
+  operating_margin_pct: '%',
+  roe_pct: '%',
+  fcf: 'USD',
+  market_cap: 'USD',
+  // Legacy fundamentals keys old stored runs still render.
+  revenue_yoy_pct: '%',
+  net_income_yoy_pct: '%',
+  eps_yoy_pct: '%',
+  net_margin_pct: '%',
+  cash: 'USD',
 };
 
 // A metric value with its unit appended when it has one.

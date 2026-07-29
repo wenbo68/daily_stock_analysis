@@ -52,13 +52,31 @@ export const MetricTerm = ({ term, underline = true }: MetricTermProps) => {
   if (!entry) {
     return <>{term}</>;
   }
+  // Entries with an `interp` render the owner's two-block popup format
+  // (2026-07-29): "Meaning: …" then a divider then "Interpretation: …".
+  const meaningLabel = language === 'en' ? 'Meaning:' : '含义：';
+  const interpLabel = language === 'en' ? 'Interpretation:' : '解读：';
   return (
     <Tooltip
       focusable
       content={
         <span className="block max-w-[16rem] whitespace-pre-line">
           <span className="block font-semibold text-foreground">{entry.short}</span>
-          <span className="mt-0.5 block text-secondary-text">{entry.full}</span>
+          {entry.interp ? (
+            <>
+              <span className="mt-0.5 block text-secondary-text">
+                <span className="font-medium text-foreground/80">{meaningLabel}</span>{' '}
+                {entry.full}
+              </span>
+              <span className="my-1 block border-t border-secondary-text/30" aria-hidden />
+              <span className="block text-secondary-text">
+                <span className="font-medium text-foreground/80">{interpLabel}</span>{' '}
+                {entry.interp}
+              </span>
+            </>
+          ) : (
+            <span className="mt-0.5 block text-secondary-text">{entry.full}</span>
+          )}
         </span>
       }
     >

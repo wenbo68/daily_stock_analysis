@@ -78,9 +78,18 @@ def get_providers(
         technicals = TechnicalsProvider()
     # List order is display order on the report pages: technicals,
     # fundamentals, positioning, then macro.
+    #
+    # The same bars_loader that feeds technicals also feeds the
+    # fundamentals earnings-day-move fields (realized reaction around
+    # past reports); without one those fields stay None with a warning.
+    fundamentals = (
+        FundamentalsUSProvider(bars_loader=bars_loader)
+        if bars_loader is not None
+        else FundamentalsUSProvider()
+    )
     candidates: List[DimensionProvider] = [
         technicals,
-        FundamentalsUSProvider(),
+        fundamentals,
         PositioningUSProvider(),
         MacroEconProvider(),
     ]

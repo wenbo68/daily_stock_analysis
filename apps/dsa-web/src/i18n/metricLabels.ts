@@ -3,18 +3,22 @@ import type { UiLanguage } from './uiText';
 // Vocabulary for tiered-analysis dimension payloads (backend keys stay
 // snake_case on purpose — see api/tiered.ts). Each entry has the compact
 // label shown in the table (`short`) and the plain-language definition
-// shown in the hover/click popup (`full`). Unknown keys fall back to the
-// raw key with no popup.
+// shown in the hover/click popup (`full`). Entries may also carry
+// `interp` — how to read the number as a trader; when present the popup
+// renders "Meaning: … / Interpretation: …" as two blocks (owner format
+// 2026-07-29). Unknown keys fall back to the raw key with no popup.
 export interface MetricEntry {
   short: string;
   full: string;
+  interp?: string;
 }
 
 const en: Record<string, MetricEntry> = {
   // ---- technicals ----
   close: {
     short: 'Closing price',
-    full: "The last traded price of the most recent trading day — every distance in this report is measured from here.\nUnit: the stock's own currency (USD for US stocks).",
+    full: "The last traded price of the most recent trading day.\nUnit: the stock's own currency (USD for US stocks).",
+    interp: 'The anchor every distance in this report is measured from.',
   },
   bars_count: {
     short: 'Bars',
@@ -54,7 +58,8 @@ const en: Record<string, MetricEntry> = {
   },
   atr_14: {
     short: '14d ATR',
-    full: "Average True Range (14 days) — the typical size of one day's price move.\nUnit: the stock's currency; e.g. an ATR of $19 means a normal day moves the price about $19.\nThis is the ruler stops and position sizes are measured with.",
+    full: "Average True Range (14 days) — the typical size of one day's price move.\nUnit: the stock's currency; e.g. an ATR of $19 means a normal day moves the price about $19.",
+    interp: 'The ruler stops and position sizes are measured with — distances in ATRs compare fairly across stocks.',
   },
   volatility_pct: {
     short: 'Volatility %',
@@ -94,7 +99,8 @@ const en: Record<string, MetricEntry> = {
   },
   worst_day_pct_1y: {
     short: 'Worst price drop: 1y',
-    full: 'The single worst day of the past year, close to close.\nUnit: percent, negative — e.g. -14.5 means that day lost 14.5%.\nShows how far an overnight surprise (bad earnings, bad news) can jump straight past a stop-loss.',
+    full: 'The single worst day of the past year, close to close.\nUnit: percent, negative — e.g. -14.5 means that day lost 14.5%.',
+    interp: 'Shows how far an overnight surprise (bad earnings, bad news) can jump straight past a stop-loss.',
   },
   worst_day_1y: {
     short: 'Worst day 1y',
@@ -116,7 +122,8 @@ const en: Record<string, MetricEntry> = {
   },
   regime: {
     short: 'Benchmark: market',
-    full: "Whether the overall market — not this stock — is healthy, judged on the benchmark index (S&P 500 for US stocks): is it above its 200-day average, and in the upper or lower half of its one-year range?\nValues: bullish / bearish / mixed (blank when this market has no benchmark wired).\nMost stocks follow the market, so buying in a bearish market usually fails even when the stock's own chart looks good.",
+    full: "Whether the overall market — not this stock — is healthy, judged on the benchmark index (S&P 500 for US stocks): is it above its 200-day average, and in the upper or lower half of its one-year range?\nValues: bullish / bearish / mixed (blank when this market has no benchmark wired).",
+    interp: "Most stocks follow the market, so buying in a bearish market usually fails even when the stock's own chart looks good — demand stronger setups and smaller size.",
   },
   relative_strength: {
     short: 'Relative strength',
@@ -152,137 +159,221 @@ const en: Record<string, MetricEntry> = {
   },
   bars_daily: {
     short: 'Daily bars',
-    full: "How many days of price history were loaded (one 'bar' = one trading day).\nUnit: a count; the target is 300. Below about 253 (one trading year), the one-year fields only cover the history that exists.",
+    full: "How many days of price history were loaded (one 'bar' = one trading day).\nUnit: a count; the target is 300.",
+    interp: 'Below about 253 (one trading year), the one-year fields only cover the history that exists.',
   },
   bars_weekly: {
     short: 'Weekly bars',
-    full: 'How many weeks of history, built by combining the daily data.\nUnit: a count; the target is 60. With fewer, the weekly trend read is shaky.',
+    full: 'How many weeks of history, built by combining the daily data.\nUnit: a count; the target is 60.',
+    interp: 'With fewer than 60, the weekly trend read is shaky.',
   },
   rs_1m: {
     short: '1m return diff: stock vs market',
     full: "The stock's 1-month return minus the market's 1-month return: +5 means it beat the market by 5 points over the month.\nUnit: percentage points; usually between -20 and +20, with no hard limit.",
+    interp: 'Positive = leading the market; negative = lagging it.',
   },
   rs_3m: {
     short: '3m return diff: stock vs market',
     full: "The stock's 3-month return minus the market's 3-month return: +5 means it beat the market by 5 points, -20 means it lost to it by 20.\nUnit: percentage points; usually between -30 and +30, with no hard limit.",
+    interp: 'Positive = leading the market; negative = lagging it.',
   },
   rs_label: {
     short: 'Relative strength: stock',
-    full: 'One-word verdict: leader = beat the market over both 1 and 3 months (good); laggard = lost to it over both (avoid); neutral = mixed.\nComputed from the 1-month and 3-month return differences above.',
+    full: 'One-word verdict computed from the 1-month and 3-month return differences above: leader = beat the market over both; laggard = lost to it over both; neutral = mixed.',
+    interp: 'Prefer longs in leaders — a laggard long needs an explicit catalyst from the other reports.',
   },
   chg_5d_pct: {
     short: '5d price change',
-    full: 'How much the price moved over the last 5 trading days.\nUnit: percent; usually -15 to +15.\nA big jump means the cheap entry may already be gone.',
+    full: 'How much the price moved over the last 5 trading days.\nUnit: percent; usually -15 to +15.',
+    interp: 'A big jump means the cheap entry may already be gone.',
   },
   range_pct_1y: {
     short: 'Current price ranking: 1y range',
-    full: "Where today's price sits inside its past-year range, shown as a position out of 100.\n0/100 = at the year's low, 100/100 = at the year's high.\nAbove ~80/100 = strong but risky to chase; below ~20/100 = falling knife unless it is clearly bottoming.",
+    full: "Where today's price sits inside its past-year range, shown as a position out of 100.\n0/100 = at the year's low, 100/100 = at the year's high.",
+    interp: 'Above ~80/100 = strong but risky to chase; below ~20/100 = falling knife unless it is clearly bottoming.',
   },
   high_1y: {
     short: '1y highest price',
-    full: "The highest price touched in the last year.\nUnit: the stock's currency.\nPrices often stall just below it — people who bought there are waiting to get out even.",
+    full: "The highest price touched in the last year.\nUnit: the stock's currency.",
+    interp: 'Prices often stall just below it — people who bought there are waiting to get out even. A target above it needs breakout logic, not pullback logic.',
   },
   low_1y: {
     short: '1y lowest price',
     full: "The lowest price touched in the last year — the floor of the one-year range.\nUnit: the stock's currency.",
+    interp: 'How far the market has actually let this stock fall in a year.',
   },
   trend: {
     short: 'Trend: SMA + pivots',
     full: "Overall direction, from two independent checks that must agree: (1) is the price above or below its own moving averages (SMA), and (2) are the chart's recent peaks and dips (pivots) stepping higher or lower?\nValues: bullish / bearish / neutral (neutral = the two checks disagree).",
+    interp: 'The direction filter for entries — trades should only go the way the weekly trend points, and daily pullback buys work best when both timeframes agree.',
   },
   sma_10w: {
     short: '10w SMA',
-    full: "The average price of the last 10 weeks.\nUnit: the stock's currency.\nThe medium-term trend line the weekly stretch below is measured from.",
+    full: "The average price of the last 10 weeks.\nUnit: the stock's currency.",
+    interp: 'The medium-term trend line the weekly stretch is measured from; holding above it keeps a swing uptrend intact.',
   },
   stretch_10w_atr: {
     short: 'Diff: closing price vs 10w SMA',
-    full: "How far the price is above (+) or below (-) its 10-week average, measured in normal weekly moves (ATR units).\nRange: usually -4 to +4.\nAbove ~+1.5 = stretched too far, wait; -0.5 to +1 in an uptrend = good dip-buy zone.",
+    full: 'How far the price is above (+) or below (-) its 10-week average, measured in normal weekly moves (ATR units).\nRange: usually -4 to +4.',
+    interp: 'Above ~+1.5 = stretched too far, wait; -0.5 to +1 in an uptrend = good dip-buy zone.',
   },
   sma_50: {
     short: '50d SMA',
-    full: "The average price of the last 50 trading days.\nUnit: the stock's currency.\nRising stocks often dip back to this line before continuing — the classic buy-the-dip level.",
+    full: "The average price of the last 50 trading days.\nUnit: the stock's currency.",
+    interp: 'Rising stocks often dip back to this line before continuing — the classic buy-the-dip level.',
   },
   stretch_50d_atr: {
     short: 'Diff: closing price vs 50d SMA',
-    full: 'How far the price is above (+) or below (-) its 50-day average, in normal daily moves (ATR units).\nRange: usually -5 to +5.\n-1 to +1 in an uptrend = good entry zone; above +3 = chasing.',
+    full: 'How far the price is above (+) or below (-) its 50-day average, in normal daily moves (ATR units).\nRange: usually -5 to +5.',
+    interp: '-1 to +1 in an uptrend = good entry zone; above +3 = chasing.',
   },
   sma_200: {
     short: '200d SMA',
-    full: "The average price of the last 200 trading days — the most-watched line in finance.\nUnit: the stock's currency.\nPrice above it = long-term healthy; the line itself often acts as support or resistance.",
+    full: "The average price of the last 200 trading days — the most-watched line in finance.\nUnit: the stock's currency.",
+    interp: 'Price above it = long-term healthy; the line itself often acts as support or resistance, and below it longs are counter-trend.',
   },
   momentum: {
     short: 'Momentum',
     full: 'One-word verdict combining the RSI and MACD momentum gauges:\nstrong = pushing up hard; weak = pushing down; fading = price still high but the push is dying; basing = price still low but the push is building; neutral = neither.',
+    interp: 'strong supports entries; fading warns the move is running out of fuel while price still looks fine; basing flags an early turn.',
   },
   atr_pct: {
     short: '14d ATR %',
-    full: 'The typical daily move as a percent of the price — lets you compare a $10 stock with a $500 stock.\nUnit: percent; typically 1 to 6.\nAbove ~6 = wild stock, consider trading smaller.',
+    full: 'The typical daily move as a percent of the price — lets you compare a $10 stock with a $500 stock.\nUnit: percent; typically 1 to 6.',
+    interp: 'Above ~6 = wild stock, consider trading smaller.',
   },
   atr_trend: {
     short: 'ATR trend',
-    full: 'Is the daily jumpiness growing or shrinking versus about a month ago?\nValues: expanding = widen stops and buy fewer shares; contracting = the stock is coiling up, a big move often follows; stable = no real change.',
+    full: 'Is the daily jumpiness growing or shrinking versus about a month ago?\nValues: expanding / contracting / stable (±10% dead band).',
+    interp: 'Expanding = widen stops and buy fewer shares; contracting = the stock is coiling up, a big move often follows.',
   },
   avg_vol_60d: {
     short: '60d avg volume',
-    full: 'Average shares traded per day over about 3 months.\nUnit: shares (often millions).\nTells you whether a position can get in and out without moving the price.',
+    full: 'Average shares traded per day over about 3 months.\nUnit: shares (often millions).',
+    interp: 'The liquidity baseline: tells you whether a position can get in and out without moving the price.',
   },
   avg_vol_5d: {
     short: '5d avg volume',
-    full: 'Average shares traded per day over the last week.\nUnit: shares.\nThe recent-activity read the volume ratio compares against the 3-month normal.',
+    full: 'Average shares traded per day over the last week.\nUnit: shares.',
+    interp: 'The recent-activity read the volume ratio compares against the 3-month normal.',
   },
   vol_ratio_5_60: {
     short: 'Volume ratio: 5d/60d',
-    full: "This week's average volume versus the 3-month normal.\nUnit: a ratio; usually 0.5 to 2, where 1.0 = normal.\nAbove ~1.5 during a breakout = real interest confirms the move; below ~0.7 = the move is suspect.",
+    full: "This week's average volume versus the 3-month normal.\nUnit: a ratio; usually 0.5 to 2, where 1.0 = normal.",
+    interp: 'Above ~1.5 during a breakout = real interest confirms the move; below ~0.7 = the move is suspect.',
   },
   support_1: {
     short: 'Nearest support',
-    full: "The nearest price BELOW today's where buyers stepped in before (a past dip-bottom).\nUnit: the stock's currency.\nA protective stop-loss belongs just below a level like this, not at a random percent.\nBlank when the price sits at its lowest point in ~6 months — there is no past floor beneath it.",
+    full: "The nearest price BELOW today's where buyers stepped in before (a past dip-bottom).\nUnit: the stock's currency.\nBlank when the price sits at its lowest point in ~6 months — there is no past floor beneath it.",
+    interp: 'A protective stop-loss belongs just below a level like this, not at a random percent.',
   },
   resistance_1: {
     short: 'Nearest resistance',
-    full: "The nearest price ABOVE today's where sellers showed up before (a past peak).\nUnit: the stock's currency.\nThe first realistic profit target.\nBlank when the price sits at its highest point in ~6 months — there is no past ceiling above it.",
+    full: "The nearest price ABOVE today's where sellers showed up before (a past peak).\nUnit: the stock's currency.\nBlank when the price sits at its highest point in ~6 months — there is no past ceiling above it.",
+    interp: 'The first realistic profit target — expect selling there.',
   },
   typical_pullback_atr: {
     short: 'Typical price drop: 6m',
-    full: "How deep this stock's normal dips have been over the last ~6 months (120 trading days) — from each local top down to the next local bottom — in normal daily moves (ATR units).\nRange: usually 1 to 5.\nIf a stop is closer than this, ordinary wiggling will hit it even when the trade idea is right.",
+    full: "How deep this stock's normal dips have been over the last ~6 months (120 trading days) — from each local top down to the next local bottom — in normal daily moves (ATR units).\nRange: usually 1 to 5.",
+    interp: 'If a stop is closer than this, ordinary wiggling will hit it even when the trade idea is right.',
   },
 
-  // ---- fundamentals ----
+  // ---- fundamentals (v2 field list 2026-07-29; legacy keys kept for old stored runs) ----
+  profile: {
+    short: 'Profile',
+    full: 'What kind of company this is — the peer group its numbers should be judged against.',
+  },
+  sector: {
+    short: 'Sector',
+    full: 'The company\'s sector classification (e.g. Technology).',
+    interp: 'Margins, leverage and valuation only mean anything against industry peers; the sector also says which macro series matter most (oil for energy, the 10y yield for long-duration tech).',
+  },
+  industry: {
+    short: 'Industry',
+    full: 'The finer industry classification within the sector.',
+    interp: 'The peer group this company\'s ratios should be compared against.',
+  },
+  earnings: {
+    short: 'Earnings events',
+    full: 'The report calendar and how this stock has actually behaved around reports — the single-stock event risk block.',
+  },
+  beats_4q: {
+    short: 'Earnings beats (last 4)',
+    full: 'How many of the last reported quarters came in at or above the analyst EPS estimate (e.g. 3/4).',
+    interp: 'Consistent beaters get the benefit of the doubt into a report; habitual missers lose it.',
+  },
+  avg_surprise_pct_4q: {
+    short: 'Avg earnings surprise (last 4)',
+    full: 'Average gap between reported EPS and the analyst estimate over those quarters.\nUnit: percent.',
+    interp: 'Says whether the company tends to clear the bar analysts set — not how the stock reacts; read it with the earnings-day move below.',
+  },
+  reaction_avg_abs_pct: {
+    short: 'Typical earnings-day move (last 4)',
+    full: 'Average size of the close-to-close move around the last few reports, ignoring direction.\nUnit: percent.',
+    interp: 'The realized event risk: a stock that moves ±10% on earnings needs a different plan than one that moves ±2%.',
+  },
+  reaction_worst_pct: {
+    short: 'Worst earnings-day drop (last 4)',
+    full: 'The most negative close-to-close move around those reports.\nUnit: percent.',
+    interp: 'How badly holding through a report has actually gone recently.',
+  },
+  eps_rev_90d_pct: {
+    short: 'EPS estimate revision (90d)',
+    full: 'Change in the analyst consensus EPS estimate for the current quarter versus 90 days ago.\nUnit: percent.',
+    interp: 'Rising estimates tend to pull the price up over weeks; cuts are a headwind even on a good chart.',
+  },
+  ex_dividend_date: {
+    short: 'Ex-dividend date',
+    full: 'The next date the stock trades without its dividend; the price mechanically opens lower by roughly the dividend amount.',
+    interp: 'A small scheduled gap-down that can clip a tight stop on a long.',
+  },
   growth: {
     short: 'Growth',
-    full: 'Year-over-year growth taken from the latest annual report.',
+    full: 'Quarterly growth from the latest SEC filings — the freshest read on whether the business is expanding.',
   },
-  revenue_yoy_pct: {
-    short: 'Revenue YoY %',
-    full: 'Revenue growth vs. the same period a year earlier (Year-over-Year).',
+  revenue_yoy_q: {
+    short: 'Quarterly revenue growth (YoY)',
+    full: 'Latest reported quarter\'s revenue versus the same quarter last year.\nUnit: percent.',
+    interp: 'Positive and rising = an expanding business; the direction of change matters more than the level.',
   },
-  net_income_yoy_pct: {
-    short: 'Net income YoY %',
-    full: 'Bottom-line profit growth vs. a year earlier.',
+  revenue_growth_trend: {
+    short: 'Revenue growth trend',
+    full: 'Whether that growth rate sped up or slowed versus the previous quarter (±2 percentage-point dead band).\nValues: accelerating / slowing / steady.',
+    interp: 'Acceleration is the classic fuel for multi-week runs; deceleration often ends them while growth is still positive.',
   },
-  eps_yoy_pct: {
-    short: 'EPS YoY %',
-    full: 'Earnings-per-share growth vs. a year earlier — profit divided by the number of shares.',
+  eps_yoy_q: {
+    short: 'Quarterly EPS growth (YoY)',
+    full: 'Latest reported quarter\'s earnings per share versus the same quarter last year.\nUnit: percent.',
+    interp: 'Diverges from revenue growth when margins or the share count move — buybacks boost it, dilution drags it.',
+  },
+  eps_growth_trend: {
+    short: 'EPS growth trend',
+    full: 'Whether EPS growth sped up or slowed versus the previous quarter (±2 percentage-point dead band).\nValues: accelerating / slowing / steady.',
+    interp: 'The market pays for the change in trajectory, not the level.',
   },
   profitability: {
-    short: 'Margins',
-    full: 'How much of each dollar of revenue the company keeps at each stage of the business.',
+    short: 'Profitability',
+    full: 'How much of each dollar of revenue the company keeps, and whether the profits turn into real cash.',
   },
   gross_margin_pct: {
-    short: 'Gross margin %',
-    full: '% of revenue left after the direct costs of making the product.',
+    short: 'Gross margin',
+    full: '% of revenue left after the direct costs of making the product (latest fiscal year).',
+    interp: 'High or rising = pricing power; falling = competition or cost pressure biting.',
   },
   operating_margin_pct: {
-    short: 'Operating margin %',
-    full: '% of revenue left after running costs like salaries and marketing.',
-  },
-  net_margin_pct: {
-    short: 'Net margin %',
-    full: '% of revenue left as final profit after everything, including tax and interest.',
+    short: 'Operating margin',
+    full: '% of revenue left after running costs like salaries and marketing, before interest and taxes (latest fiscal year).',
+    interp: 'The efficiency number the market judges at earnings; a trend break here moves the stock.',
   },
   roe_pct: {
-    short: 'ROE %',
-    full: 'Return on Equity — profit as a % of shareholders’ money.\nMeasures how efficiently the company uses investor capital.',
+    short: 'Return on equity',
+    full: 'Yearly profit as a % of shareholders\' money — how efficiently the company uses investor capital.',
+    interp: 'Sustained ~15%+ marks a quality business; very low or negative means the business burns capital.',
+  },
+  fcf: {
+    short: 'Free cash flow',
+    full: 'Cash actually generated after paying operating costs and equipment spending (trailing twelve months when the filings allow, else the latest fiscal year).\nUnit: USD.',
+    interp: 'Positive and close to reported profit = the earnings are real; reported profits with negative cash flow is a red flag.',
   },
   balance_sheet: {
     short: 'Balance sheet',
@@ -290,65 +381,97 @@ const en: Record<string, MetricEntry> = {
   },
   current_ratio: {
     short: 'Current ratio',
-    full: 'Short-term assets ÷ short-term debts.\nAbove 1 means the company can cover its near-term bills.',
+    full: 'Short-term assets ÷ short-term debts (latest fiscal year).',
+    interp: 'Above ~1.5 is comfortable; below 1 hints at a cash crunch, where bad news hits twice as hard.',
   },
   debt_to_equity: {
     short: 'Debt/Equity',
-    full: 'Total debts ÷ shareholders’ money.\nLower generally means safer.',
-  },
-  cash: {
-    short: 'Cash',
-    full: 'Cash and cash-like holdings on hand, in USD.',
+    full: 'Total debts ÷ shareholders\' money — how leveraged the company is.',
+    interp: 'High leverage amplifies moves both ways and hurts most when rates are high; compare within the same industry.',
   },
   meta: {
     short: 'Report info',
-    full: 'Which financial report these numbers come from.',
+    full: 'Which financial reports these numbers come from, and how fresh they are.',
   },
   entity_name: {
-    short: 'Entity',
-    full: 'The company’s registered legal name.',
+    short: 'Company',
+    full: 'The registrant name on the SEC filings.',
+    interp: 'Confirms the filings belong to the ticker being analyzed.',
   },
   period_end: {
-    short: 'Period end',
-    full: 'The date the financial report covers up to.',
+    short: 'Annual period end',
+    full: 'The fiscal year end the margins, ROE and balance-sheet ratios come from.',
+    interp: 'Nearly a year old = treat those numbers as stale background.',
+  },
+  period_end_q: {
+    short: 'Quarterly period end',
+    full: 'The quarter end the quarterly growth fields come from.',
+    interp: 'Right after an annual report the latest 10-Q can lag a full quarter — check this date before treating growth as fresh.',
   },
   basis: {
     short: 'Basis',
-    full: 'The type of report the numbers come from (e.g. annual 10-K, the audited yearly filing).',
+    full: 'The report types the numbers come from (10-K = the audited yearly filing, 10-Q = the quarterly filing).',
   },
   valuation: {
     short: 'Valuation',
-    full: 'How expensive the stock is relative to its earnings, sales, and assets.',
+    full: 'How expensive the stock is relative to its earnings and sales.',
   },
   pe_ttm: {
-    short: 'P/E (TTM)',
-    full: 'Price-to-Earnings — share price ÷ the last 12 months’ earnings (Trailing Twelve Months).\nHigher = the market pays more per dollar of profit.',
+    short: 'Trailing P/E',
+    full: 'Price-to-Earnings — share price ÷ the last 12 months\' earnings (Trailing Twelve Months). How many years of current profit you pay for the stock.',
+    interp: 'High = big expectations already priced in, good news is needed just to hold the level; low = cheap, or the market expects decline.',
   },
   pe_forward: {
     short: 'Forward P/E',
-    full: 'Share price ÷ analysts’ expected earnings for next year.',
+    full: 'Share price ÷ the profit analysts expect over the next 12 months.',
+    interp: 'Well below the trailing P/E = analysts expect growth; above it = expected shrinkage.',
   },
   ps_ttm: {
-    short: 'P/S (TTM)',
-    full: 'Price-to-Sales — total market value ÷ the last 12 months’ revenue.',
-  },
-  pb: {
-    short: 'P/B',
-    full: 'Price-to-Book — share price ÷ the company’s accounting net worth per share.',
+    short: 'P/S (trailing)',
+    full: 'Price-to-Sales — total market value ÷ the last 12 months\' revenue.',
+    interp: 'The valuation gauge for unprofitable names where P/E is meaningless.',
   },
   market_cap: {
     short: 'Market cap',
-    full: 'Total market value of all the company’s shares, in USD.',
+    full: 'Total market value of all the company\'s shares, in USD.',
+    interp: 'Mega caps grind, small caps gap and squeeze; also sets what liquidity to expect.',
+  },
+  // Legacy fundamentals keys (old stored runs only; retired 2026-07-29).
+  revenue_yoy_pct: {
+    short: 'Revenue YoY %',
+    full: 'Retired field old runs still carry: annual revenue growth vs. the prior fiscal year. New runs publish quarterly growth instead.',
+  },
+  net_income_yoy_pct: {
+    short: 'Net income YoY %',
+    full: 'Retired field old runs still carry: annual bottom-line profit growth vs. the prior fiscal year.',
+  },
+  eps_yoy_pct: {
+    short: 'EPS YoY %',
+    full: 'Retired field old runs still carry: annual earnings-per-share growth vs. the prior fiscal year.',
+  },
+  net_margin_pct: {
+    short: 'Net margin %',
+    full: 'Retired field old runs still carry: % of revenue left as final profit after everything. Mostly duplicated the operating margin plus one-off noise.',
+  },
+  cash: {
+    short: 'Cash',
+    full: 'Retired field old runs still carry: cash and cash-like holdings on hand, in USD. A raw dollar figure with no scale context.',
+  },
+  pb: {
+    short: 'P/B',
+    full: 'Retired field old runs still carry: share price ÷ accounting net worth per share. Only informative for banks and asset-heavy names.',
   },
 
   // ---- macro economy ----
   next_earnings_date: {
     short: 'Next earnings',
-    full: 'The date of the next scheduled earnings report.\nA report inside a week is event risk: one announcement can gap the price past any stop.',
+    full: 'The date of the next scheduled earnings report.',
+    interp: 'A report inside the hold window is event risk: one announcement can gap the price past any stop — exit before it or size for it.',
   },
   days_until_earnings: {
     short: 'Days to earnings',
     full: 'Calendar days until the next scheduled earnings report.',
+    interp: 'Small = the event risk is live now; the plan\'s earnings warning fires inside a week.',
   },
   region: {
     short: 'Region',
@@ -357,6 +480,7 @@ const en: Record<string, MetricEntry> = {
   as_of: {
     short: 'As of',
     full: 'The date this block of data describes — lagged sources (macro series, short-interest reports) carry it so stale numbers are never mistaken for today\'s.',
+    interp: 'Data older than a couple of sessions should not anchor a plan.',
   },
   rates: {
     short: 'Rates',
@@ -503,7 +627,11 @@ const en: Record<string, MetricEntry> = {
 };
 
 const zh: Record<string, MetricEntry> = {
-  close: { short: '收盘价', full: '最近一个交易日的最后成交价。' },
+  close: {
+    short: '收盘价',
+    full: '最近一个交易日的最后成交价。',
+    interp: '本报告中所有距离都以它为基准。',
+  },
   bars_count: { short: 'K线数', full: '本次计算使用了多少个交易日的历史数据。' },
   sma_20: {
     short: 'SMA 20',
@@ -524,7 +652,8 @@ const zh: Record<string, MetricEntry> = {
   histogram: { short: '柱状值', full: 'MACD 线减信号线。\n为正且扩大 = 上涨动量增强；为负 = 动量减弱。' },
   atr_14: {
     short: 'ATR 14',
-    full: '14日平均真实波幅——日常价格波动的典型幅度（以货币计），常用来设置止损距离。',
+    full: '14日平均真实波幅——日常价格波动的典型幅度（以货币计）。',
+    interp: '止损距离和仓位大小的度量单位；以 ATR 计的距离在不同股票之间可以公平比较。',
   },
   volatility_pct: {
     short: '波动率 %',
@@ -555,7 +684,8 @@ const zh: Record<string, MetricEntry> = {
   },
   worst_day_pct_1y: {
     short: '年内最差单日',
-    full: '最近一个交易年度中最差的单日跌幅，以百分数表示。\n跳空风险检查用它模拟隔夜落地的情形。',
+    full: '最近一个交易年度中最差的单日跌幅，以百分数表示。',
+    interp: '跳空风险：隔夜坏消息实际能把价格越过止损打到多远。',
   },
   worst_day_1y: {
     short: '年内最差单日',
@@ -572,13 +702,30 @@ const zh: Record<string, MetricEntry> = {
 
   // ---- technicals v2 分组与字段（2026-07-27；2026-07-28 重新分组）----
   market: { short: '大盘环境', full: '整体市场的状态，以及个股相对大盘是领先还是落后。' },
-  rs_1m: { short: '对比指数（1月）', full: '约1个月（21个交易日）内个股收益减基准指数收益，单位为百分点。\n为正 = 跑赢大盘。' },
-  low_1y: { short: '一年最低价', full: '过去一年的最低成交价——一年区间的下边界。' },
-  avg_vol_5d: { short: '平均成交量（5日）', full: '最近5个交易日的日均成交股数——量比中的近期活跃度读数。' },
-  sma_10w: { short: '10周均线', full: '最近10周收盘价的平均值——周线偏离度所参照的中期趋势线。' },
+  rs_1m: {
+    short: '对比指数（1月）',
+    full: '约1个月（21个交易日）内个股收益减基准指数收益，单位为百分点。',
+    interp: '为正 = 跑赢大盘；为负 = 跑输大盘。',
+  },
+  low_1y: {
+    short: '一年最低价',
+    full: '过去一年的最低成交价——一年区间的下边界。',
+    interp: '市场在一年里实际让这只股票跌到过的位置。',
+  },
+  avg_vol_5d: {
+    short: '平均成交量（5日）',
+    full: '最近5个交易日的日均成交股数。',
+    interp: '量比中的近期活跃度读数，与60日基线对比。',
+  },
+  sma_10w: {
+    short: '10周均线',
+    full: '最近10周收盘价的平均值。',
+    interp: '周线偏离度所参照的中期趋势线；守在其上方，波段上升趋势就仍然成立。',
+  },
   regime: {
     short: '市场环境',
-    full: '用基准指数（美股为标普500）判断大盘状态：是否高于其200日均线、处于一年区间的什么位置。\n大盘下行时，多数做多机会无论个股图形多好都容易失败。',
+    full: '用基准指数（美股为标普500）判断大盘状态：是否高于其200日均线、处于一年区间的什么位置。\n取值：bullish / bearish / mixed。',
+    interp: '多数个股跟随大盘：大盘下行时，无论个股图形多好，都应要求更强的形态、更小的仓位。',
   },
   relative_strength: { short: '相对强度', full: '同一窗口内个股收益减指数收益——个股是领先还是落后于大盘。' },
   price: { short: '价格', full: '当前价格及其在近期历史中的位置。' },
@@ -588,62 +735,265 @@ const zh: Record<string, MetricEntry> = {
   volume: { short: '成交量', full: '交易活跃度——行情是否有真实参与支撑、订单能否顺利退出。' },
   levels: { short: '价位', full: '来自股票自身转折点的价位——买入、止损、目标价的锚点。' },
   risk: { short: '风险', full: '尾部特征——这只股票糟糕的日子究竟有多糟。' },
-  bars_daily: { short: '日线数量', full: '已载入的交易日数量。少于253（一个交易年）时，一年期字段只覆盖已有历史。' },
-  bars_weekly: { short: '周线数量', full: '由日线合成的周线数量。少于60时，周线结构判断不可靠。' },
-  rs_3m: { short: '对比指数（3月）', full: '约3个月（63个交易日）内个股收益减基准指数收益，单位为百分点。\n为正 = 跑赢大盘。' },
-  rs_label: { short: '强弱标签', full: 'leader = 1个月和3个月都跑赢基准；laggard = 都跑输；否则 neutral。\n做多优先选 leader。' },
-  chg_5d_pct: { short: '涨跌幅（5日）', full: '最近5个交易日收盘价变化（%）。\n涨幅过大意味着好的买点可能已经错过。' },
-  range_pct_1y: { short: '一年区间位置', full: '收盘价在一年区间中的排位，以 X/100 表示：0/100 = 最低点，100/100 = 最高点。' },
-  high_1y: { short: '一年最高价', full: '过去一年的最高成交价——最受关注的阻力位。\n目标价高于它需要按突破逻辑而非回调逻辑。' },
-  trend: { short: '趋势', full: '由均线检查与转折点结构共同判定；两者一致才给出多/空方向，否则为中性。' },
-  stretch_10w_atr: { short: '偏离10周线（ATR）', full: '收盘价距10周均线的距离，以周ATR为单位。\n约+1.5以上 = 过度伸展，等回调；上升趋势中-0.5到+1 = 回调买入区。' },
-  sma_50: { short: 'SMA 50', full: '50日简单移动平均线——波段交易经典的回调支撑位。' },
-  stretch_50d_atr: { short: '偏离50日线（ATR）', full: '收盘价距50日均线的距离，以ATR为单位。\n上升趋势中-1到+1 = 回调买入区；+3以上 = 过度伸展，属于追高。' },
-  sma_200: { short: 'SMA 200', full: '200日简单移动平均线——金融市场最受关注的长期均线，无论持仓周期长短都会成为支撑或阻力。' },
-  momentum: { short: '动量', full: '综合 RSI 与 MACD 的单一标签：strong / weak / fading（价格强但动量衰减）/ basing（价格弱但动量积聚）/ neutral。' },
-  atr_pct: { short: 'ATR %', full: '典型单日波幅占价格的百分比，可跨股票比较。\n超过约6%属于高波动股——考虑缩小仓位。' },
-  atr_trend: { short: 'ATR 趋势', full: '当前ATR对比20根K线之前（±10%缓冲带）：expanding = 放宽止损、缩小仓位；contracting = 收敛，往往预示行情；否则 stable。' },
-  avg_vol_60d: { short: '平均成交量（60日）', full: '最近60根K线的日均成交股数——衡量订单规模的流动性基线。' },
-  vol_ratio_5_60: { short: '量比（5÷60）', full: '最近5根K线的均量除以60日均量。\n突破时高于约1.5 = 有效；低于约0.7 = 存疑。' },
-  support_1: { short: '支撑位 1', full: '收盘价下方最近的转折点低点——止损应放在这类价位下方，而不是任意百分比处。' },
-  resistance_1: { short: '阻力位 1', full: '收盘价上方最近的转折点高点——第一目标价候选。' },
-  typical_pullback_atr: { short: '典型回调（ATR）', full: '最近几次完整回调（转折高点到随后的转折低点）深度的中位数，以ATR为单位。\n止损距离小于它就落在正常波动之内。' },
+  bars_daily: {
+    short: '日线数量',
+    full: '已载入的交易日数量。',
+    interp: '少于253（一个交易年）时，一年期字段只覆盖已有历史。',
+  },
+  bars_weekly: {
+    short: '周线数量',
+    full: '由日线合成的周线数量。',
+    interp: '少于60时，周线结构判断不可靠。',
+  },
+  rs_3m: {
+    short: '对比指数（3月）',
+    full: '约3个月（63个交易日）内个股收益减基准指数收益，单位为百分点。',
+    interp: '为正 = 跑赢大盘；为负 = 跑输大盘。',
+  },
+  rs_label: {
+    short: '强弱标签',
+    full: 'leader = 1个月和3个月都跑赢基准；laggard = 都跑输；否则 neutral。',
+    interp: '做多优先选 leader；做多 laggard 需要其他报告给出明确催化剂。',
+  },
+  chg_5d_pct: {
+    short: '涨跌幅（5日）',
+    full: '最近5个交易日收盘价变化（%）。',
+    interp: '涨幅过大意味着好的买点可能已经错过。',
+  },
+  range_pct_1y: {
+    short: '一年区间位置',
+    full: '收盘价在一年区间中的排位，以 X/100 表示：0/100 = 最低点，100/100 = 最高点。',
+    interp: '约80/100以上 = 接近高点的强势（突破区，追高有风险）；约20/100以下 = 接近低点的弱势（接飞刀区，除非明确筑底）。',
+  },
+  high_1y: {
+    short: '一年最高价',
+    full: '过去一年的最高成交价。',
+    interp: '最受关注的阻力位——目标价高于它需要按突破逻辑而非回调逻辑。',
+  },
+  trend: {
+    short: '趋势',
+    full: '由均线检查与转折点结构共同判定；两者一致才给出多/空方向，否则为中性。',
+    interp: '入场的方向过滤器——交易只应顺着周线趋势的方向，日线回调买入在两个时间框架一致时效果最好。',
+  },
+  stretch_10w_atr: {
+    short: '偏离10周线（ATR）',
+    full: '收盘价距10周均线的距离，以周ATR为单位。',
+    interp: '约+1.5以上 = 过度伸展，等回调；上升趋势中-0.5到+1 = 回调买入区。',
+  },
+  sma_50: {
+    short: 'SMA 50',
+    full: '50日简单移动平均线。',
+    interp: '波段交易经典的回调支撑位——上涨中的股票常回踩这条线后再继续。',
+  },
+  stretch_50d_atr: {
+    short: '偏离50日线（ATR）',
+    full: '收盘价距50日均线的距离，以ATR为单位。',
+    interp: '上升趋势中-1到+1 = 回调买入区；+3以上 = 过度伸展，属于追高。',
+  },
+  sma_200: {
+    short: 'SMA 200',
+    full: '200日简单移动平均线——金融市场最受关注的长期均线。',
+    interp: '无论持仓周期长短都会成为支撑或阻力；价格在其下方时做多属于逆势。',
+  },
+  momentum: {
+    short: '动量',
+    full: '综合 RSI 与 MACD 的单一标签：strong / weak / fading（价格强但动量衰减）/ basing（价格弱但动量积聚）/ neutral。',
+    interp: 'strong 支持入场；fading 提示价格看着还好但动力正在耗尽；basing 提示早期转势。',
+  },
+  atr_pct: {
+    short: 'ATR %',
+    full: '典型单日波幅占价格的百分比，可跨股票比较。',
+    interp: '超过约6%属于高波动股——考虑缩小仓位。',
+  },
+  atr_trend: {
+    short: 'ATR 趋势',
+    full: '当前ATR对比20根K线之前（±10%缓冲带）：expanding / contracting / stable。',
+    interp: 'expanding = 放宽止损、缩小仓位；contracting = 收敛，往往预示行情。',
+  },
+  avg_vol_60d: {
+    short: '平均成交量（60日）',
+    full: '最近60根K线的日均成交股数。',
+    interp: '衡量订单规模的流动性基线——判断仓位能否顺利进出而不砸盘。',
+  },
+  vol_ratio_5_60: {
+    short: '量比（5÷60）',
+    full: '最近5根K线的均量除以60日均量。',
+    interp: '突破时高于约1.5 = 有效；低于约0.7 = 存疑。',
+  },
+  support_1: {
+    short: '支撑位 1',
+    full: '收盘价下方最近的转折点低点。',
+    interp: '止损应放在这类价位下方，而不是任意百分比处。',
+  },
+  resistance_1: {
+    short: '阻力位 1',
+    full: '收盘价上方最近的转折点高点。',
+    interp: '第一目标价候选——预期那里会出现卖压。',
+  },
+  typical_pullback_atr: {
+    short: '典型回调（ATR）',
+    full: '最近几次完整回调（转折高点到随后的转折低点）深度的中位数，以ATR为单位。',
+    interp: '止损距离小于它就落在正常波动之内——想法对了也会被震出去。',
+  },
 
-  growth: { short: '成长性', full: '取自最新年报的同比增长数据。' },
-  revenue_yoy_pct: { short: '营收同比 %', full: '营业收入与去年同期相比的增长率。' },
-  net_income_yoy_pct: { short: '净利同比 %', full: '净利润与去年同期相比的增长率。' },
-  eps_yoy_pct: { short: 'EPS 同比 %', full: '每股收益（利润÷股本）与去年同期相比的增长率。' },
-  profitability: { short: '利润率', full: '每一元收入在各个环节能留下多少。' },
-  gross_margin_pct: { short: '毛利率 %', full: '扣除直接生产成本后剩余的收入占比。' },
-  operating_margin_pct: { short: '营业利润率 %', full: '再扣除工资、营销等运营成本后剩余的占比。' },
-  net_margin_pct: { short: '净利率 %', full: '扣除税费、利息等全部成本后，最终利润占收入的比例。' },
+  // ---- fundamentals（v2 字段清单 2026-07-29；旧运行的字段保留在末尾）----
+  profile: { short: '公司概况', full: '这是家什么样的公司——它的各项数据应该和哪个同行群体比较。' },
+  sector: {
+    short: '行业板块',
+    full: '公司所属的板块分类（如科技）。',
+    interp: '利润率、杠杆和估值只有和同行比较才有意义；板块也决定哪些宏观数据对它最重要（能源看油价、成长科技看10年期利率）。',
+  },
+  industry: {
+    short: '细分行业',
+    full: '板块内更细的行业分类。',
+    interp: '这家公司的各项比率应该对照的同行群体。',
+  },
+  earnings: {
+    short: '财报事件',
+    full: '财报日程，以及这只股票在财报前后的实际表现——个股层面的事件风险。',
+  },
+  beats_4q: {
+    short: '财报超预期次数（近4次）',
+    full: '最近几个已公布季度中，实际每股收益达到或超过分析师预期的次数（如 3/4）。',
+    interp: '持续超预期的公司在财报前更容易被市场善待；习惯性不及预期的则相反。',
+  },
+  avg_surprise_pct_4q: {
+    short: '平均财报意外幅度（近4次）',
+    full: '这些季度中实际每股收益与分析师预期的平均差距。\n单位：百分比。',
+    interp: '只说明公司是否常越过分析师定的门槛——不代表股价如何反应；请结合下方的财报日波动一起看。',
+  },
+  reaction_avg_abs_pct: {
+    short: '财报日典型波动（近4次）',
+    full: '最近几次财报前后收盘价到收盘价的平均波动幅度（不分方向）。\n单位：百分比。',
+    interp: '真实的事件风险：财报日常动±10%的股票和只动±2%的股票需要完全不同的计划。',
+  },
+  reaction_worst_pct: {
+    short: '财报日最差跌幅（近4次）',
+    full: '这些财报前后最糟的一次收盘到收盘跌幅。\n单位：百分比。',
+    interp: '最近抱着仓位过财报实际最惨的结果。',
+  },
+  eps_rev_90d_pct: {
+    short: 'EPS 预期调整（90天）',
+    full: '分析师对当前季度每股收益的一致预期相比90天前的变化。\n单位：百分比。',
+    interp: '预期上调往往在数周内推高股价；下调则是逆风，图形再好也一样。',
+  },
+  ex_dividend_date: {
+    short: '除息日',
+    full: '股票开始不含下一期股息交易的日期；股价会机械性低开约等于股息的幅度。',
+    interp: '一个已排期的小幅跳空低开，可能击中做多的紧止损。',
+  },
+  growth: { short: '成长性', full: '取自最新 SEC 季报的季度增长——业务是否在扩张的最新读数。' },
+  revenue_yoy_q: {
+    short: '季度营收同比',
+    full: '最新已公布季度的营业收入与去年同季相比的增长率。\n单位：百分比。',
+    interp: '为正且上升 = 业务在扩张；变化的方向比水平更重要。',
+  },
+  revenue_growth_trend: {
+    short: '营收增速趋势',
+    full: '该增长率相比上一季度是加速还是减速（±2个百分点缓冲带）。\n取值：accelerating / slowing / steady。',
+    interp: '增速加快是数周级行情的经典燃料；增速放缓即使仍在增长也常终结行情。',
+  },
+  eps_yoy_q: {
+    short: '季度 EPS 同比',
+    full: '最新已公布季度的每股收益与去年同季相比的增长率。\n单位：百分比。',
+    interp: '当利润率或股本变化时会与营收增速背离——回购推高它，增发稀释它。',
+  },
+  eps_growth_trend: {
+    short: 'EPS 增速趋势',
+    full: 'EPS 增速相比上一季度是加速还是减速（±2个百分点缓冲带）。\n取值：accelerating / slowing / steady。',
+    interp: '市场付钱买的是轨迹的变化，不是水平。',
+  },
+  profitability: { short: '盈利能力', full: '每一元收入能留下多少，以及账面利润是否变成了真金白银。' },
+  gross_margin_pct: {
+    short: '毛利率',
+    full: '扣除直接生产成本后剩余的收入占比（最新财年）。',
+    interp: '高或上升 = 定价权；下降 = 竞争或成本压力显现。',
+  },
+  operating_margin_pct: {
+    short: '营业利润率',
+    full: '再扣除工资、营销等运营成本后剩余的占比（最新财年，未计利息和税）。',
+    interp: '市场在财报时最看重的效率指标；这里的趋势拐点会直接影响股价。',
+  },
   roe_pct: {
-    short: 'ROE %',
-    full: '净资产收益率——利润占股东投入资金的百分比，衡量公司使用股东资本的效率。',
+    short: '净资产收益率',
+    full: '年度利润占股东投入资金的百分比——衡量公司使用股东资本的效率。',
+    interp: '长期保持约15%以上是优质企业的标志；极低或为负说明生意在烧钱。',
+  },
+  fcf: {
+    short: '自由现金流',
+    full: '扣除运营成本和设备开支后实际产生的现金（财报允许时为最近十二个月，否则为最新财年）。\n单位：美元。',
+    interp: '为正且接近账面利润 = 盈利是真的；账面盈利但现金流为负是危险信号。',
   },
   balance_sheet: { short: '资产负债', full: '公司拥有什么、欠什么的快照——财务稳健度。' },
-  current_ratio: { short: '流动比率', full: '短期资产÷短期负债。\n大于1说明能覆盖近期账单。' },
-  debt_to_equity: { short: '产权比率', full: '总负债÷股东权益。\n数值越低通常越安全。' },
-  cash: { short: '现金', full: '持有的现金及现金等价物（美元）。' },
-  meta: { short: '报表信息', full: '这些数字来自哪份财务报告。' },
-  entity_name: { short: '公司名称', full: '公司的注册法定名称。' },
-  period_end: { short: '报告期', full: '财报覆盖到的截止日期。' },
-  basis: { short: '报表类型', full: '数据来源的报表类型（如年报 10-K，即经审计的年度文件）。' },
-  valuation: { short: '估值', full: '股价相对盈利、销售额和资产贵不贵。' },
-  pe_ttm: {
-    short: '市盈率 TTM',
-    full: '股价÷过去12个月的每股盈利（TTM = 最近十二个月）。\n数值越高，市场为每一元利润付的价格越贵。',
+  current_ratio: {
+    short: '流动比率',
+    full: '短期资产÷短期负债（最新财年）。',
+    interp: '约1.5以上比较从容；低于1提示现金紧张——坏消息来时伤害加倍。',
   },
-  pe_forward: { short: '预期市盈率', full: '股价÷分析师预期的下一年度盈利。' },
-  ps_ttm: { short: '市销率 TTM', full: '总市值÷过去12个月的营业收入。' },
-  pb: { short: '市净率', full: '股价÷每股账面净资产。' },
-  market_cap: { short: '总市值', full: '公司全部股份的市场总价值（美元）。' },
+  debt_to_equity: {
+    short: '产权比率',
+    full: '总负债÷股东权益——公司的杠杆程度。',
+    interp: '高杠杆双向放大波动，利率高时伤害最大；应与同行业比较。',
+  },
+  meta: { short: '报表信息', full: '这些数字来自哪些财务报告，以及数据有多新。' },
+  entity_name: {
+    short: '公司名称',
+    full: 'SEC 备案中的注册公司名称。',
+    interp: '用来确认财报数据确实属于所分析的这只股票。',
+  },
+  period_end: {
+    short: '年报报告期',
+    full: '利润率、ROE 和资产负债比率所来自的财年截止日期。',
+    interp: '接近一年前的数据只能当作陈旧的背景信息。',
+  },
+  period_end_q: {
+    short: '季报报告期',
+    full: '季度增长字段所来自的季度截止日期。',
+    interp: '年报刚发布后，最新季报可能滞后整整一个季度——把增长当作新鲜数据前先看这个日期。',
+  },
+  basis: {
+    short: '报表类型',
+    full: '数据来源的报表类型（10-K = 经审计的年报，10-Q = 季报）。',
+  },
+  valuation: { short: '估值', full: '股价相对盈利和销售额贵不贵。' },
+  pe_ttm: {
+    short: '市盈率（TTM）',
+    full: '股价÷过去12个月的每股盈利（TTM = 最近十二个月）——买下当前利润需要付几年的价钱。',
+    interp: '高 = 大量预期已计入价格，好消息只够维持现状；低 = 便宜，或市场预期业绩下滑。',
+  },
+  pe_forward: {
+    short: '预期市盈率',
+    full: '股价÷分析师预期的未来12个月盈利。',
+    interp: '明显低于静态市盈率 = 分析师预期增长；高于它 = 预期萎缩。',
+  },
+  ps_ttm: {
+    short: '市销率（TTM）',
+    full: '总市值÷过去12个月的营业收入。',
+    interp: '市盈率失效的亏损公司用它来衡量估值。',
+  },
+  market_cap: {
+    short: '总市值',
+    full: '公司全部股份的市场总价值（美元）。',
+    interp: '巨头走势平缓，小盘股容易跳空和轧空；也决定了流动性的量级。',
+  },
+  // 旧运行保留的已退役字段（2026-07-29 退役）。
+  revenue_yoy_pct: { short: '营收同比 %', full: '旧运行保留的已退役字段：年报营收同比增速。新运行改用季度增长。' },
+  net_income_yoy_pct: { short: '净利同比 %', full: '旧运行保留的已退役字段：年报净利润同比增速。' },
+  eps_yoy_pct: { short: 'EPS 同比 %', full: '旧运行保留的已退役字段：年报每股收益同比增速。' },
+  net_margin_pct: { short: '净利率 %', full: '旧运行保留的已退役字段：最终利润占收入的比例。与营业利润率高度重复，另含一次性损益噪音。' },
+  cash: { short: '现金', full: '旧运行保留的已退役字段：持有的现金及等价物（美元）。缺乏规模参照的原始数字。' },
+  pb: { short: '市净率', full: '旧运行保留的已退役字段：股价÷每股账面净资产。只对银行等重资产行业有参考意义。' },
 
   next_earnings_date: {
     short: '下次财报',
-    full: '下一次财报的预定日期。\n一周内的财报属于事件风险：一次公告就可能让价格跳空越过任何止损。',
+    full: '下一次财报的预定日期。',
+    interp: '持仓窗口内的财报属于事件风险：一次公告就可能让价格跳空越过任何止损——要么提前离场，要么按它调整仓位。',
   },
-  days_until_earnings: { short: '距财报天数', full: '距下一次财报的日历天数。' },
+  days_until_earnings: {
+    short: '距财报天数',
+    full: '距下一次财报的日历天数。',
+    interp: '数字小 = 事件风险已经临近；一周以内会触发交易计划的财报警告。',
+  },
   region: { short: '地区', full: '这些数据描述的是哪个经济体。' },
   as_of: { short: '数据日期', full: '本组数据对应的日期——宏观序列、空头持仓报告等滞后数据都带上它，避免把旧数据当成今天的。' },
   rates: { short: '利率', full: '由央行和债券市场决定的利率水平。' },

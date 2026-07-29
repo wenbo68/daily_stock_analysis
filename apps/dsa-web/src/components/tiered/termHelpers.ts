@@ -95,21 +95,31 @@ export function jumpToMetricFirst(refPaths: string[]): boolean {
   return refPaths.some((refPath) => jumpToMetric(refPath));
 }
 
-// The technicals v2 payload wraps every metric as {name, explanation,
-// value} so the LLM and API consumers read what a number means. The UI
-// unwraps to the value and keeps its own i18n labels (metricLabels).
+// The v2 payloads wrap every metric as {name, explanation, value} —
+// runs from 2026-07-29 on add an "interpretation" key (how to read the
+// number) — so the LLM and API consumers read what a number means. The
+// UI unwraps to the value and keeps its own i18n labels (metricLabels).
 export interface MetricEnvelope {
   name: string;
   explanation: string;
+  interpretation?: string;
   value: unknown;
 }
+
+const ENVELOPE_REQUIRED = ['explanation', 'name', 'value'];
+const ENVELOPE_OPTIONAL = ['interpretation'];
 
 export function isMetricEnvelope(node: unknown): node is MetricEnvelope {
   if (node === null || typeof node !== 'object' || Array.isArray(node)) {
     return false;
   }
-  const keys = Object.keys(node as Record<string, unknown>).sort();
-  return keys.length === 3 && keys[0] === 'explanation' && keys[1] === 'name' && keys[2] === 'value';
+  const keys = Object.keys(node as Record<string, unknown>);
+  return (
+    ENVELOPE_REQUIRED.every((key) => keys.includes(key)) &&
+    keys.every(
+      (key) => ENVELOPE_REQUIRED.includes(key) || ENVELOPE_OPTIONAL.includes(key),
+    )
+  );
 }
 
 export function metricValue(node: unknown): unknown {

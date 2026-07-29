@@ -100,7 +100,7 @@ const NOTE_RULES: NoteRule[] = [
     toText: (m, t) => t('tiered.note.fetchFailed', { domain: hostOf(m[1]) }),
   },
   {
-    pattern: /^EDGAR (?:fundamentals failed|returned no usable annual facts)/,
+    pattern: /^EDGAR (?:fundamentals failed|returned no usable (?:annual|statement) facts)/,
     keywordKey: KEY.missingData,
     toText: (_m, t) => t('tiered.note.fundamentalsUnavailable'),
   },

@@ -36,7 +36,9 @@ export type TieredDimension = {
   coverage: 'full' | 'partial' | 'unavailable';
   is_actionable: boolean;
   payload: Record<string, unknown> | null;
-  /** Absent on non-technicals dimensions and old stored runs. */
+  /** Computation receipts keyed "group.key". Technicals ships them from
+      2026-07-27, fundamentals from 2026-07-29; absent on the other
+      dimensions and on old stored runs. */
   formulas?: Record<string, TieredMetricFormula> | null;
   narrative: string | null;
   warnings: string[];

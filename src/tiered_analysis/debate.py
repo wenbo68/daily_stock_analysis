@@ -194,8 +194,8 @@ class DebateResult:
 
 
 def _leaf_count(node: Any) -> int:
-    # A {name, explanation, value} envelope is ONE citable fact, not
-    # three: its prose keys must not inflate the per-dimension ceilings.
+    # A {name, explanation[, interpretation], value} envelope is ONE
+    # citable fact: its prose keys must not inflate the ceilings.
     if is_envelope(node):
         return 1
     if isinstance(node, dict):
@@ -218,9 +218,9 @@ def max_items_per_dimension(dimensions: Sequence[DimensionResult]) -> Dict[str, 
 def _payload_value(ref: str, dimensions: Sequence[DimensionResult]) -> Tuple[bool, Any]:
     """(resolves-to-a-leaf, value) for a ``dimension.key[.subkey…]`` ref.
 
-    A ref that lands on a {name, explanation, value} envelope resolves to
-    its ``value`` — the envelope path IS the citable leaf; its prose keys
-    are documentation, not separately citable facts.
+    A ref that lands on a {name, explanation[, interpretation], value}
+    envelope resolves to its ``value`` — the envelope path IS the citable
+    leaf; its prose keys are documentation, not separately citable facts.
     """
     parts = ref.split(".")
     if len(parts) < 2:
@@ -299,6 +299,10 @@ def _value_in_text(value_text: str, sentence: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _CONTEXT_TEMPLATE = """Stock under debate: {symbol}
+This is a SWING TRADE: the position is held for days to weeks. Judge
+every piece of evidence against that horizon — use your own judgment
+about what matters at this timescale (owner decision 2026-07-29: the
+horizon is stated in words, not a numeric constant).
 Formula-computed plan levels: entry={entry}, backup={secondary_entry}, stop={stop_loss}, target={take_profit}
 
 Collected evidence (the ONLY facts you may use — no outside knowledge):
@@ -316,9 +320,10 @@ _LINK_RULES = """Link rules (all checked mechanically by code):
   do not wrap them in quotation marks.
 - A "ref" must point at ONE exact value, like "technicals.daily.rsi_14"
   — grouping paths ("technicals.daily" when it holds sub-fields) are
-  rejected; cite the field ("technicals.daily.rsi_14"). A technicals
-  field is {"name", "explanation", "value"}: cite the FIELD path, never
-  ".value"/".name" — the ref resolves to the value automatically.
+  rejected; cite the field ("technicals.daily.rsi_14"). A report field
+  may be an envelope {"name", "explanation", "interpretation", "value"}:
+  cite the FIELD path, never ".value"/".name" — the ref resolves to the
+  value automatically.
 - Code verifies every link and sends failures back to you to fix;
   bullets that cannot be fixed are struck from the list.
 - Use only the evidence above; never invent facts or numbers."""
@@ -350,8 +355,9 @@ _LIST_RULES = """Evidence-list rules:
   counts, dates, regions).
 - If (and only if) a dimension truly has no collected data above, skip it
   and name it in "no_data_dimensions" — code verifies this.
-- If fundamentals.next_earnings_date shows a report within roughly a
-  week (see fundamentals.days_until_earnings), list that as a bearish
+- If fundamentals.earnings.next_earnings_date shows a report within
+  roughly a week (see fundamentals.earnings.days_until_earnings), list
+  that as a bearish
   event-risk bullet — an imminent earnings report can gap the price
   past any plan level, which argues for waiting.
 - Each bullet: one atomic claim (one sentence) containing the cited names

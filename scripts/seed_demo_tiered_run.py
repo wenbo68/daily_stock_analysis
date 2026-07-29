@@ -124,22 +124,62 @@ def demo_index_bars(count: int = 320) -> list:
 # ---------------------------------------------------------------------------
 
 
-def _fy(end: str, val: float, fy: int) -> dict:
-    return {"end": end, "val": val, "fy": fy, "fp": "FY", "form": "10-K"}
+def _fy(end: str, val: float, fy: int, start: str = None) -> dict:
+    row = {"end": end, "val": val, "fy": fy, "fp": "FY", "form": "10-K"}
+    if start:
+        row["start"] = start
+    return row
 
 
 def _concept(rows: list, unit: str = "USD") -> dict:
     return {"units": {unit: rows}}
 
 
+def _q(end: date, val: float) -> dict:
+    """One single-quarter 10-Q row (~90-day span)."""
+    return {
+        "start": (end - timedelta(days=90)).isoformat(),
+        "end": end.isoformat(),
+        "val": val,
+        "fp": "Q3",
+        "form": "10-Q",
+    }
+
+
+def _ytd(start: date, end: date, val: float) -> dict:
+    """One cumulative (year-to-date) 10-Q cash-flow row."""
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "val": val,
+        "fp": "Q3",
+        "form": "10-Q",
+    }
+
+
+#: Eight ~91-day-spaced quarter ends, newest (a month ago) first — so the
+#: quarterly growth fields read as fresh whenever the demo is seeded.
+Q_ENDS = [TODAY - timedelta(days=32 + 91 * i) for i in range(8)]
+#: Newest-first values: latest quarter +20% YoY vs +12% the quarter
+#: before -> revenue trend "accelerating"; EPS +16.7% vs +10.2%.
+REV_Q = [30e9, 28e9, 27e9, 26e9, 25e9, 25e9, 24e9, 23e9]
+EPS_Q = [1.40, 1.30, 1.25, 1.22, 1.20, 1.18, 1.15, 1.10]
+
+_FY_END = date(2025, 9, 30)
+_PRIOR_YTD_END = Q_ENDS[0] - timedelta(days=364)
+
 FAKE_FACTS = {
     "cik": 999999,
     "entityName": "Demo Corp",
     "facts": {
         "us-gaap": {
-            "Revenues": _concept([
-                _fy("2024-09-30", 96e9, 2024), _fy("2025-09-30", 110e9, 2025),
-            ]),
+            "Revenues": _concept(
+                [
+                    _fy("2024-09-30", 96e9, 2024),
+                    _fy("2025-09-30", 110e9, 2025),
+                ]
+                + [_q(end, val) for end, val in zip(Q_ENDS, REV_Q)]
+            ),
             "NetIncomeLoss": _concept([
                 _fy("2024-09-30", 19e9, 2024), _fy("2025-09-30", 24.2e9, 2025),
             ]),
@@ -149,13 +189,26 @@ FAKE_FACTS = {
             "Liabilities": _concept([_fy("2025-09-30", 72.6e9, 2025)]),
             "AssetsCurrent": _concept([_fy("2025-09-30", 55e9, 2025)]),
             "LiabilitiesCurrent": _concept([_fy("2025-09-30", 27.5e9, 2025)]),
-            "CashAndCashEquivalentsAtCarryingValue": _concept(
-                [_fy("2025-09-30", 32e9, 2025)]
-            ),
             "EarningsPerShareDiluted": _concept(
-                [_fy("2024-09-30", 4.1, 2024), _fy("2025-09-30", 5.2, 2025)],
+                [
+                    _fy("2024-09-30", 4.1, 2024),
+                    _fy("2025-09-30", 5.2, 2025),
+                ]
+                + [_q(end, val) for end, val in zip(Q_ENDS, EPS_Q)],
                 unit="USD/shares",
             ),
+            # FY + matching YTD spans -> free cash flow on the TTM basis:
+            # OCF 40 + 33 − 30 = 43e9; capex 10 + 8 − 7 = 11e9; FCF 32e9.
+            "NetCashProvidedByUsedInOperatingActivities": _concept([
+                _fy("2025-09-30", 40e9, 2025, start="2024-10-01"),
+                _ytd(date(2025, 10, 1), Q_ENDS[0], 33e9),
+                _ytd(date(2024, 10, 1), _PRIOR_YTD_END, 30e9),
+            ]),
+            "PaymentsToAcquirePropertyPlantAndEquipment": _concept([
+                _fy("2025-09-30", 10e9, 2025, start="2024-10-01"),
+                _ytd(date(2025, 10, 1), Q_ENDS[0], 8e9),
+                _ytd(date(2024, 10, 1), _PRIOR_YTD_END, 7e9),
+            ]),
         }
     },
 }
@@ -163,12 +216,30 @@ FAKE_FACTS = {
 FAKE_YAHOO_INFO = {
     "trailingPE": 28.5,
     "forwardPE": 24.8,
-    "priceToBook": 12.4,
     "priceToSalesTrailing12Months": 7.9,
     "marketCap": 850e9,
+    "sector": "Technology",
+    "industry": "Semiconductors",
+    # Ex-dividend ~6 weeks out, midnight UTC.
+    "exDividendDate": calendar.timegm((TODAY + timedelta(days=40)).timetuple()),
 }
 
 EARNINGS_DATE = TODAY + timedelta(days=24)
+
+#: Past report dates ~3 weeks after each quarter end; all four beats, so
+#: the demo shows "4/4" with a mid-single-digit average surprise.
+FAKE_EARNINGS_HISTORY = [
+    {"date": EARNINGS_DATE.isoformat(), "eps_estimate": 1.50,
+     "eps_actual": None, "surprise_pct": None},
+] + [
+    {"date": (end + timedelta(days=21)).isoformat(),
+     "eps_estimate": estimate, "eps_actual": actual, "surprise_pct": None}
+    for end, estimate, actual in zip(
+        Q_ENDS[:4], [1.30, 1.22, 1.18, 1.15], EPS_Q[:4]
+    )
+]
+
+FAKE_EPS_TREND = {"current": 1.50, "days_ago_90": 1.38}
 
 FAKE_POSITIONING_INFO = {
     "sharesShort": 21_000_000,
@@ -319,9 +390,13 @@ def build_debate_replies(payloads: dict) -> dict:
     trend_d = tval("weekly", "trend")
     rs_d = tval("market", "rs_label")
     range_d = tval("price", "range_pct_1y")
-    rev_d = dv(fund["growth"]["revenue_yoy_pct"])
-    margin_d = dv(fund["profitability"]["net_margin_pct"])
-    pe_d = dv(fund["valuation"]["pe_ttm"])
+    def fval(group, key):
+        return dv(fund[group][key]["value"])
+
+    rev_d = fval("growth", "revenue_yoy_q")
+    rev_trend_d = fval("growth", "revenue_growth_trend")
+    margin_d = fval("profitability", "operating_margin_pct")
+    pe_d = fval("valuation", "pe_ttm")
     short_d = dv(pos["short_interest"]["short_pct_of_float"])
     inst_d = dv(pos["ownership"]["institutional_pct"])
     buys_d = dv(pos["insider_activity_6m"]["buy_count"])
@@ -352,14 +427,17 @@ def build_debate_replies(payloads: dict) -> dict:
               [_link("technicals.price.range_pct_1y", range_d)], 2,
               "A high range position caps the easy upside."),
         _item("F1", "fundamentals", "bullish",
-              f"Revenue grew {rev_d}% year over year in the latest annual"
-              " report.",
-              [_link("fundamentals.growth.revenue_yoy_pct", rev_d)], 4,
-              "Double-digit growth funds the trend."),
+              f"Quarterly revenue grew {rev_d}% year over year and the"
+              f" pace is {rev_trend_d}.",
+              [_link("fundamentals.growth.revenue_yoy_q", rev_d),
+               _link("fundamentals.growth.revenue_growth_trend",
+                     rev_trend_d)], 4,
+              "Accelerating growth is the classic swing fuel."),
         _item("F2", "fundamentals", "bullish",
-              f"The net margin is {margin_d}%, a highly profitable"
+              f"The operating margin is {margin_d}%, a highly profitable"
               " business.",
-              [_link("fundamentals.profitability.net_margin_pct", margin_d)],
+              [_link("fundamentals.profitability.operating_margin_pct",
+                     margin_d)],
               3, "Strong margins cushion bad quarters."),
         _item("F3", "fundamentals", "bearish",
               f"The trailing P/E of {pe_d} prices in a lot of good news.",
@@ -439,11 +517,14 @@ def build_debate_replies(payloads: dict) -> dict:
              "children": []},
         ],
         "fundamentals": [
-            {"text": f"Revenue grew {rev_d}% with a {margin_d}% net margin;"
+            {"text": f"Quarterly revenue grew {rev_d}% and is"
+                     f" {rev_trend_d}, on a {margin_d}% operating margin;"
                      f" the trailing P/E of {pe_d} is the price of that"
                      " quality.",
-             "links": [_link("fundamentals.growth.revenue_yoy_pct", rev_d),
-                       _link("fundamentals.profitability.net_margin_pct",
+             "links": [_link("fundamentals.growth.revenue_yoy_q", rev_d),
+                       _link("fundamentals.growth.revenue_growth_trend",
+                             rev_trend_d),
+                       _link("fundamentals.profitability.operating_margin_pct",
                              margin_d),
                        _link("fundamentals.valuation.pe_ttm", pe_d)],
              "children": []},
@@ -556,11 +637,15 @@ def build_outcome():
         ),
         FundamentalsUSProvider(
             facts_loader=lambda s: FAKE_FACTS,
-            valuation_loader=lambda s: FAKE_YAHOO_INFO,
+            info_loader=lambda s: FAKE_YAHOO_INFO,
             earnings_lookup=lambda s: {
                 "next_earnings_date": EARNINGS_DATE.isoformat(),
                 "days_until_earnings": (EARNINGS_DATE - TODAY).days,
             },
+            earnings_history_loader=lambda s: FAKE_EARNINGS_HISTORY,
+            eps_trend_loader=lambda s: FAKE_EPS_TREND,
+            bars_loader=lambda s: bars,
+            today=lambda: TODAY,
         ),
         PositioningUSProvider(
             info_loader=lambda s: FAKE_POSITIONING_INFO,

@@ -245,9 +245,12 @@ const warningNodes = (
       return {
         templateKey: 'tiered.alt.warn.earnings_soon',
         nodes: {
-          days: reportJump('fundamentals.days_until_earnings', wNum(v.days_until)),
-          date: reportJump(
-            'fundamentals.next_earnings_date',
+          days: reportJumpFirst(
+            ['fundamentals.earnings.days_until_earnings', 'fundamentals.days_until_earnings'],
+            wNum(v.days_until),
+          ),
+          date: reportJumpFirst(
+            ['fundamentals.earnings.next_earnings_date', 'fundamentals.next_earnings_date'],
             typeof v.next_date === 'string' ? v.next_date : '—',
           ),
         },

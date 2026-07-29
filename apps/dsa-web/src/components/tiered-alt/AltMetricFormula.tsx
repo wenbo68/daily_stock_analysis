@@ -38,6 +38,8 @@ const INPUT_ROW_PATH: Record<string, string> = {
   rsi_14: 'technicals.daily.rsi_14',
   rs_1m: 'technicals.market.rs_1m',
   rs_3m: 'technicals.market.rs_3m',
+  // Fundamentals v2 receipts (2026-07-29).
+  next_earnings_date: 'fundamentals.earnings.next_earnings_date',
 };
 
 // On-screen names for receipt-only ingredients (values the formula needs
@@ -63,6 +65,27 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   macd_hist: 'MACD histogram',
   macd_line: 'MACD line',
   atr_20_bars_ago: 'atr 14 (20 days ago)',
+  // Fundamentals v2 receipt ingredients (raw statement values and
+  // consensus estimates — none are published rows).
+  revenue_q: 'quarterly revenue',
+  revenue_q_year_ago: 'revenue same quarter last year',
+  eps_q: 'quarterly EPS',
+  eps_q_year_ago: 'EPS same quarter last year',
+  yoy_now: 'latest quarter YoY %',
+  yoy_prior: 'prior quarter YoY %',
+  gross_profit: 'gross profit',
+  operating_income: 'operating income',
+  net_income: 'net income',
+  revenue: 'revenue (fiscal year)',
+  equity: "shareholders' equity",
+  total_liabilities: 'total liabilities',
+  current_assets: 'short-term assets',
+  current_liabilities: 'short-term liabilities',
+  operating_cash_flow: 'operating cash flow',
+  capital_spending: 'capital spending',
+  estimate_now: 'consensus EPS estimate now',
+  estimate_90d_ago: 'consensus EPS estimate 90 days ago',
+  today: 'today',
 };
 
 const varLabel = (key: string, language: UiLanguage): string =>
