@@ -969,7 +969,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "range_pct_1y": make_metric(
-                    "current price ranking (1y range)",
+                    "current closing price ranking (1y range)",
                     "Where the close sits in its one-year range, as a "
                     "position out of 100: 0/100 = at the low, 100/100 = "
                     "at the high.",

@@ -27,7 +27,7 @@ function makeTechnicals(): TieredDimension {
       market: { regime: env('benchmark: market', 'bullish') },
       price: {
         close: env('closing price', 157.79),
-        range_pct_1y: env('current price ranking (1y)', 30.4),
+        range_pct_1y: env('current closing price ranking (1y range)', 30.4),
       },
       daily: {
         trend: env('daily trend (SMA + pivots)', 'neutral'),

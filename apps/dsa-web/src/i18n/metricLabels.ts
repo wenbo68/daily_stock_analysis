@@ -191,7 +191,7 @@ const en: Record<string, MetricEntry> = {
     interp: 'A big jump means the cheap entry may already be gone.',
   },
   range_pct_1y: {
-    short: 'Current price ranking: 1y',
+    short: 'Current closing price ranking: 1y range',
     full: "Where today's price sits inside its past-year range, as a position out of 100.\n0/100 = at the year's low, 100/100 = at the year's high.",
     interp: 'Above ~80/100 = strong but risky to chase; below ~20/100 = a falling knife unless it is clearly bottoming out.',
   },
@@ -770,7 +770,7 @@ const zh: Record<string, MetricEntry> = {
     interp: '涨幅太大意味着便宜的买点可能已经错过。',
   },
   range_pct_1y: {
-    short: '当前价格排位：1年',
+    short: '当前收盘价排位：一年区间',
     full: '今天的价格在过去一年区间里的位置，按满分100表示。\n0/100 = 一年最低点，100/100 = 一年最高点。',
     interp: '约80/100以上 = 强势但追高有风险；约20/100以下 = 除非明确在筑底，否则是接飞刀。',
   },
