@@ -853,7 +853,7 @@ class FundamentalsUSProvider(DimensionProvider):
 
         return {
             "revenue_yoy_q": make_metric(
-                "quarterly revenue growth (YoY)",
+                "quarterly revenue YoY",
                 "Latest reported quarter's revenue versus the same "
                 "quarter last year, in %.",
                 _round(revenue.get("yoy")),
@@ -874,7 +874,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "eps_yoy_q": make_metric(
-                "quarterly EPS growth (YoY)",
+                "quarterly EPS YoY",
                 "Latest reported quarter's earnings per share versus "
                 "the same quarter last year, in %.",
                 _round(eps.get("yoy")),
@@ -963,7 +963,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "roe_pct": make_metric(
-                "return on equity",
+                "ROE",
                 "Yearly profit as a percent of the shareholders' "
                 "capital tied up in the business.",
                 _round(annual.get("roe_pct")),
@@ -1078,7 +1078,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "ps_ttm": make_metric(
-                "P/S (trailing)",
+                "P/S",
                 "Price divided by the last 12 months of sales.",
                 _round(values["ps_ttm"]),
                 interpretation=(

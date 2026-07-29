@@ -33,7 +33,7 @@ function makeFundamentals(): TieredDimension {
         avg_surprise_pct_4q: env('avg earnings surprise (last 4)', 2.5),
       },
       growth: {
-        revenue_yoy_q: env('quarterly revenue growth (YoY)', 20),
+        revenue_yoy_q: env('quarterly revenue YoY', 20),
         revenue_growth_trend: env('revenue growth trend', 'accelerating'),
       },
       profitability: {
@@ -133,7 +133,7 @@ describe('AltDimensions — fundamentals v2', () => {
 
   it('shows Meaning + Interpretation blocks in the label tooltip', () => {
     renderFundamentals();
-    const label = screen.getAllByText('Quarterly revenue growth (YoY)')[0];
+    const label = screen.getAllByText('Quarterly revenue YoY')[0];
     fireEvent.mouseEnter(label.closest('span[class*="inline-flex"]') ?? label);
     const tooltip = screen.getByRole('tooltip');
     expect(within(tooltip).getByText('Meaning:')).toBeInTheDocument();
