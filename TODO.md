@@ -11,6 +11,8 @@
       - position: weeks to months
       - investing: years
     - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
+  - define the hold window explicitly (e.g. 5–20 trading days as a documented constant, or a user input next to Capital/Risk/Reward)
+    - today the only horizon in the system is the hard-coded 7-day event-warning window (EARNINGS_WARNING_DAYS); every interpretation that says "inside the hold window" needs a real denominator, and macro_event_soon will need the same one
 
 - technicals
   - meta
@@ -22,6 +24,10 @@
     - 1m return diff: stock vs market
     - 3m return diff: stock vs market
     - relative strength: stock
+    - sector relative strength (sector ETF vs market, ~1–3 months)
+      - meaning: whether the ticker's sector has been leading or lagging the overall market recently (computed from sector-ETF prices; needs the sector label from fundamentals)
+      - interpretation: swing moves in leading sectors run further and pull back shallower; fighting a lagging sector cuts the win rate even on a clean chart
+      - new: the standard middle layer between macro and the single name; lives here because this group already computes stock-vs-market relative strength the same way
   - stock price
     - closing price
     - 5d price change
@@ -54,6 +60,11 @@
     - nearest resistance
 
 - fundamentals
+  - profile
+    - sector / industry label
+      - meaning: the company's sector and industry classification (fetched)
+      - interpretation: margins, debt/equity and P/S only mean anything against industry peers; also tells the analysis which macro series to weight (oil for energy, 10y yield for long-duration tech, curve spread for banks)
+      - new: several interpretations below say "compare within the same industry" but no field says what the industry is; one fetched string unlocks those comparisons and the sector-strength field in technicals
   - earnings
     - next earnings: next earnings date
       - meaning: the date the company next reports quarterly results (fetched)
@@ -63,14 +74,26 @@
       - meaning: how many days from today until that report (computed from the date)
       - interpretation: small number = event risk is live now; big number = a free window to trade in
       - good: drives the earnings_soon plan warning; a report inside the hold window is the biggest single-stock event risk
+    - earnings date confirmation status
+      - meaning: whether the next earnings date is company-confirmed or a provider estimate
+      - interpretation: estimated dates slip by days to weeks; an unconfirmed date near the hold-window boundary is a range, not a point
+      - new: earnings_soon keys entirely off this date, so a wrong estimate makes the warning silently fire late or not at all; caveat — our current source (yfinance calendar) does not expose the flag, so this needs a second source (e.g. Nasdaq's calendar)
     - earnings surprise history (last ~4 quarters: beat or miss, by how much)
       - meaning: whether reported profit came in above or below what analysts expected, for each recent quarter
-      - interpretation: consistent beaters get the benefit of the doubt into a report; habitual missers gap down ugly
-      - new: tells you whether this stock tends to beat and how it gaps on reports — sets expectations for holding into one
+      - interpretation: says whether the company tends to clear the bar analysts set — not how the stock reacts; read it together with the price-reaction field below
+      - new: consistent beaters get the benefit of the doubt into a report; habitual missers lose it
+    - post-earnings price reaction (last ~4 reports: next-day % move)
+      - meaning: how the stock actually moved the day after each recent report (computed from the price history technicals already fetches)
+      - interpretation: the realized reaction distribution is this name's true event risk — a stock that routinely moves ±10% on earnings needs a different plan than one that moves ±2%
+      - new: completes the surprise history — beat/miss says whether they cleared the bar, this says what the stock does about it (beats that still drop are common)
     - analyst estimate revisions (EPS estimates being raised or cut)
       - meaning: whether analysts have been raising or lowering their profit forecasts recently
       - interpretation: rising estimates tend to pull the price up over weeks; cuts are a headwind even on a good chart
       - new: one of the best-documented medium-term signals; rising estimates support a swing long, cuts undermine it
+    - ex-dividend date (when inside the hold window)
+      - meaning: the date the stock starts trading without its next dividend; the price mechanically opens lower by roughly the dividend amount (fetched)
+      - interpretation: a small scheduled gap-down that can clip a tight stop on a long
+      - new: nearly free to fetch, and it's the one scheduled gap the other event fields don't cover
   - growth (currently annual 10-K numbers)
     - revenue YoY
       - meaning: how much sales grew versus the prior fiscal year, in percent (computed from EDGAR statement values)
@@ -150,7 +173,7 @@
   - meta: period end + basis (annual 10-K)
     - meaning: which fiscal year the statement numbers come from
     - interpretation: if the period end is nearly a year old, treat every statement number above as stale background
-    - good: tells the reader exactly how stale the statements are
+    - good: tells the reader exactly how stale the statements are; once the quarterly growth fields land, show the latest 10-Q period end here alongside the 10-K one
 
 - positioning
   - short interest
@@ -181,8 +204,12 @@
       - good: institutional sponsorship confirms the name is investable; a very low number is a liquidity/quality red flag
     - institutional % change vs prior quarter
       - meaning: whether funds in aggregate added to or trimmed their holdings versus the previous quarterly filing
-      - interpretation: accumulation supports rallies; distribution caps them
-      - new: whether funds were adding or cutting last quarter is the signal; the level alone is static trivia
+      - interpretation: accumulation supports rallies, distribution caps them — but 13F filings lag up to 45 days after quarter-end, so read this as background context, not current flow
+      - new: whether funds were adding or cutting last quarter is the signal; the level alone is static trivia; must ship with the as-of date below
+    - ownership as-of date
+      - meaning: the quarter-end the 13F ownership data describes (filings arrive up to 45 days later)
+      - interpretation: institutional % and its quarterly change can describe positioning from 3–4.5 months ago
+      - new: same logic as the short-interest as-of date — without it, stale accumulation reads as current buying
     - insider %
       - meaning: percent held by the company's own executives and directors (fetched)
       - interpretation: high = management has skin in the game, and fewer shares actually circulate
@@ -237,6 +264,10 @@
       - meaning: the size of move the options market is pricing in, read from option prices near the current stock price
       - interpretation: IV high in its own one-year range = a big move or event is priced in, gaps likely; low = calm expected
       - new: option prices say how big a move the market expects — high IV means an event is priced in; the CBOE feed we already fetch carries per-contract IV, so it's nearly free
+    - implied earnings move
+      - meaning: the % move the options market prices in for the next report, computed from at-the-money option prices on the expiration just after the earnings date (from the CBOE per-contract data we already pull)
+      - interpretation: directly sizes the gap risk earnings_soon warns about — a 9% implied move against a 5% stop distance is an exit-before-report
+      - new: upgrades the earnings warning from a yes/no into a number the plan can act on; note it needs the earnings date, which today lives in the fundamentals provider — a small cross-report dependency to wire
 
 - macro econ
   - rates
@@ -295,3 +326,9 @@
     - meaning: the extra yield investors demand to hold risky ("junk") corporate bonds over safe government bonds
     - interpretation: widening = credit stress building, often before stocks react; tight and stable = risk-on backdrop
     - new: the credit market's risk appetite; tends to widen before equity stress shows up — same free FRED source as the rest
+
+- considered and not added (decided 2026-07-29)
+  - market trend (S&P vs its moving averages)
+    - skip: already exists — technicals' "benchmark: market" field is exactly this: bullish / mixed / bearish computed from the index close vs its 200d SMA plus its position in the 1y range
+  - news / headline sentiment
+    - skip: the field most likely to inject noise or let the LLM confabulate a narrative; the event calendar + implied-volatility fields capture "something is coming" more reliably than headlines do
