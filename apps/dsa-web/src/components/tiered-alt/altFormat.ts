@@ -21,7 +21,7 @@ const METRIC_UNIT: Record<string, string> = {
   volatility_pct: '%',
   bias_20: '%',
   avg_volume_20: 'shares',
-  // Fundamentals v2 (2026-07-29).
+  // Fundamentals v2 (2026-07-29; regrouped 2026-07-31).
   days_until_earnings: 'days',
   avg_surprise_pct_4q: '%',
   reaction_avg_abs_pct: '%',
@@ -33,7 +33,10 @@ const METRIC_UNIT: Record<string, string> = {
   operating_margin_pct: '%',
   roe_pct: '%',
   fcf: 'USD',
+  fcf_to_earnings_pct: '%',
   market_cap: 'USD',
+  days_until_dividend: 'days',
+  dividend_amount_est: 'USD',
   // Legacy fundamentals keys old stored runs still render.
   revenue_yoy_pct: '%',
   net_income_yoy_pct: '%',

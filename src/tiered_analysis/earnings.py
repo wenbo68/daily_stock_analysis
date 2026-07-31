@@ -133,25 +133,31 @@ def earnings_warning(info: EarningsInfo) -> Optional[str]:
     )
 
 
-def earnings_from_dimensions(dimensions: Any) -> EarningsInfo:
+def earnings_from_dimensions(
+    dimensions: Any, today: Optional[_dt.date] = None
+) -> EarningsInfo:
     """The next earnings date the fundamentals provider already fetched
     (no second network call). Shared by the run-detail block and the
     plan review's earnings gate (2026-07-27) so both read one source.
 
-    Reads both payload generations: v2 (2026-07-29) nests the fields as
-    envelopes under ``earnings``; v1 stored runs carry them flat."""
+    Reads all three payload generations: v3 (2026-07-31) nests the date
+    under ``quarterly_report`` with no days field — days are computed
+    here from the date; v2 (2026-07-29) nests both fields as envelopes
+    under ``earnings``; v1 stored runs carry them flat."""
     from .providers.technicals import metric_value
 
+    if today is None:
+        today = _dt.date.today()
     for dim in dimensions:
         if getattr(dim, "dimension", None) != "fundamentals" or not dim.payload:
             continue
-        group = dim.payload.get("earnings")
+        group = dim.payload.get("quarterly_report") or dim.payload.get("earnings")
         source = group if isinstance(group, dict) else dim.payload
         date = metric_value(source.get("next_earnings_date"))
         days = metric_value(source.get("days_until_earnings"))
         if isinstance(date, str) and date:
-            return EarningsInfo(
-                next_date=date,
-                days_until=days if isinstance(days, int) else None,
-            )
+            if not isinstance(days, int):
+                parsed = _as_date(date)
+                days = (parsed - today).days if parsed is not None else None
+            return EarningsInfo(next_date=date, days_until=days)
     return EarningsInfo(note="no upcoming earnings date found")

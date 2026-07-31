@@ -245,12 +245,23 @@ const warningNodes = (
       return {
         templateKey: 'tiered.alt.warn.earnings_soon',
         nodes: {
+          // v3 runs publish no days row (days are computed from the
+          // date), so the days chip falls back to the date row; the
+          // legacy paths keep old stored runs jumping to their own rows.
           days: reportJumpFirst(
-            ['fundamentals.earnings.days_until_earnings', 'fundamentals.days_until_earnings'],
+            [
+              'fundamentals.quarterly_report.next_earnings_date',
+              'fundamentals.earnings.days_until_earnings',
+              'fundamentals.days_until_earnings',
+            ],
             wNum(v.days_until),
           ),
           date: reportJumpFirst(
-            ['fundamentals.earnings.next_earnings_date', 'fundamentals.next_earnings_date'],
+            [
+              'fundamentals.quarterly_report.next_earnings_date',
+              'fundamentals.earnings.next_earnings_date',
+              'fundamentals.next_earnings_date',
+            ],
             typeof v.next_date === 'string' ? v.next_date : '—',
           ),
         },

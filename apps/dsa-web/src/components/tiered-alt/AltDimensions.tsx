@@ -10,7 +10,7 @@ import {
 } from '../tiered/termHelpers';
 import { MetricTerm } from '../tiered/terms';
 import { formatMetricValue } from './altFormat';
-import { AltMetricValue } from './AltMetricFormula';
+import { AltBlankValue, AltMetricValue } from './AltMetricFormula';
 import { ALT_LINK } from './altStyles';
 import { AltCard, AltNarrative, AltNotesButton } from './AltUi';
 
@@ -153,7 +153,10 @@ const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: M
       <MetricTerm term={term} underline={false} />
     </dt>
     <dd className="text-xs tabular-nums text-gray-300">
-      {formula ? (
+      {value == null ? (
+        // Blank field: "n/a" opens the why-is-this-blank modal.
+        <AltBlankValue term={term} />
+      ) : formula ? (
         <AltMetricValue term={term} value={value} formula={formula} />
       ) : (
         formatMetricValue(term, value)

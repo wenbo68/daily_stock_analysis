@@ -22,6 +22,7 @@ from src.tiered_analysis.providers.fundamentals_us import (
     OPERATING_CASH_FLOW_CONCEPTS,
     FundamentalsUSProvider,
     fcf_metrics,
+    fcf_to_earnings_metrics,
     growth_trend_label,
     quarterly_growth_metrics,
     reaction_metrics,
@@ -55,6 +56,7 @@ def _concept(rows: list, unit: str = "USD") -> dict:
 #   28e9 vs 25e9 (+12%) -> accelerating (+8pp)
 # - quarterly EPS: 1.10 vs 1.00 (+10%); prior 1.045 vs 0.95 (+10%) -> steady
 # - cash flow TTM: OCF 100+90-80=110e9, capex 10+9-8=11e9 -> FCF 99e9 (ttm)
+# - net income TTM: 24.2+70-14.2=80e9 -> FCF/earnings = 99/80 = 123.75%
 FAKE_FACTS = {
     "cik": 320193,
     "entityName": "TESTCO",
@@ -72,7 +74,9 @@ FAKE_FACTS = {
             ]),
             "NetIncomeLoss": _concept([
                 _fy_row("2023-09-30", 20e9, 2023),
-                _fy_row("2024-09-30", 24.2e9, 2024),
+                _fy_row("2024-09-30", 24.2e9, 2024, start="2023-10-01"),
+                _q_row("2023-10-01", "2024-06-29", 14.2e9),
+                _q_row("2024-10-01", "2025-06-28", 70e9),
             ]),
             "GrossProfit": _concept([_fy_row("2024-09-30", 44e9, 2024)]),
             "OperatingIncomeLoss": _concept([_fy_row("2024-09-30", 33e9, 2024)]),
@@ -112,8 +116,9 @@ FAKE_INFO = {
     "marketCap": 3.4e12,
     "sector": "Technology",
     "industry": "Consumer Electronics",
-    # 2025-08-10 UTC — after the fixture's "today" (2025-07-01).
-    "exDividendDate": 1754784000,
+    # 2025-08-10 UTC — 40 days after the fixture's "today" (2025-07-01).
+    "dividendDate": 1754784000,
+    "lastDividendValue": 0.25,
 }
 
 FAKE_EARNINGS_ROWS = [
@@ -256,6 +261,50 @@ class TestFcf(unittest.TestCase):
         self.assertIsNone(fcf_metrics(facts))
 
 
+class TestFcfToEarnings(unittest.TestCase):
+    def test_same_period_ttm_ratio(self):
+        ratio = fcf_to_earnings_metrics(FAKE_FACTS, fcf_metrics(FAKE_FACTS))
+        self.assertAlmostEqual(ratio["pct"], 123.75)
+        self.assertAlmostEqual(ratio["fcf"], 99e9)
+        self.assertAlmostEqual(ratio["earnings"], 80e9)
+
+    def test_negative_earnings_blank_the_ratio_but_keep_inputs(self):
+        facts = {
+            "facts": {
+                "us-gaap": {
+                    **FAKE_FACTS["facts"]["us-gaap"],
+                    "NetIncomeLoss": _concept([
+                        _fy_row("2024-09-30", -5e9, 2024, start="2023-10-01"),
+                        _q_row("2023-10-01", "2024-06-29", -4e9),
+                        _q_row("2024-10-01", "2025-06-28", -6e9),
+                    ]),
+                }
+            }
+        }
+        ratio = fcf_to_earnings_metrics(facts, fcf_metrics(facts))
+        self.assertIsNotNone(ratio)
+        self.assertIsNone(ratio["pct"])  # sign-flip guard: loss -> blank
+        self.assertAlmostEqual(ratio["earnings"], -7e9)  # -5 + -6 - -4
+
+    def test_period_mismatch_yields_none(self):
+        # Net income has FY rows only -> no TTM figure ending 2025-06-28
+        # to match the TTM FCF; mixing periods would fabricate a number.
+        facts = {
+            "facts": {
+                "us-gaap": {
+                    **FAKE_FACTS["facts"]["us-gaap"],
+                    "NetIncomeLoss": _concept([
+                        _fy_row("2024-09-30", 24.2e9, 2024),
+                    ]),
+                }
+            }
+        }
+        self.assertIsNone(fcf_to_earnings_metrics(facts, fcf_metrics(facts)))
+
+    def test_missing_fcf_yields_none(self):
+        self.assertIsNone(fcf_to_earnings_metrics(FAKE_FACTS, None))
+
+
 class TestSurpriseAndReaction(unittest.TestCase):
     def test_beats_and_average_surprise(self):
         metrics = surprise_metrics(FAKE_EARNINGS_ROWS, TODAY)
@@ -295,28 +344,34 @@ class TestFundamentalsUSProvider(unittest.TestCase):
         payload = result.payload
 
         for group, key, expected in (
-            ("profile", "sector", "Technology"),
-            ("earnings", "next_earnings_date", "2025-07-20"),
-            ("earnings", "beats_4q", "3/4"),
-            ("earnings", "avg_surprise_pct_4q", 2.5),
-            ("earnings", "reaction_avg_abs_pct", 7.0),
-            ("earnings", "reaction_worst_pct", -6.0),
-            ("earnings", "eps_rev_90d_pct", 20.0),
-            ("earnings", "ex_dividend_date", "2025-08-10"),
-            ("growth", "revenue_yoy_q", 20.0),
-            ("growth", "revenue_growth_trend", "accelerating"),
-            ("growth", "eps_yoy_q", 10.0),
-            ("growth", "eps_growth_trend", "steady"),
+            ("meta", "entity_name", "TESTCO"),
+            ("meta", "sector", "Technology"),
+            ("meta", "industry", "Consumer Electronics"),
+            ("meta", "period_end", "2024-09-30"),
+            ("meta", "period_end_q", "2025-06-28"),
+            ("balance", "current_ratio", 2.0),
+            ("balance", "debt_to_equity", 2.0),
             ("profitability", "gross_margin_pct", 40.0),
             ("profitability", "operating_margin_pct", 30.0),
             ("profitability", "roe_pct", 40.0),
             ("profitability", "fcf", 99e9),
-            ("balance_sheet", "current_ratio", 2.0),
-            ("balance_sheet", "debt_to_equity", 2.0),
-            ("valuation", "pe_ttm", 28.5),
+            ("profitability", "fcf_to_earnings_pct", 123.75),
+            ("growth", "revenue_yoy_q", 20.0),
+            ("growth", "revenue_growth_trend", "accelerating"),
+            ("growth", "eps_yoy_q", 10.0),
+            ("growth", "eps_growth_trend", "steady"),
             ("valuation", "market_cap", 3.4e12),
-            ("meta", "period_end", "2024-09-30"),
-            ("meta", "period_end_q", "2025-06-28"),
+            ("valuation", "ps_ttm", 8.8),
+            ("valuation", "pe_ttm", 28.5),
+            ("valuation", "pe_forward", 25.0),
+            ("quarterly_report", "next_earnings_date", "2025-07-20"),
+            ("quarterly_report", "eps_rev_90d_pct", 20.0),
+            ("quarterly_report", "beats_4q", "3/4"),
+            ("quarterly_report", "avg_surprise_pct_4q", 2.5),
+            ("quarterly_report", "reaction_avg_abs_pct", 7.0),
+            ("quarterly_report", "reaction_worst_pct", -6.0),
+            ("dividend", "days_until_dividend", 40),
+            ("dividend", "dividend_amount_est", 0.25),
         ):
             node = payload[group][key]
             self.assertTrue(is_envelope(node), f"{group}.{key} not an envelope")
@@ -325,16 +380,33 @@ class TestFundamentalsUSProvider(unittest.TestCase):
 
     def test_retired_fields_are_gone(self):
         payload = _provider().collect("AAPL").payload
+        # Old group keys retired by the 2026-07-31 regroup.
+        self.assertNotIn("profile", payload)
+        self.assertNotIn("earnings", payload)
+        self.assertNotIn("balance_sheet", payload)
+        # Retired fields.
         self.assertNotIn("net_margin_pct", payload["profitability"])
-        self.assertNotIn("cash", payload["balance_sheet"])
         self.assertNotIn("pb", payload["valuation"])
         self.assertNotIn("revenue_yoy_pct", payload["growth"])
+        self.assertNotIn("basis", payload["meta"])
+        self.assertNotIn("days_until_earnings", payload["quarterly_report"])
+        self.assertNotIn("ex_dividend_date", payload["quarterly_report"])
+
+    def test_group_order_follows_todo_list(self):
+        payload = _provider().collect("AAPL").payload
+        self.assertEqual(
+            list(payload),
+            [
+                "meta", "balance", "profitability", "growth",
+                "valuation", "quarterly_report", "dividend",
+            ],
+        )
 
     def test_formula_receipts_for_computed_metrics(self):
         result = _provider().collect("AAPL")
         formulas = result.formulas
         self.assertAlmostEqual(
-            formulas["growth.revenue_yoy_q"]["inputs"]["revenue_q"], 30e9
+            formulas["growth.revenue_yoy_q"]["inputs"]["sales_q"], 30e9
         )
         self.assertEqual(
             [b["label"] for b in formulas["growth.revenue_growth_trend"]["branches"]],
@@ -343,13 +415,19 @@ class TestFundamentalsUSProvider(unittest.TestCase):
         self.assertAlmostEqual(
             formulas["profitability.fcf"]["inputs"]["operating_cash_flow"], 110e9
         )
-        self.assertIn("balance_sheet.current_ratio", formulas)
-        self.assertIn("earnings.days_until_earnings", formulas)
+        self.assertAlmostEqual(
+            formulas["profitability.fcf_to_earnings_pct"]["inputs"]["earnings"],
+            80e9,
+        )
+        self.assertIn("balance.current_ratio", formulas)
+        self.assertIn("dividend.days_until_dividend", formulas)
+        self.assertNotIn("earnings.days_until_earnings", formulas)
+        self.assertNotIn("balance_sheet.current_ratio", formulas)
 
-    def test_past_ex_dividend_date_is_filtered(self):
+    def test_past_dividend_payment_date_is_filtered(self):
         provider = _provider(today=lambda: date(2025, 9, 1))
         payload = provider.collect("AAPL").payload
-        self.assertIsNone(metric_value(payload["earnings"]["ex_dividend_date"]))
+        self.assertIsNone(metric_value(payload["dividend"]["days_until_dividend"]))
 
     def test_edgar_down_degrades_to_partial_with_warning(self):
         def _edgar_boom(symbol):
@@ -400,7 +478,7 @@ class TestFundamentalsUSProvider(unittest.TestCase):
         ).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
         self.assertIsNone(
-            metric_value(result.payload["earnings"]["next_earnings_date"])
+            metric_value(result.payload["quarterly_report"]["next_earnings_date"])
         )
         self.assertTrue(any("aux down" in w for w in result.warnings))
 
@@ -413,11 +491,33 @@ class TestFundamentalsUSProvider(unittest.TestCase):
 
 
 class TestEarningsFromDimensions(unittest.TestCase):
-    def test_reads_v2_nested_envelopes(self):
+    def test_reads_v3_quarterly_report_and_computes_days(self):
         from src.tiered_analysis.earnings import earnings_from_dimensions
 
+        # v3 payloads publish no days field: days come from the date.
         result = _provider().collect("AAPL")
-        info = earnings_from_dimensions([result])
+        info = earnings_from_dimensions([result], today=TODAY)
+        self.assertEqual(info.next_date, "2025-07-20")
+        self.assertEqual(info.days_until, 19)
+
+    def test_reads_v2_nested_envelopes(self):
+        from src.tiered_analysis.earnings import earnings_from_dimensions
+        from src.tiered_analysis.providers.technicals import make_metric
+
+        legacy = SimpleNamespace(
+            dimension="fundamentals",
+            payload={
+                "earnings": {
+                    "next_earnings_date": make_metric(
+                        "next earnings date", "x", "2025-07-20"
+                    ),
+                    "days_until_earnings": make_metric(
+                        "days until earnings", "x", 19
+                    ),
+                }
+            },
+        )
+        info = earnings_from_dimensions([legacy])
         self.assertEqual(info.next_date, "2025-07-20")
         self.assertEqual(info.days_until, 19)
 

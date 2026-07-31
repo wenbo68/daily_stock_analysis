@@ -958,6 +958,8 @@ const zh = {
   'tiered.help.levelAdjusted':
     'AI 在基准价附近（最多一个 ATR，即平均日波幅）微调后的价位，必须给出有依据的理由；点击查看理由和依据。未通过校验的调整会被拒绝，仍使用基准价。',
   'tiered.levelModal.formulaTitle': '{level}：公式',
+  'tiered.alt.blankTitle': '{label}：为何为空',
+  'tiered.alt.blankFallback': '本次运行中该字段没有数值——计算它所需的数据不可用。',
   'tiered.levelModal.formula': '公式',
   'tiered.levelModal.withNumbers': '代入本次数据',
   'tiered.levelModal.inputs': '输入项',
@@ -2445,6 +2447,9 @@ const en: Record<UiTextKey, string> = {
   'tiered.help.levelAdjusted':
     'The AI may nudge the base within a bounded band (at most one ATR — the stock’s average daily swing) and must give an evidence-backed reason; click to read it. Adjustments that fail the safety checks are rejected and the base is used.',
   'tiered.levelModal.formulaTitle': '{level}: formula',
+  'tiered.alt.blankTitle': '{label}: why blank',
+  'tiered.alt.blankFallback':
+    'This field has no value in this run — the data needed to compute it was unavailable.',
   'tiered.levelModal.formula': 'Formula',
   'tiered.levelModal.withNumbers': 'With this run’s numbers',
   'tiered.levelModal.inputs': 'Inputs',

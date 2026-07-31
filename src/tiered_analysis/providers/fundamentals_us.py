@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
-"""US fundamentals provider — v2 envelope payload (2026-07-29).
+"""US fundamentals provider — v2 envelope payload (regrouped 2026-07-31).
 
-Field list per the TODO.md fundamentals audit: quarterly growth replaces
-the stale annual YoY, the earnings block grows surprise history / the
-realized earnings-day move / estimate revisions / the ex-dividend date,
-profitability gains free cash flow, and the low-signal fields (net
-margin, raw cash, P/B, annual YoY) are retired. Every published metric
-ships as a ``{name, explanation, interpretation, value}`` envelope —
-the same contract as technicals v2 — and computed metrics carry UI
-formula receipts in ``DimensionResult.formulas``.
+Groups and field names follow the TODO.md final-truth list: ``meta``
+(company/sector/industry + data as-of dates), ``balance``,
+``profitability`` (incl. free cash flow and its ratio to earnings),
+``growth``, ``valuation``, ``quarterly report`` (the earnings-event
+block) and ``dividend``. Every published metric ships as a
+``{name, explanation, interpretation, value}`` envelope — the same
+contract as technicals v2 — and computed metrics carry UI formula
+receipts in ``DimensionResult.formulas``. Fields that cannot be
+computed stay present with ``value: null`` (blank), never omitted.
 
 Sources, split by what each can actually answer:
 
 - **SEC EDGAR companyfacts (XBRL)** — audited statements: quarterly
-  growth (10-Q), margins / ROE / balance-sheet ratios (10-K), free cash
+  growth (10-Q), profitability / balance ratios (10-K), free cash
   flow (TTM from FY + YTD rows). Series math lives in
   ``edgar_series.py``.
 - **Yahoo summary (yfinance)** — market-priced valuation ratios, the
-  sector/industry profile and the ex-dividend date.
+  sector/industry profile and the dividend schedule.
 - **Yahoo earnings data (yfinance)** — the earnings calendar (next
   date), the surprise history and the analyst EPS estimate trend.
-- **Daily bars** (optional, injected) — the realized earnings-day moves.
+- **Daily bars** (optional, injected) — the realized report-day moves.
 
 EDGAR statements + Yahoo valuation are the core: either failing degrades
 coverage explicitly (partial/unavailable with warnings). The event and
@@ -71,14 +72,19 @@ YAHOO_ANALYSIS_URL = "https://finance.yahoo.com/quote/{symbol}/analysis"
 EDGAR_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _EDGAR_TIMEOUT_SECONDS = 15
 
-# Yahoo .info key -> normalized valuation field (P/B retired 2026-07-29:
-# only informative for banks/asset-heavy names).
+# Yahoo .info key -> normalized valuation field, in display order
+# (TODO.md order 2026-07-31; P/B retired 2026-07-29: only informative
+# for banks/asset-heavy names).
 _VALUATION_KEYS = (
+    ("marketCap", "market_cap"),
+    ("priceToSalesTrailing12Months", "ps_ttm"),
     ("trailingPE", "pe_ttm"),
     ("forwardPE", "pe_forward"),
-    ("priceToSalesTrailing12Months", "ps_ttm"),
-    ("marketCap", "market_cap"),
 )
+
+#: XBRL concept for reported earnings (net income) — the denominator of
+#: the free-cash-flow-to-earnings ratio.
+NET_INCOME_CONCEPTS = ("NetIncomeLoss",)
 
 #: Growth-trend dead band, in percentage points of YoY change: a swing
 #: smaller than this is "steady", not a real acceleration/deceleration.
@@ -266,6 +272,42 @@ def fcf_metrics(facts: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
         "capital_spending": capex[0],
         "end": ocf[1],
         "basis": ocf[2],
+    }
+
+
+def fcf_to_earnings_metrics(
+    facts: Optional[Mapping[str, Any]], fcf: Optional[Dict[str, Any]]
+) -> Optional[Dict[str, Any]]:
+    """Free cash flow as a percent of the SAME period's earnings.
+
+    The earnings figure must match the FCF's basis AND period end (a TTM
+    FCF needs a TTM net income ending the same quarter; an annual FCF
+    needs the same fiscal year) — mixing periods fabricates numbers, so
+    a missing same-period figure returns None (the whole field blank).
+    ``pct`` is None when earnings are zero or negative: dividing by a
+    loss flips the sign and reads backwards, so the ratio is blank while
+    the receipt ingredients stay absent (owner decision 2026-07-30).
+    """
+    if facts is None or fcf is None:
+        return None
+    earnings: Optional[float] = None
+    if fcf["basis"] == "ttm":
+        net_income = ttm_value(facts, NET_INCOME_CONCEPTS)
+        if (
+            net_income is not None
+            and net_income[2] == "ttm"
+            and net_income[1] == fcf["end"]
+        ):
+            earnings = net_income[0]
+    else:
+        series = best_series(facts, NET_INCOME_CONCEPTS)
+        earnings = series.get(fcf["end"]) if series else None
+    if earnings is None:
+        return None
+    return {
+        "pct": fcf["fcf"] / earnings * 100.0 if earnings > 0 else None,
+        "fcf": fcf["fcf"],
+        "earnings": earnings,
     }
 
 
@@ -510,20 +552,22 @@ class FundamentalsUSProvider(DimensionProvider):
         info = self._load_info(symbol, warnings)
         facts = self._load_facts(symbol, warnings)
 
-        earnings_group = self._earnings_group(symbol, info, citations, warnings, formulas)
+        # Group order = display order (TODO.md final-truth list).
         payload: Dict[str, Any] = {
-            "profile": self._profile_group(info),
-            "earnings": earnings_group,
-            "growth": self._growth_group(facts, formulas),
+            "meta": self._meta_group(info, facts),
+            "balance": self._balance_group(facts, formulas),
             "profitability": self._profitability_group(facts, formulas),
-            "balance_sheet": self._balance_group(facts, formulas),
+            "growth": self._growth_group(facts, formulas),
             "valuation": self._valuation_group(symbol, info, citations, warnings),
-            "meta": self._meta_group(facts),
+            "quarterly_report": self._quarterly_report_group(
+                symbol, citations, warnings, formulas
+            ),
+            "dividend": self._dividend_group(info, formulas),
         }
 
         edgar_ok = facts is not None and any(
             _has_values(payload[group])
-            for group in ("growth", "profitability", "balance_sheet")
+            for group in ("growth", "profitability", "balance")
         )
         if facts is not None and not edgar_ok:
             warnings.append(f"EDGAR returned no usable statement facts for {symbol}")
@@ -580,37 +624,9 @@ class FundamentalsUSProvider(DimensionProvider):
 
     # ---- payload groups --------------------------------------------------
 
-    @staticmethod
-    def _profile_group(info: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
-        sector = info.get("sector") if info else None
-        industry = info.get("industry") if info else None
-        return {
-            "sector": make_metric(
-                "sector",
-                "The company's sector classification.",
-                sector if isinstance(sector, str) else None,
-                interpretation=(
-                    "Margins, leverage and valuation only mean anything "
-                    "against industry peers; the sector also says which "
-                    "macro series matter most (oil for energy, the 10y "
-                    "yield for long-duration tech)."
-                ),
-            ),
-            "industry": make_metric(
-                "industry",
-                "The finer industry classification within the sector.",
-                industry if isinstance(industry, str) else None,
-                interpretation=(
-                    "The peer group this company's ratios should be "
-                    "compared against."
-                ),
-            ),
-        }
-
-    def _earnings_group(
+    def _quarterly_report_group(
         self,
         symbol: str,
-        info: Optional[Mapping[str, Any]],
         citations: List[Citation],
         warnings: List[str],
         formulas: Dict[str, Any],
@@ -618,13 +634,10 @@ class FundamentalsUSProvider(DimensionProvider):
         today = self._today()
 
         next_date: Optional[str] = None
-        days_until: Optional[int] = None
         try:
             fields = self._earnings_lookup(symbol) or {}
             raw_date = fields.get("next_earnings_date")
             next_date = raw_date if isinstance(raw_date, str) else None
-            raw_days = fields.get("days_until_earnings")
-            days_until = raw_days if isinstance(raw_days, int) else None
         except Exception as exc:
             warnings.append(f"earnings date lookup failed for {symbol}: {exc}")
 
@@ -646,8 +659,8 @@ class FundamentalsUSProvider(DimensionProvider):
             )
         else:
             warnings.append(
-                f"no earnings history rows for {symbol} — surprise and "
-                "earnings-day-move fields omitted"
+                f"no earnings history rows for {symbol} — the beat and "
+                "report-day-move fields are blank"
             )
 
         reaction: Dict[str, Any] = {"avg_abs_pct": None, "worst_pct": None, "count": 0}
@@ -674,20 +687,8 @@ class FundamentalsUSProvider(DimensionProvider):
         if trend:
             revision = revision_pct(trend)
 
-        ex_div = _epoch_to_date(info.get("exDividendDate")) if info else None
-        if ex_div is not None and ex_div < today:
-            ex_div = None  # a past ex-div date is noise, not a coming gap
-
-        if days_until is not None and next_date is not None:
-            formulas["earnings.days_until_earnings"] = {
-                "formula": "next_earnings_date − today",
-                "inputs": {
-                    "next_earnings_date": next_date,
-                    "today": today.isoformat(),
-                },
-            }
         if surprises["beats"] is not None:
-            formulas["earnings.beats_4q"] = {
+            formulas["quarterly_report.beats_4q"] = {
                 "formula": (
                     "reports with actual EPS ≥ the analyst estimate, out "
                     f"of the last {SURPRISE_REPORTS} reported quarters"
@@ -695,7 +696,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 "inputs": {},
             }
         if surprises["avg_surprise_pct"] is not None:
-            formulas["earnings.avg_surprise_pct_4q"] = {
+            formulas["quarterly_report.avg_surprise_pct_4q"] = {
                 "formula": (
                     "mean of (actual EPS − estimate) / |estimate| × 100 "
                     f"over the last {SURPRISE_REPORTS} reported quarters"
@@ -703,7 +704,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 "inputs": {},
             }
         if reaction["avg_abs_pct"] is not None:
-            formulas["earnings.reaction_avg_abs_pct"] = {
+            formulas["quarterly_report.reaction_avg_abs_pct"] = {
                 "formula": (
                     "mean absolute close-to-close % move across each of "
                     "the last report dates (last close before the report "
@@ -712,7 +713,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 "inputs": {},
             }
         if reaction["worst_pct"] is not None:
-            formulas["earnings.reaction_worst_pct"] = {
+            formulas["quarterly_report.reaction_worst_pct"] = {
                 "formula": (
                     "most negative close-to-close % move across those "
                     "same report dates"
@@ -720,7 +721,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 "inputs": {},
             }
         if revision is not None:
-            formulas["earnings.eps_rev_90d_pct"] = {
+            formulas["quarterly_report.eps_rev_90d_pct"] = {
                 "formula": "(estimate_now − estimate_90d_ago) / |estimate_90d_ago| × 100",
                 "inputs": {
                     "estimate_now": _to_float(trend.get("current")),
@@ -730,68 +731,20 @@ class FundamentalsUSProvider(DimensionProvider):
 
         return {
             "next_earnings_date": make_metric(
-                "next earnings date",
-                "The date the company next reports quarterly results.",
+                "next report date",
+                "The date the company next reports quarterly results. "
+                "Blank when no report is scheduled yet or the calendar "
+                "lookup failed.",
                 next_date,
                 interpretation=(
                     "A report inside the hold window means the stock can "
                     "gap straight past a stop overnight — exit before it "
-                    "or size for it."
-                ),
-            ),
-            "days_until_earnings": make_metric(
-                "days until earnings",
-                "Days from today until that report.",
-                days_until,
-                interpretation=(
-                    "Small = the event risk is live now; the plan's "
-                    "earnings warning fires inside a week."
-                ),
-            ),
-            "beats_4q": make_metric(
-                "earnings beats (last 4)",
-                "How many of the last reported quarters came in at or "
-                "above the analyst EPS estimate.",
-                surprises["beats"],
-                interpretation=(
-                    "Consistent beaters get the benefit of the doubt "
-                    "into a report; habitual missers lose it."
-                ),
-            ),
-            "avg_surprise_pct_4q": make_metric(
-                "avg earnings surprise (last 4)",
-                "Average gap between reported EPS and the analyst "
-                "estimate over those quarters, in %.",
-                surprises["avg_surprise_pct"],
-                interpretation=(
-                    "Says whether the company tends to clear the bar "
-                    "analysts set — not how the stock reacts; read it "
-                    "with the earnings-day move below."
-                ),
-            ),
-            "reaction_avg_abs_pct": make_metric(
-                "typical earnings-day move (last 4)",
-                "Average size of the close-to-close move around the "
-                "last few reports, ignoring direction, in %.",
-                reaction["avg_abs_pct"],
-                interpretation=(
-                    "The realized event risk: a stock that moves ±10% on "
-                    "earnings needs a different plan than one that moves "
-                    "±2%."
-                ),
-            ),
-            "reaction_worst_pct": make_metric(
-                "worst earnings-day drop (last 4)",
-                "The most negative close-to-close move around those "
-                "reports, in %.",
-                reaction["worst_pct"],
-                interpretation=(
-                    "How badly holding through a report has actually "
-                    "gone recently."
+                    "or size for it. The plan's report warning fires "
+                    "when this date is inside a week."
                 ),
             ),
             "eps_rev_90d_pct": make_metric(
-                "EPS estimate revision (90d)",
+                "90d EPS estimate change",
                 "Change in the analyst consensus EPS estimate for the "
                 "current quarter versus 90 days ago, in %.",
                 _round(revision),
@@ -800,15 +753,92 @@ class FundamentalsUSProvider(DimensionProvider):
                     "weeks; cuts are a headwind even on a good chart."
                 ),
             ),
-            "ex_dividend_date": make_metric(
-                "ex-dividend date",
-                "The next date the stock trades without its dividend; "
-                "the price mechanically opens lower by roughly the "
-                "dividend amount.",
-                ex_div.isoformat() if ex_div else None,
+            "beats_4q": make_metric(
+                "4q EPS beat estimate history",
+                "How many of the last 4 reported quarters came in at or "
+                "above the analyst EPS estimate.",
+                surprises["beats"],
                 interpretation=(
-                    "A small scheduled gap-down that can clip a tight "
-                    "stop on a long."
+                    "Consistent beaters get the benefit of the doubt "
+                    "into a report; habitual missers lose it."
+                ),
+            ),
+            "avg_surprise_pct_4q": make_metric(
+                "4q avg diff: EPS vs estimate",
+                "Average gap between reported EPS and the analyst "
+                "estimate over the last 4 reports, in %.",
+                surprises["avg_surprise_pct"],
+                interpretation=(
+                    "Says whether the company tends to clear the bar "
+                    "analysts set — not how the stock reacts; read it "
+                    "with the report-day move below."
+                ),
+            ),
+            "reaction_avg_abs_pct": make_metric(
+                "4q avg report day price change magnitude",
+                "Average size of the close-to-close price move around "
+                "the last 4 reports, ignoring direction, in %.",
+                reaction["avg_abs_pct"],
+                interpretation=(
+                    "The realized event risk: a stock that moves ±10% on "
+                    "report day needs a different plan than one that "
+                    "moves ±2%."
+                ),
+            ),
+            "reaction_worst_pct": make_metric(
+                "4q worst report day price drop",
+                "The most negative close-to-close price move around "
+                "those same reports, in %.",
+                reaction["worst_pct"],
+                interpretation=(
+                    "How badly holding through a report has actually "
+                    "gone recently."
+                ),
+            ),
+        }
+
+    def _dividend_group(
+        self, info: Optional[Mapping[str, Any]], formulas: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        today = self._today()
+        pay_date = _epoch_to_date(info.get("dividendDate")) if info else None
+        if pay_date is not None and pay_date < today:
+            pay_date = None  # a past payment date is history, not a coming payout
+        days_until = (pay_date - today).days if pay_date is not None else None
+        amount = _to_float(info.get("lastDividendValue")) if info else None
+
+        if days_until is not None:
+            formulas["dividend.days_until_dividend"] = {
+                "formula": "next_dividend_payment_date − today",
+                "inputs": {
+                    "next_dividend_payment_date": pay_date.isoformat(),
+                    "today": today.isoformat(),
+                },
+            }
+
+        return {
+            "days_until_dividend": make_metric(
+                "days until next dividend payment",
+                "Days from today until the company next pays its "
+                "dividend. Blank when the company pays no dividend or "
+                "none is scheduled yet.",
+                days_until,
+                interpretation=(
+                    "The cash arrives on this date, but the price dips "
+                    "earlier: on the ex-dividend date the stock starts "
+                    "trading without the payout and opens lower by "
+                    "roughly the dividend amount."
+                ),
+            ),
+            "dividend_amount_est": make_metric(
+                "estimated dividend amount",
+                "The most recent dividend payment per share, in USD — "
+                "the best available guess for the next one.",
+                amount,
+                interpretation=(
+                    "Small versus the stock price = a minor scheduled "
+                    "dip around the ex-dividend date; a large payout can "
+                    "clip a tight stop on its own."
                 ),
             ),
         }
@@ -831,15 +861,18 @@ class FundamentalsUSProvider(DimensionProvider):
             {"label": "steady", "condition": None},
         ]
         for series_key, entry in (("revenue", revenue), ("eps", eps)):
+            # Receipt variable names follow the user-facing word canon:
+            # "sales", never "revenue" (payload keys stay stable).
+            shown = "sales" if series_key == "revenue" else series_key
             if entry.get("yoy") is not None:
                 formulas[f"growth.{series_key}_yoy_q"] = {
                     "formula": (
-                        f"({series_key}_q − {series_key}_q_year_ago) / "
-                        f"|{series_key}_q_year_ago| × 100"
+                        f"({shown}_q − {shown}_q_year_ago) / "
+                        f"|{shown}_q_year_ago| × 100"
                     ),
                     "inputs": {
-                        f"{series_key}_q": entry["now"],
-                        f"{series_key}_q_year_ago": entry["year_ago"],
+                        f"{shown}_q": entry["now"],
+                        f"{shown}_q_year_ago": entry["year_ago"],
                     },
                 }
             if entry.get("trend") is not None:
@@ -853,8 +886,8 @@ class FundamentalsUSProvider(DimensionProvider):
 
         return {
             "revenue_yoy_q": make_metric(
-                "quarterly revenue YoY",
-                "Latest reported quarter's revenue versus the same "
+                "quarterly sales: year over year",
+                "Latest reported quarter's sales versus the same "
                 "quarter last year, in %.",
                 _round(revenue.get("yoy")),
                 interpretation=(
@@ -863,9 +896,10 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "revenue_growth_trend": make_metric(
-                "revenue growth trend",
-                "Whether that growth rate sped up or slowed versus the "
-                "previous quarter (±2 percentage-point dead band).",
+                "growth trend: sales",
+                "Whether that sales growth rate sped up or slowed "
+                "versus the previous quarter (±2 percentage-point dead "
+                "band).",
                 revenue.get("trend"),
                 interpretation=(
                     "Acceleration is the classic fuel for multi-week "
@@ -874,18 +908,18 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "eps_yoy_q": make_metric(
-                "quarterly EPS YoY",
-                "Latest reported quarter's earnings per share versus "
-                "the same quarter last year, in %.",
+                "quarterly EPS: year over year",
+                "Latest reported quarter's earnings per share (EPS) "
+                "versus the same quarter last year, in %.",
                 _round(eps.get("yoy")),
                 interpretation=(
-                    "Diverges from revenue growth when margins or the "
+                    "Diverges from sales growth when margins or the "
                     "share count move; buybacks boost it, dilution "
                     "drags it."
                 ),
             ),
             "eps_growth_trend": make_metric(
-                "EPS growth trend",
+                "growth trend: EPS",
                 "Whether EPS growth sped up or slowed versus the "
                 "previous quarter (±2 percentage-point dead band).",
                 eps.get("trend"),
@@ -902,28 +936,31 @@ class FundamentalsUSProvider(DimensionProvider):
     ) -> Dict[str, Any]:
         annual = annual_statement_metrics(facts) if facts is not None else {}
         fcf = fcf_metrics(facts) if facts is not None else None
+        fcf_ratio = fcf_to_earnings_metrics(facts, fcf)
 
+        # Receipt variable names follow the user-facing word canon:
+        # "sales" and "earnings", never "revenue"/"profit"/"income".
         if annual.get("gross_margin_pct") is not None:
             formulas["profitability.gross_margin_pct"] = {
-                "formula": "gross_profit / revenue × 100",
+                "formula": "gross_earnings / sales × 100",
                 "inputs": {
-                    "gross_profit": annual["gross_profit"],
-                    "revenue": annual["revenue"],
+                    "gross_earnings": annual["gross_profit"],
+                    "sales": annual["revenue"],
                 },
             }
         if annual.get("operating_margin_pct") is not None:
             formulas["profitability.operating_margin_pct"] = {
-                "formula": "operating_income / revenue × 100",
+                "formula": "operating_earnings / sales × 100",
                 "inputs": {
-                    "operating_income": annual["operating_income"],
-                    "revenue": annual["revenue"],
+                    "operating_earnings": annual["operating_income"],
+                    "sales": annual["revenue"],
                 },
             }
         if annual.get("roe_pct") is not None:
             formulas["profitability.roe_pct"] = {
-                "formula": "net_income / equity × 100",
+                "formula": "earnings / equity × 100",
                 "inputs": {
-                    "net_income": annual["net_income"],
+                    "earnings": annual["net_income"],
                     "equity": annual["equity"],
                 },
             }
@@ -935,6 +972,14 @@ class FundamentalsUSProvider(DimensionProvider):
                     "capital_spending": fcf["capital_spending"],
                 },
             }
+        if fcf_ratio is not None and fcf_ratio["pct"] is not None:
+            formulas["profitability.fcf_to_earnings_pct"] = {
+                "formula": "fcf / earnings × 100",
+                "inputs": {
+                    "fcf": fcf_ratio["fcf"],
+                    "earnings": fcf_ratio["earnings"],
+                },
+            }
 
         fcf_basis = (
             f"trailing twelve months to {fcf['end']}"
@@ -943,7 +988,7 @@ class FundamentalsUSProvider(DimensionProvider):
         )
         return {
             "gross_margin_pct": make_metric(
-                "gross margin",
+                "gross earnings to sales",
                 "Percent of each sales dollar left after the direct "
                 "cost of making the product (latest fiscal year).",
                 _round(annual.get("gross_margin_pct")),
@@ -953,18 +998,18 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "operating_margin_pct": make_metric(
-                "operating margin",
+                "operating earnings to sales",
                 "Percent of sales left after all operating costs, "
                 "before interest and taxes (latest fiscal year).",
                 _round(annual.get("operating_margin_pct")),
                 interpretation=(
-                    "The efficiency number the market judges at "
-                    "earnings; a trend break here moves the stock."
+                    "The efficiency number the market judges at each "
+                    "report; a trend break here moves the stock."
                 ),
             ),
             "roe_pct": make_metric(
-                "ROE",
-                "Yearly profit as a percent of the shareholders' "
+                "earnings to equity",
+                "Yearly earnings as a percent of the shareholders' "
                 "capital tied up in the business.",
                 _round(annual.get("roe_pct")),
                 interpretation=(
@@ -978,9 +1023,22 @@ class FundamentalsUSProvider(DimensionProvider):
                 f"spending ({fcf_basis}).",
                 _round(fcf["fcf"], 0) if fcf else None,
                 interpretation=(
-                    "Positive and close to reported profit = the "
-                    "earnings are real; reported profits with negative "
+                    "Positive and close to reported earnings = the "
+                    "earnings are real; reported earnings with negative "
                     "cash flow is a red flag."
+                ),
+            ),
+            "fcf_to_earnings_pct": make_metric(
+                "free cash flow to earnings",
+                "Free cash flow as a percent of the same period's "
+                "earnings. Blank when earnings are zero or negative "
+                "(the ratio would read backwards) or when no "
+                "same-period earnings figure exists.",
+                _round(fcf_ratio["pct"]) if fcf_ratio else None,
+                interpretation=(
+                    "Near or above 100% = the reported earnings arrive "
+                    "as real cash; far below 100% for years = the "
+                    "earnings may be accounting, not cash."
                 ),
             ),
         }
@@ -992,7 +1050,7 @@ class FundamentalsUSProvider(DimensionProvider):
         annual = annual_statement_metrics(facts) if facts is not None else {}
 
         if annual.get("current_ratio") is not None:
-            formulas["balance_sheet.current_ratio"] = {
+            formulas["balance.current_ratio"] = {
                 "formula": "current_assets / current_liabilities",
                 "inputs": {
                     "current_assets": annual["assets_current"],
@@ -1000,7 +1058,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 },
             }
         if annual.get("debt_to_equity") is not None:
-            formulas["balance_sheet.debt_to_equity"] = {
+            formulas["balance.debt_to_equity"] = {
                 "formula": "total_liabilities / equity",
                 "inputs": {
                     "total_liabilities": annual["liabilities"],
@@ -1010,7 +1068,7 @@ class FundamentalsUSProvider(DimensionProvider):
 
         return {
             "current_ratio": make_metric(
-                "current ratio",
+                "assets to liabilities: short term",
                 "Short-term assets divided by short-term liabilities — "
                 "can it pay what's due within a year (latest fiscal "
                 "year).",
@@ -1021,14 +1079,15 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "debt_to_equity": make_metric(
-                "debt to equity",
-                "Total liabilities compared to shareholders' capital — "
-                "how leveraged the company is.",
+                "liabilities to equity: total",
+                "Total liabilities compared to shareholders' capital "
+                "(equity) — how much the company runs on borrowed "
+                "money.",
                 _round(annual.get("debt_to_equity")),
                 interpretation=(
-                    "High leverage amplifies moves both ways and hurts "
-                    "most when rates are high; compare within the same "
-                    "industry."
+                    "Heavy borrowing amplifies moves both ways and "
+                    "hurts most when rates are high; compare within the "
+                    "same industry."
                 ),
             ),
         }
@@ -1056,36 +1115,6 @@ class FundamentalsUSProvider(DimensionProvider):
             )
 
         return {
-            "pe_ttm": make_metric(
-                "trailing P/E",
-                "Price divided by the last 12 months of profit — how "
-                "many years of current profit you pay for the stock.",
-                _round(values["pe_ttm"]),
-                interpretation=(
-                    "High = big expectations already priced in, good "
-                    "news is needed just to hold the level; low = cheap, "
-                    "or the market expects decline."
-                ),
-            ),
-            "pe_forward": make_metric(
-                "forward P/E",
-                "Price divided by the profit analysts expect over the "
-                "next 12 months.",
-                _round(values["pe_forward"]),
-                interpretation=(
-                    "Well below the trailing P/E = analysts expect "
-                    "growth; above it = expected shrinkage."
-                ),
-            ),
-            "ps_ttm": make_metric(
-                "P/S",
-                "Price divided by the last 12 months of sales.",
-                _round(values["ps_ttm"]),
-                interpretation=(
-                    "The valuation gauge for unprofitable names where "
-                    "P/E is meaningless."
-                ),
-            ),
             "market_cap": make_metric(
                 "market cap",
                 "Total value of all the company's shares, in dollars.",
@@ -1095,10 +1124,44 @@ class FundamentalsUSProvider(DimensionProvider):
                     "sets what liquidity to expect."
                 ),
             ),
+            "ps_ttm": make_metric(
+                "price to sales",
+                "Price divided by the last 12 months of sales.",
+                _round(values["ps_ttm"]),
+                interpretation=(
+                    "The valuation gauge for money-losing names where "
+                    "price to earnings is meaningless."
+                ),
+            ),
+            "pe_ttm": make_metric(
+                "trailing price to earnings",
+                "Price divided by the last 12 months of earnings — how "
+                "many years of current earnings you pay for the stock. "
+                "Blank when the company lost money over that period.",
+                _round(values["pe_ttm"]),
+                interpretation=(
+                    "High = big expectations already priced in, good "
+                    "news is needed just to hold the level; low = cheap, "
+                    "or the market expects decline."
+                ),
+            ),
+            "pe_forward": make_metric(
+                "forward price to earnings",
+                "Price divided by the earnings analysts expect over "
+                "the next 12 months. Blank when analysts forecast a "
+                "loss or do not cover the stock.",
+                _round(values["pe_forward"]),
+                interpretation=(
+                    "Well below the trailing number = analysts expect "
+                    "growth; above it = expected shrinkage."
+                ),
+            ),
         }
 
     @staticmethod
-    def _meta_group(facts: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    def _meta_group(
+        info: Optional[Mapping[str, Any]], facts: Optional[Mapping[str, Any]]
+    ) -> Dict[str, Any]:
         annual = annual_statement_metrics(facts) if facts is not None else {}
         growth = (
             quarterly_growth_metrics(facts)
@@ -1109,6 +1172,8 @@ class FundamentalsUSProvider(DimensionProvider):
             (growth.get("eps") or {}).get("end")
         )
         entity = annual.get("entity_name")
+        sector = info.get("sector") if info else None
+        industry = info.get("industry") if info else None
         return {
             "entity_name": make_metric(
                 "company",
@@ -1119,10 +1184,30 @@ class FundamentalsUSProvider(DimensionProvider):
                     "analyzed."
                 ),
             ),
+            "sector": make_metric(
+                "sector",
+                "The company's sector classification.",
+                sector if isinstance(sector, str) else None,
+                interpretation=(
+                    "The ratios below only mean anything against "
+                    "industry peers; the sector also says which macro "
+                    "series matter most (oil for energy, the 10y yield "
+                    "for long-duration tech)."
+                ),
+            ),
+            "industry": make_metric(
+                "industry",
+                "The finer industry classification within the sector.",
+                industry if isinstance(industry, str) else None,
+                interpretation=(
+                    "The peer group this company's ratios should be "
+                    "compared against."
+                ),
+            ),
             "period_end": make_metric(
-                "annual statements period end",
-                "The fiscal year end the margins, ROE and balance-sheet "
-                "ratios come from.",
+                "annual data up to",
+                "The fiscal year end the yearly figures (the balance "
+                "and profitability ratios) come from.",
                 annual.get("period_end"),
                 interpretation=(
                     "Nearly a year old = treat those numbers as stale "
@@ -1130,22 +1215,13 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "period_end_q": make_metric(
-                "quarterly statements period end",
+                "quarterly data up to",
                 "The quarter end the quarterly growth fields come from.",
                 period_end_q,
                 interpretation=(
-                    "Right after an annual report the latest 10-Q can "
-                    "lag a full quarter — check this date before "
-                    "treating growth as fresh."
-                ),
-            ),
-            "basis": make_metric(
-                "statement basis",
-                "Which sources feed this report.",
-                "annual 10-K + quarterly 10-Q (SEC EDGAR); market data via Yahoo",
-                interpretation=(
-                    "Audited SEC filings for the statements; Yahoo for "
-                    "the market-priced and analyst-derived fields."
+                    "Right after an annual report the latest quarterly "
+                    "filing can lag a full quarter — check this date "
+                    "before treating growth as fresh."
                 ),
             ),
         }

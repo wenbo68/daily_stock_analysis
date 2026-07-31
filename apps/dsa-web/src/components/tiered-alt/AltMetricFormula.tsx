@@ -38,8 +38,11 @@ const INPUT_ROW_PATH: Record<string, string> = {
   rsi_14: 'technicals.daily.rsi_14',
   rs_1m: 'technicals.market.rs_1m',
   rs_3m: 'technicals.market.rs_3m',
-  // Fundamentals v2 receipts (2026-07-29).
+  // Fundamentals receipts. next_earnings_date appears only in OLD stored
+  // runs' receipts (the earnings group); new runs publish it under
+  // quarterly_report with no receipt referencing it.
   next_earnings_date: 'fundamentals.earnings.next_earnings_date',
+  fcf: 'fundamentals.profitability.fcf',
 };
 
 // On-screen names for receipt-only ingredients (values the formula needs
@@ -65,18 +68,19 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   macd_hist: 'MACD histogram',
   macd_line: 'MACD line',
   atr_20_bars_ago: 'atr 14 (20 days ago)',
-  // Fundamentals v2 receipt ingredients (raw statement values and
-  // consensus estimates — none are published rows).
-  revenue_q: 'quarterly revenue',
-  revenue_q_year_ago: 'revenue same quarter last year',
+  // Fundamentals receipt ingredients (raw statement values and
+  // consensus estimates — none are published rows). Variable names
+  // follow the user-facing word canon: "sales" and "earnings".
+  sales_q: 'quarterly sales',
+  sales_q_year_ago: 'sales same quarter last year',
   eps_q: 'quarterly EPS',
   eps_q_year_ago: 'EPS same quarter last year',
   yoy_now: 'latest quarter YoY %',
   yoy_prior: 'prior quarter YoY %',
-  gross_profit: 'gross profit',
-  operating_income: 'operating income',
-  net_income: 'net income',
-  revenue: 'revenue (fiscal year)',
+  gross_earnings: 'gross earnings',
+  operating_earnings: 'operating earnings',
+  earnings: 'earnings',
+  sales: 'sales (fiscal year)',
   equity: "shareholders' equity",
   total_liabilities: 'total liabilities',
   current_assets: 'short-term assets',
@@ -85,11 +89,22 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   capital_spending: 'capital spending',
   estimate_now: 'consensus EPS estimate now',
   estimate_90d_ago: 'consensus EPS estimate 90 days ago',
+  next_dividend_payment_date: 'next dividend payment date',
   today: 'today',
+  // Old stored runs' receipts used the pre-canon variable names.
+  revenue_q: 'quarterly sales',
+  revenue_q_year_ago: 'sales same quarter last year',
+  gross_profit: 'gross earnings',
+  operating_income: 'operating earnings',
+  net_income: 'earnings',
+  revenue: 'sales (fiscal year)',
 };
 
+// Helper names win over metricLabels here: a receipt ingredient like
+// "earnings" collides with a payload group key of the same name, and
+// the receipt must speak the ingredient's name, not the group's.
 const varLabel = (key: string, language: UiLanguage): string =>
-  metricEntry(key, language)?.short ?? HELPER_VAR_LABEL[key] ?? key.replace(/_/g, ' ');
+  HELPER_VAR_LABEL[key] ?? metricEntry(key, language)?.short ?? key.replace(/_/g, ' ');
 
 // Split a formula/condition on its input tokens (longest first, so
 // `close` never eats into `close_5d_ago`) — the AltLevels splitter,
@@ -173,6 +188,45 @@ const TokenText = ({
           <PluggedValue key={index} inputKey={part} value={input} onNavigate={onNavigate} />
         );
       })}
+    </>
+  );
+};
+
+interface AltBlankValueProps {
+  /** The payload key of the blank metric — names the modal and selects
+      its per-field blank reason from metricLabels. */
+  term: string;
+}
+
+// A blank metric value: renders as a clickable "n/a" that opens a modal
+// explaining why this field can be empty (owner request 2026-07-31).
+// The reason is the field's static `blank` text from metricLabels; a
+// field without one gets the generic fallback.
+export const AltBlankValue = ({ term }: AltBlankValueProps) => {
+  const { t, language } = useUiLanguage();
+  const [isOpen, setIsOpen] = useState(false);
+  const entry = metricEntry(term, language);
+  const label = entry?.short ?? term;
+  return (
+    <>
+      <button
+        type="button"
+        data-testid={`alt-metric-blank-${term}`}
+        onClick={() => setIsOpen(true)}
+        className={cn('cursor-pointer', ALT_LINK)}
+      >
+        n/a
+      </button>
+      <AltModal
+        isOpen={isOpen}
+        title={t('tiered.alt.blankTitle', { label })}
+        onClose={() => setIsOpen(false)}
+        panelClassName="w-fit min-w-72 max-w-md"
+      >
+        <p className="whitespace-pre-line text-sm" data-testid="alt-metric-blank-modal">
+          {entry?.blank ?? t('tiered.alt.blankFallback')}
+        </p>
+      </AltModal>
     </>
   );
 };

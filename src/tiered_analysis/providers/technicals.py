@@ -969,7 +969,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "range_pct_1y": make_metric(
-                    "current closing price ranking (1y range)",
+                    "current price ranking (1y range)",
                     "Where the close sits in its one-year range, as a "
                     "position out of 100: 0/100 = at the low, 100/100 = "
                     "at the high.",
@@ -983,17 +983,8 @@ class TechnicalsProvider(DimensionProvider):
                 ),
             },
             "volume": {
-                # 5d before 60d (owner order 2026-07-29): the recent read
-                # first, then the baseline it is compared against.
-                "avg_vol_5d": make_metric(
-                    "5d avg volume",
-                    "Mean daily share volume over the last 5 bars.",
-                    _round(avg_vol_5, 0),
-                    interpretation=(
-                        "The recent-activity read the volume ratio "
-                        "compares against the 60-day baseline."
-                    ),
-                ),
+                # 60d before 5d (TODO.md order 2026-07-30): the baseline
+                # first, then the recent read compared against it.
                 "avg_vol_60d": make_metric(
                     "60d avg volume",
                     "Mean daily share volume over the last 60 bars.",
@@ -1001,6 +992,15 @@ class TechnicalsProvider(DimensionProvider):
                     interpretation=(
                         "The liquidity baseline an order size is judged "
                         "against."
+                    ),
+                ),
+                "avg_vol_5d": make_metric(
+                    "5d avg volume",
+                    "Mean daily share volume over the last 5 bars.",
+                    _round(avg_vol_5, 0),
+                    interpretation=(
+                        "The recent-activity read the volume ratio "
+                        "compares against the 60-day baseline."
                     ),
                 ),
                 "vol_ratio_5_60": make_metric(
@@ -1047,7 +1047,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "typical_pullback_atr": make_metric(
-                    "typical price drop (6m)",
+                    "typical price drop (6m range)",
                     "Median depth of the last few completed pullbacks "
                     "(pivot high to the next pivot low, scanned over the "
                     f"last {DAILY_PIVOT_LOOKBACK} trading days ≈ 6 "
@@ -1059,7 +1059,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "worst_day_pct_1y": make_metric(
-                    "worst price drop (1y)",
+                    "worst price drop (1y range)",
                     "Worst close-to-close daily return of the last year, "
                     "in %.",
                     worst_day,
