@@ -8,15 +8,21 @@ validates the reply against these models, retries once with the
 validation errors shown, and degrades/voids per the failure rules if the
 retry is still invalid.
 
-v8: no defender/attacker/judge roles. Two analysts list evidence
-independently; a merge call matches the two lists; every bullet's author
-is its first valid vote (a bullet both analysts listed independently is
-confirmed 2-0 on the spot); a check round casts the second vote on
-single-author bullets; a deciding round breaks 1-1 ties. Citations are
-code's job alone — links are ``{ref, value}`` and every link,
-including the ones inside vote reasons, is verified mechanically with a
-fix loop. Structural rules that depend on run-time data live in the
-validator helpers at the bottom — they raise ``ValueError`` with
+v12 (owner spec 2026-07-31): the opening stage is a GRADE SHEET, not a
+free-form list. Code enumerates every gradable report field; each
+analyst must return exactly one grade per field (bullish / bearish /
+neutral) — ``check_grade_sheet`` rejects a reply that skips a field,
+invents one, or grades one twice, so "each field is used once" is
+enforced structurally, not by prompt. Code converts non-neutral grades
+into evidence bullets (ids assigned by code in field order) and matches
+the two analysts' sheets by field — no merge LLM call. Every bullet's
+author is its first valid vote (a field both analysts graded the same
+direction is confirmed 2-0 on the spot); a check round casts the second
+vote on single-author bullets; a deciding round breaks 1-1 ties.
+Citations are code's job alone — links are ``{ref, value}`` and every
+link, including the ones inside vote reasons, is verified mechanically
+with a fix loop. Structural rules that depend on run-time data live in
+the validator helpers at the bottom — they raise ``ValueError`` with
 retry-friendly messages.
 """
 from __future__ import annotations
@@ -34,14 +40,11 @@ DIMENSION_PREFIX: Dict[str, str] = {
     "macro_econ": "E",
 }
 
-#: Every dimension that has collected data must contribute at least this
-#: many evidence items — a floor so no dimension is skipped. The ceiling is
-#: dynamic: the number of leaf fields in that dimension's report, never
-#: below the floor — room for the whole report, not a quota.
-MIN_ITEMS_PER_DIMENSION = 2
-
 Dimension = Literal["technicals", "fundamentals", "macro_econ", "positioning"]
 ItemDirection = Literal["bullish", "bearish"]
+#: A grade adds "neutral": the field carries no lean (metadata, dates,
+#: a genuinely mixed reading) and produces no evidence bullet.
+GradeDirection = Literal["bullish", "bearish", "neutral"]
 
 #: Importance weight of one bullet, rated by each voter (owner spec
 #: 2026-07-20, widened to 1-5 the same day): 1 = very minor, 3 = normal
@@ -96,34 +99,32 @@ class EvidenceItemModel(_StageModel):
     weight_reason: Optional[str] = None
 
 
-class ListModel(_StageModel):
-    """Step 1: one analyst's full evidence list. No score — the position
-    scores are computed by code from the direction tags."""
+class FieldGradeModel(_StageModel):
+    """One field's grade on the sheet. Neutral needs nothing else and
+    produces no bullet; a bullish/bearish grade carries the claim
+    sentence (cited values checked by code) and the author's own
+    importance rating."""
 
-    items: List[EvidenceItemModel] = Field(min_length=1)
-    no_data_dimensions: List[str] = Field(default_factory=list)
+    direction: GradeDirection
+    claim: Optional[str] = None
+    links: List[LinkModel] = Field(default_factory=list)
+    weight: Weight = DEFAULT_WEIGHT
+    weight_reason: Optional[str] = None
+
+
+class GradeSheetModel(_StageModel):
+    """Step 1 (v12): one analyst's completed grade sheet — exactly one
+    grade per code-enumerated report field (``check_grade_sheet``
+    enforces the key set). No score — the position scores are computed
+    by code from the direction tags."""
+
+    grades: Dict[str, FieldGradeModel] = Field(default_factory=dict)
 
 
 class CitationFixModel(_StageModel):
     """A bullet citation-fix round's reply: corrected bullets, same ids."""
 
     items: List[EvidenceItemModel] = Field(min_length=1)
-
-
-class MatchEntryModel(_StageModel):
-    """Merge match-map row: one second-list bullet → the first-list
-    bullet covering the same evidence (same direction), or null."""
-
-    own_id: str
-    covered_by: Optional[str] = None
-
-
-class MergeModel(_StageModel):
-    """Step 2: the semantic diff of the two lists. Covered pairs mean the
-    bullet was listed independently by both analysts (confirmed 2-0);
-    uncovered second-list bullets join the merged list."""
-
-    match_map: List[MatchEntryModel] = Field(default_factory=list)
 
 
 class VoteModel(_StageModel):
@@ -198,49 +199,21 @@ class VoteFixModel(_StageModel):
 # ---------------------------------------------------------------------------
 
 
-def check_opening_items(
-    items: Sequence[EvidenceItemModel],
-    data_dimensions: Sequence[str],
-    max_per_dimension: Dict[str, int],
+def check_grade_sheet(
+    grades: Dict[str, FieldGradeModel], required_refs: Sequence[str]
 ) -> None:
-    """Enforce the per-dimension floor/dynamic-ceiling and the id scheme.
-
-    ``data_dimensions`` is the code-verified list of dimensions that have
-    collected evidence — the "no data" escape hatch cannot be used for
-    them, and dimensions outside it may not carry items.
-    ``max_per_dimension`` is the code-computed ceiling per dimension
-    (leaf-field count, never below the floor).
-    """
+    """The deterministic one-grade-per-field contract: the sheet must
+    cover exactly the code-enumerated field refs — no field skipped, no
+    field invented, and (because ``grades`` is a JSON object keyed by
+    ref) no field graded twice. Non-neutral grades must carry a claim
+    sentence."""
+    check_exact_keys(list(grades), list(required_refs), "grade")
     errors: List[str] = []
-    seen_ids: Dict[str, str] = {}
-    per_dimension: Dict[str, int] = {}
-    for item in items:
-        per_dimension[item.dimension] = per_dimension.get(item.dimension, 0) + 1
-        prefix = DIMENSION_PREFIX[item.dimension]
-        if not (item.id.startswith(prefix) and item.id[len(prefix):].isdigit()):
+    for ref, grade in grades.items():
+        if grade.direction != "neutral" and not (grade.claim or "").strip():
             errors.append(
-                f"item id {item.id!r} must be {prefix}<number> for {item.dimension}"
-            )
-        if item.id in seen_ids:
-            errors.append(f"duplicate item id {item.id!r}")
-        seen_ids[item.id] = item.dimension
-        if item.dimension not in data_dimensions:
-            errors.append(
-                f"item {item.id!r} cites dimension {item.dimension!r} which has "
-                "no collected data — that dimension must be skipped"
-            )
-    for dimension in data_dimensions:
-        count = per_dimension.get(dimension, 0)
-        ceiling = max_per_dimension.get(dimension, MIN_ITEMS_PER_DIMENSION)
-        if count < MIN_ITEMS_PER_DIMENSION:
-            errors.append(
-                f"dimension {dimension!r} has data but only {count} item(s) — "
-                f"list {MIN_ITEMS_PER_DIMENSION}-{ceiling}"
-            )
-        elif count > ceiling:
-            errors.append(
-                f"dimension {dimension!r} has {count} items — "
-                f"the maximum is {ceiling}"
+                f"grade {ref!r} is {grade.direction} but has no claim "
+                "sentence — state the evidence or grade it neutral"
             )
     if errors:
         raise ValueError("; ".join(errors))
@@ -280,41 +253,3 @@ def check_exact_keys(given: Sequence[str], required: Sequence[str], what: str) -
         raise ValueError("; ".join(errors))
 
 
-def check_match_map(
-    match_map: Sequence[MatchEntryModel],
-    own_ids: Sequence[str],
-    first_items: Dict[str, EvidenceItemModel],
-    own_items: Dict[str, EvidenceItemModel],
-) -> None:
-    """Every second-list bullet mapped exactly once, to a real first-list
-    bullet of the SAME direction — a bullet citing the same evidence with
-    the opposite direction is a genuine dispute and must stay unmatched
-    so the votes can settle it."""
-    check_exact_keys([m.own_id for m in match_map], list(own_ids), "match_map entry")
-    bad_targets: List[str] = []
-    direction_clashes: List[str] = []
-    for entry in match_map:
-        if entry.covered_by is None:
-            continue
-        if entry.covered_by not in first_items:
-            bad_targets.append(entry.own_id)
-            continue
-        if (
-            own_items[entry.own_id].direction
-            != first_items[entry.covered_by].direction
-        ):
-            direction_clashes.append(entry.own_id)
-    errors: List[str] = []
-    if bad_targets:
-        errors.append(
-            "match_map covered_by must be an existing first-list bullet id or "
-            f"null; bad entries for: {', '.join(bad_targets)}"
-        )
-    if direction_clashes:
-        errors.append(
-            "covered_by requires the SAME direction; opposite-direction "
-            "bullets are disputes and must be left unmatched (null): "
-            f"{', '.join(direction_clashes)}"
-        )
-    if errors:
-        raise ValueError("; ".join(errors))

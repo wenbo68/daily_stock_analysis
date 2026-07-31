@@ -33,10 +33,14 @@ import tempfile
 import uuid
 from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.tiered_analysis.debate import DebateEngine  # noqa: E402
+from src.tiered_analysis.debate import (  # noqa: E402
+    DebateEngine,
+    gradable_field_refs,
+)
 from src.tiered_analysis.levels import bases_from_dimensions  # noqa: E402
 from src.tiered_analysis.llm_support import display_value as dv  # noqa: E402
 from src.tiered_analysis.plan_review import _flagged_checks  # noqa: E402
@@ -180,8 +184,13 @@ FAKE_FACTS = {
                 ]
                 + [_q(end, val) for end, val in zip(Q_ENDS, REV_Q)]
             ),
+            # FY + matching YTD spans -> TTM net income 24.2+19-16=27.2e9,
+            # same period end as the TTM FCF (32e9) -> ratio ≈ 117.65%.
             "NetIncomeLoss": _concept([
-                _fy("2024-09-30", 19e9, 2024), _fy("2025-09-30", 24.2e9, 2025),
+                _fy("2024-09-30", 19e9, 2024),
+                _fy("2025-09-30", 24.2e9, 2025, start="2024-10-01"),
+                _ytd(date(2025, 10, 1), Q_ENDS[0], 19e9),
+                _ytd(date(2024, 10, 1), _PRIOR_YTD_END, 16e9),
             ]),
             "GrossProfit": _concept([_fy("2025-09-30", 50.6e9, 2025)]),
             "OperatingIncomeLoss": _concept([_fy("2025-09-30", 34.1e9, 2025)]),
@@ -220,8 +229,9 @@ FAKE_YAHOO_INFO = {
     "marketCap": 850e9,
     "sector": "Technology",
     "industry": "Semiconductors",
-    # Ex-dividend ~6 weeks out, midnight UTC.
-    "exDividendDate": calendar.timegm((TODAY + timedelta(days=40)).timetuple()),
+    # Next dividend payment ~6 weeks out, midnight UTC.
+    "dividendDate": calendar.timegm((TODAY + timedelta(days=40)).timetuple()),
+    "lastDividendValue": 0.26,
 }
 
 EARNINGS_DATE = TODAY + timedelta(days=24)
@@ -345,7 +355,6 @@ class ScriptedLlm:
             ("Your earlier accepted adjustments were applied", "ABORT_round2"),
             ("You are the FIRST analyst", "lister1"),
             ("You are the SECOND analyst", "lister2"),
-            ("Match the two evidence lists", "merge"),
             ("cast the deciding vote", "decider"),
             ("cast the second vote", "check"),
             ("Write the user-facing report", "summary"),
@@ -364,10 +373,9 @@ class ScriptedLlm:
         raise AssertionError(f"prompt matches no stage: {prompt[:200]}")
 
 
-def _item(item_id, dimension, direction, claim, links, weight, reason):
-    return {"id": item_id, "dimension": dimension, "direction": direction,
-            "claim": claim, "links": links, "weight": weight,
-            "weight_reason": reason}
+def _grade(direction, claim, links=(), weight=3, reason=None):
+    return {"direction": direction, "claim": claim, "links": list(links),
+            "weight": weight, "weight_reason": reason}
 
 
 def _link(ref, value):
@@ -375,8 +383,10 @@ def _link(ref, value):
 
 
 def build_debate_replies(payloads: dict) -> dict:
-    """Evidence bullets whose cited values are read from the live payloads
-    — the same numbers the engine's citation checker will verify against."""
+    """Grade sheets (v12 opening) whose cited values are read from the
+    live payloads — the same numbers the engine's citation checker will
+    verify against. Every gradable field gets exactly one grade: the
+    scripted evidence below, neutral everywhere else."""
     tech = payloads["technicals"]
     fund = payloads["fundamentals"]
     pos = payloads["positioning"]
@@ -404,84 +414,110 @@ def build_debate_replies(payloads: dict) -> dict:
     fed_d = dv(macro["rates"]["fed_funds_rate_pct"])
     dxy_d = dv(macro["markets"]["dollar_index_broad"])
 
-    items = [
-        _item("T1", "technicals", "bullish",
-              f"The weekly trend reads {trend_d}: rising averages and higher"
-              " pivot highs and lows agree on direction.",
-              [_link("technicals.weekly.trend", trend_d)], 5,
-              "Trend agreement across timeframes is the core of the setup."),
-        _item("T2", "technicals", "bullish",
-              f"The close ({close_d}) holds above the 50-day average"
-              f" ({sma50_d}), the classic pullback-buy zone.",
-              [_link("technicals.price.close", close_d),
-               _link("technicals.daily.sma_50", sma50_d)], 4,
-              "Price above the mid-term average keeps the dip buyable."),
-        _item("T3", "technicals", "bullish",
-              f"The stock is a market {rs_d}, beating the benchmark over"
-              " both one and three months.",
-              [_link("technicals.market.rs_label", rs_d)], 4,
-              "Leaders hold up best when the market wobbles."),
-        _item("T4", "technicals", "bearish",
-              f"The price already sits at {range_d} of its one-year range,"
-              " so much of the move is behind it.",
-              [_link("technicals.price.range_pct_1y", range_d)], 2,
-              "A high range position caps the easy upside."),
-        _item("F1", "fundamentals", "bullish",
-              f"Quarterly revenue grew {rev_d}% year over year and the"
-              f" pace is {rev_trend_d}.",
-              [_link("fundamentals.growth.revenue_yoy_q", rev_d),
-               _link("fundamentals.growth.revenue_growth_trend",
-                     rev_trend_d)], 4,
-              "Accelerating growth is the classic swing fuel."),
-        _item("F2", "fundamentals", "bullish",
-              f"The operating margin is {margin_d}%, a highly profitable"
-              " business.",
-              [_link("fundamentals.profitability.operating_margin_pct",
-                     margin_d)],
-              3, "Strong margins cushion bad quarters."),
-        _item("F3", "fundamentals", "bearish",
-              f"The trailing P/E of {pe_d} prices in a lot of good news.",
-              [_link("fundamentals.valuation.pe_ttm", pe_d)], 2,
-              "Rich valuation, but not extreme for a leader."),
-        _item("P1", "positioning", "bullish",
-              f"Short interest is only {short_d}% of the float — no crowded"
-              " bet against the stock.",
-              [_link("positioning.short_interest.short_pct_of_float",
-                     short_d)], 3,
-              "Low short interest removes one source of selling."),
-        _item("P2", "positioning", "bullish",
-              f"Insiders made {buys_d} open-market purchases in six months"
-              " against a single sale.",
-              [_link("positioning.insider_activity_6m.buy_count", buys_d)],
-              4, "Insiders buy for only one reason."),
-        _item("P3", "positioning", "bullish",
-              f"Institutions hold {inst_d}% — a solid sponsor base without"
-              " being fully crowded.",
-              [_link("positioning.ownership.institutional_pct", inst_d)], 3,
-              "Sponsorship supports pullbacks."),
-        _item("E1", "macro_econ", "bullish",
-              f"The VIX at {vix_d} shows a calm market — favorable for"
-              " swing entries.",
-              [_link("macro_econ.markets.vix", vix_d)], 3,
-              "Calm tape favors trend continuation."),
-        _item("E2", "macro_econ", "bearish",
-              f"The federal funds rate at {fed_d}% is still restrictive"
-              " for valuations.",
-              [_link("macro_econ.rates.fed_funds_rate_pct", fed_d)], 2,
-              "Rates are a headwind, but a known one."),
-    ]
+    # The scripted evidence, keyed by the graded field. The engine
+    # injects each graded field's own citation, so links carry only the
+    # OTHER fields a claim mentions.
+    graded = {
+        "technicals.weekly.trend": _grade(
+            "bullish",
+            f"The weekly trend reads {trend_d}: rising averages and higher"
+            " pivot highs and lows agree on direction.",
+            [], 5,
+            "Trend agreement across timeframes is the core of the setup."),
+        "technicals.price.close": _grade(
+            "bullish",
+            f"The close ({close_d}) holds above the 50-day average"
+            f" ({sma50_d}), the classic pullback-buy zone.",
+            [_link("technicals.daily.sma_50", sma50_d)], 4,
+            "Price above the mid-term average keeps the dip buyable."),
+        "technicals.market.rs_label": _grade(
+            "bullish",
+            f"The stock is a market {rs_d}, beating the benchmark over"
+            " both one and three months.",
+            [], 4,
+            "Leaders hold up best when the market wobbles."),
+        "technicals.price.range_pct_1y": _grade(
+            "bearish",
+            f"The price already sits at {range_d} of its one-year range,"
+            " so much of the move is behind it.",
+            [], 2,
+            "A high range position caps the easy upside."),
+        "fundamentals.growth.revenue_yoy_q": _grade(
+            "bullish",
+            f"Quarterly sales grew {rev_d}% year over year and the"
+            f" pace is {rev_trend_d}.",
+            [_link("fundamentals.growth.revenue_growth_trend", rev_trend_d)],
+            4,
+            "Accelerating growth is the classic swing fuel."),
+        "fundamentals.profitability.operating_margin_pct": _grade(
+            "bullish",
+            f"Operating earnings are {margin_d}% of sales — a highly"
+            " profitable business.",
+            [], 3, "Strong margins cushion bad quarters."),
+        "fundamentals.valuation.pe_ttm": _grade(
+            "bearish",
+            f"The trailing price to earnings of {pe_d} prices in a lot of"
+            " good news.",
+            [], 2,
+            "Rich valuation, but not extreme for a leader."),
+        "positioning.short_interest.short_pct_of_float": _grade(
+            "bullish",
+            f"Short interest is only {short_d}% of the float — no crowded"
+            " bet against the stock.",
+            [], 3,
+            "Low short interest removes one source of selling."),
+        "positioning.insider_activity_6m.buy_count": _grade(
+            "bullish",
+            f"Insiders made {buys_d} open-market purchases in six months"
+            " against a single sale.",
+            [], 4, "Insiders buy for only one reason."),
+        "positioning.ownership.institutional_pct": _grade(
+            "bullish",
+            f"Institutions hold {inst_d}% — a solid sponsor base without"
+            " being fully crowded.",
+            [], 3,
+            "Sponsorship supports pullbacks."),
+        "macro_econ.markets.vix": _grade(
+            "bullish",
+            f"The VIX at {vix_d} shows a calm market — favorable for"
+            " swing entries.",
+            [], 3,
+            "Calm tape favors trend continuation."),
+        "macro_econ.rates.fed_funds_rate_pct": _grade(
+            "bearish",
+            f"The federal funds rate at {fed_d}% is still restrictive"
+            " for valuations.",
+            [], 2,
+            "Rates are a headwind, but a known one."),
+    }
 
-    # The second analyst lists the same twelve independently (confirming
-    # them 2-0) plus one extra bearish macro bullet — it stays
-    # single-author, so the check round gets something real to vote on.
-    extra = _item("E3", "macro_econ", "bearish",
-                  f"The broad dollar index at {dxy_d} pressures overseas"
-                  " earnings.",
-                  [_link("macro_econ.markets.dollar_index_broad", dxy_d)], 2,
-                  "A strong dollar shaves reported growth.")
+    # The second analyst grades the same fields identically (confirming
+    # them 2-0 by code merge) plus one extra bearish macro grade — it
+    # stays single-author, so the check round gets something real to
+    # vote on. Its bullet renumbers to E3 (after the two shared macro
+    # bullets).
+    extra = {
+        "macro_econ.markets.dollar_index_broad": _grade(
+            "bearish",
+            f"The broad dollar index at {dxy_d} pressures overseas"
+            " earnings.",
+            [], 2,
+            "A strong dollar shaves reported growth."),
+    }
 
-    match_map = [{"own_id": it["id"], "covered_by": it["id"]} for it in items]
-    match_map.append({"own_id": "E3", "covered_by": None})
+    # One grade per code-enumerated field: the scripted evidence above,
+    # neutral everywhere else — exactly the contract the engine checks.
+    refs = gradable_field_refs(
+        [SimpleNamespace(dimension=name, payload=payload)
+         for name, payload in payloads.items()]
+    )
+
+    def sheet(evidence: dict) -> str:
+        grades = {}
+        for dimension_refs in refs.values():
+            for ref in dimension_refs:
+                grades[ref] = evidence.get(ref, {"direction": "neutral"})
+        return json.dumps({"grades": grades})
 
     check_votes = {
         "E3": {"verdict": "valid",
@@ -517,10 +553,10 @@ def build_debate_replies(payloads: dict) -> dict:
              "children": []},
         ],
         "fundamentals": [
-            {"text": f"Quarterly revenue grew {rev_d}% and is"
-                     f" {rev_trend_d}, on a {margin_d}% operating margin;"
-                     f" the trailing P/E of {pe_d} is the price of that"
-                     " quality.",
+            {"text": f"Quarterly sales grew {rev_d}% and are"
+                     f" {rev_trend_d}, with operating earnings at"
+                     f" {margin_d}% of sales; the trailing price to"
+                     f" earnings of {pe_d} is the price of that quality.",
              "links": [_link("fundamentals.growth.revenue_yoy_q", rev_d),
                        _link("fundamentals.growth.revenue_growth_trend",
                              rev_trend_d),
@@ -543,10 +579,8 @@ def build_debate_replies(payloads: dict) -> dict:
     }
 
     return {
-        "lister1": json.dumps({"items": items, "no_data_dimensions": []}),
-        "lister2": json.dumps({"items": items + [extra],
-                               "no_data_dimensions": []}),
-        "merge": json.dumps({"match_map": match_map}),
+        "lister1": sheet(graded),
+        "lister2": sheet({**graded, **extra}),
         "check": json.dumps({"votes": check_votes}),
         "decider": json.dumps({"votes": {}}),
         "summary": json.dumps(summary),

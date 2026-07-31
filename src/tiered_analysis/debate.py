@@ -1,13 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Tier 2: the evidence vote (v10 — weighted).
+"""Tier 2: the evidence vote (v12 — graded sheet).
 
-v8 revision (owner spec 2026-07-18, replacing the v5-v7
-defender/attacker/judge tree — see .claude/reviews/tier2-v5-design.md).
-No roles. Two ANALYSTS independently list ALL the evidence in the four
-dimension reports — bullish and bearish, blind to each other; a MERGE
-call matches the two lists (same evidence + same direction = the same
-bullet; an opposite-direction clash is a dispute and stays unmatched).
-Membership is a majority vote with at most three votes per bullet:
+v12 revision (owner spec 2026-07-31, replacing the v8-v11 free-form
+lists): the opening stage is a GRADE SHEET. Code enumerates every
+gradable report field (each non-blank leaf, in report order) and each
+of the two blind ANALYSTS must return exactly one grade per field —
+bullish, bearish or neutral. The one-grade-per-field rule is enforced
+structurally (``check_grade_sheet`` rejects a reply that skips, invents
+or double-grades a field; JSON object keys make a double grade
+impossible to express), not by prompt wording. Code converts the
+non-neutral grades into evidence bullets — ids assigned by code in
+field order, the graded field's citation injected by code with the
+exact display value — and MATCHES the two sheets by field in pure code
+(same field + same direction = the same bullet; an opposite-direction
+clash is a dispute and stays unmatched). The old merge LLM call is
+gone. Membership is a majority vote with at most three votes per
+bullet:
 
 - A bullet's author is automatically its first valid vote, so a bullet
   BOTH analysts listed independently starts 2-0 — confirmed, no checking.
@@ -41,15 +49,15 @@ and final (the bullets the votes left standing, weighted by the full
 voter median — the displayed score). Verdict on the 2-decimal final:
 < 4 sell, 4-6 hold, > 6 buy. Empty final pool → 5.00, hold, warning.
 
-5-6 base LLM calls (two lists parallel with their fix loops → merge →
-check round → deciding round only when there are ties → summary), all
-temperature 0. Every stage fills a strict Pydantic form; an invalid
-reply gets ONE retry with the errors shown, then: both lists failing
-voids the tier-2 verdict (tier-1 direction stands); one list failing
-proceeds with the other; a failed merge drops the second list; a failed
-check round counts bullets on their author's vote alone; a failed
-deciding round excludes the tied bullets as unresolved; the summary's
-failure never voids anything.
+4-5 base LLM calls (two grade sheets parallel with their fix loops →
+code merge → check round → deciding round only when there are ties →
+summary), all temperature 0. Every stage fills a strict Pydantic form;
+an invalid reply gets ONE retry with the errors shown, then: both
+sheets failing voids the tier-2 verdict (tier-1 direction stands); one
+sheet failing proceeds with the other; a failed check round counts
+bullets on their author's vote alone; a failed deciding round excludes
+the tied bullets as unresolved; the summary's failure never voids
+anything.
 """
 from __future__ import annotations
 
@@ -66,17 +74,14 @@ from .debate_models import (
     DIMENSION_PREFIX,
     DIMENSIONS,
     EvidenceItemModel,
+    GradeSheetModel,
     LinkModel,
-    ListModel,
-    MergeModel,
-    MIN_ITEMS_PER_DIMENSION,
     StructuredSummaryModel,
     VoteFixModel,
     VoteModel,
     VoteRoundModel,
     check_exact_keys,
-    check_match_map,
-    check_opening_items,
+    check_grade_sheet,
     check_summary_groups,
 )
 from .llm_support import (
@@ -102,7 +107,9 @@ MAX_FIX_ROUNDS = 3
 #: 11 = 1-5 weights with per-voter score reasons and author attribution
 #: (``author_votes``: which lister authored the bullet, their rating and
 #: why); 10 = 1-3 weights, ratings only; stored format-9 runs are the
-#: same shapes minus the weight keys, with flat counting.
+#: same shapes minus the weight keys, with flat counting. The v12 graded
+#: opening (2026-07-31) only ADDS the per-bullet ``field`` key, so the
+#: stored shape stays format 11.
 DETAIL_FORMAT = 11
 
 #: A vote reason that states a report-style number (a decimal or a
@@ -193,26 +200,33 @@ class DebateResult:
 # ---------------------------------------------------------------------------
 
 
-def _leaf_count(node: Any) -> int:
-    # A {name, explanation[, interpretation], value} envelope is ONE
-    # citable fact: its prose keys must not inflate the ceilings.
-    if is_envelope(node):
-        return 1
-    if isinstance(node, dict):
-        return sum(_leaf_count(value) for value in node.values())
-    return 1
-
-
-def max_items_per_dimension(dimensions: Sequence[DimensionResult]) -> Dict[str, int]:
-    """The dynamic ceilings: leaf-field count per dimension report,
-    never below the floor."""
-    ceilings: Dict[str, int] = {}
+def gradable_field_refs(
+    dimensions: Sequence[DimensionResult],
+) -> Dict[str, List[str]]:
+    """The grade sheet's row set: every citable leaf ref per dimension,
+    in report order. An envelope {name, explanation[, interpretation],
+    value} is ONE gradable fact (its prose keys are documentation);
+    blank fields (value null) carry no evidence and get no row — code
+    already knows why they are blank."""
+    refs: Dict[str, List[str]] = {}
     for dim in dimensions:
-        if dim.dimension not in DIMENSIONS:
+        if dim.dimension not in DIMENSIONS or not dim.payload:
             continue
-        ceiling = _leaf_count(dim.payload) if dim.payload else 0
-        ceilings[dim.dimension] = max(ceiling, MIN_ITEMS_PER_DIMENSION)
-    return ceilings
+        rows: List[str] = []
+
+        def walk(node: Any, path: str) -> None:
+            if isinstance(node, dict) and not is_envelope(node):
+                for key, value in node.items():
+                    walk(value, f"{path}.{key}")
+                return
+            if _payload_value(path, [dim])[0]:
+                rows.append(path)
+
+        for key, value in dim.payload.items():
+            walk(value, f"{dim.dimension}.{key}")
+        if rows:
+            refs[dim.dimension] = rows
+    return refs
 
 
 def _payload_value(ref: str, dimensions: Sequence[DimensionResult]) -> Tuple[bool, Any]:
@@ -347,71 +361,80 @@ _VOTE_RULES = """Vote rules (checked mechanically by code):
 - Code verifies every link and sends failures back to you to fix; votes
   that cannot be fixed are discarded."""
 
-_LIST_RULES = """Evidence-list rules:
-- Group bullets by dimension: technicals, fundamentals, positioning, macro_econ.
-- Per-dimension bullet counts (floor-ceiling, computed from the reports):
-  {ceilings}. The ceiling is room, not a quota — list every field that
-  genuinely leans bullish or bearish, and skip neutral metadata (bar
-  counts, dates, regions).
-- If (and only if) a dimension truly has no collected data above, skip it
-  and name it in "no_data_dimensions" — code verifies this.
-- If fundamentals.earnings.next_earnings_date shows a report within
-  roughly a week (see fundamentals.earnings.days_until_earnings), list
-  that as a bearish
-  event-risk bullet — an imminent earnings report can gap the price
-  past any plan level, which argues for waiting.
-- Each bullet: one atomic claim (one sentence) containing the cited names
-  AND values, tagged "bullish" or "bearish". The direction tags ARE the
-  score — code counts them; nobody writes a score.
-- Each bullet also carries "weight": your importance rating for the
-  trade decision, 1 to 5 — 1 (very minor), 2 (minor), 3 (normal
-  evidence), 4 (important), 5 (very important — could change the whole
-  thesis alone). Most bullets are a 3; reserve 5 for evidence that
-  would change the whole thesis on its own, and 1 for footnotes. Code
-  weighs the score by these ratings.
-- Each bullet also carries "weight_reason": ONE short plain sentence
-  saying why you rated it that important. Plain words only — report
-  numbers belong in the claim sentence with links, never here.
-- Bullet ids: T1, T2… for technicals, F1… for fundamentals, P1… for
-  positioning, E1… for macro_econ."""
+_GRADE_RULES = """Grade-sheet rules (all checked mechanically by code):
+- Reply with EXACTLY one grade per field key listed above — code
+  rejects a reply that skips a field, invents a field key, or grades a
+  field twice.
+- Each grade: "direction" is "bullish", "bearish" or "neutral" for
+  this swing trade. Neutral = the field carries no lean either way
+  (metadata like dates and bar counts, or a genuinely mixed reading);
+  a neutral grade needs no other keys and produces no evidence.
+- A bullish/bearish grade carries "claim": ONE plain sentence stating
+  the evidence, containing the field's value copied EXACTLY as the
+  report above displays it. Code attaches the graded field's citation
+  itself; only if the sentence ALSO states another field's value, cite
+  that other field in "links" (link rules below).
+- A bullish/bearish grade carries "weight": your importance rating of
+  the evidence for the trade decision, 1 to 5 — 1 (very minor),
+  2 (minor), 3 (normal evidence), 4 (important), 5 (very important —
+  could change the whole thesis alone). Most are a 3; reserve 5 for
+  evidence that would change the whole thesis on its own, and 1 for
+  footnotes. Code weighs the score by these ratings.
+- A bullish/bearish grade carries "weight_reason": ONE short plain
+  sentence saying why you rated it that important. Plain words only —
+  report numbers belong in the claim sentence, never here.
+- If fundamentals.quarterly_report.next_earnings_date shows a report
+  within roughly a week of the report's as-of date, grade that field
+  bearish — an imminent earnings report can gap the price past any
+  plan level, which argues for waiting.
+- The direction tags ARE the score — code counts them; nobody writes
+  a score."""
 
-_ITEM_SHAPE = """{{"id": "T1", "dimension": "technicals", "direction": "bullish",
-  "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
-  "links": [{{"ref": "technicals.daily.rsi_14", "value": "56.28"}}],
-  "weight": 3, "weight_reason": "Momentum backs the trend but rarely drives it alone."}}"""
+# Substituted into the templates as a VALUE (never format()ed itself),
+# so the braces are literal.
+_GRADE_SHAPE = """{"grades": {
+  "technicals.daily.rsi_14": {"direction": "bullish",
+    "claim": "The 14-day RSI (56.28) is above 50, showing bullish momentum.",
+    "links": [],
+    "weight": 3, "weight_reason": "Momentum backs the trend but rarely drives it alone."},
+  "technicals.meta.as_of": {"direction": "neutral"},
+  ...one entry for EVERY field key listed above...}}"""
 
-_LISTER1_TEMPLATE = """{context}
-You are the FIRST analyst. Another analyst is building the same list
-separately; neither of you sees the other's work. Take no side: list ALL
-the evidence you can find in the reports above — bullish AND bearish.
-Walk each report from top to bottom, field by field, so nothing is
-skipped. You give no score; code computes the outlook score from your
+_GRADER1_TEMPLATE = """{context}
+You are the FIRST analyst. Another analyst is grading the same sheet
+separately; neither of you sees the other's work. Take no side: grade
+EVERY field on the sheet below — bullish, bearish or neutral — walking
+it top to bottom so nothing is skipped. You give no score; code
+computes the outlook score from your direction tags.
+
+The grade sheet (one grade per field key, exactly these keys):
+{field_rows}
+
+{grade_rules}
+
+{link_rules}
+
+Reply with JSON only:
+{shape}"""
+
+_GRADER2_TEMPLATE = """{context}
+You are the SECOND analyst. Another analyst is grading the same sheet
+separately; you have NOT seen their work. Take no side: grade EVERY
+field on the sheet below — bullish, bearish or neutral. Think theme by
+theme — momentum, trend, profitability, valuation, balance sheet,
+macro pressures — then make sure every field key has exactly one
+grade. You give no score; code computes the outlook score from your
 direction tags.
 
-{list_rules}
+The grade sheet (one grade per field key, exactly these keys):
+{field_rows}
+
+{grade_rules}
 
 {link_rules}
 
 Reply with JSON only:
-{{"items": [{item_shape}],
- "no_data_dimensions": []}}"""
-
-_LISTER2_TEMPLATE = """{context}
-You are the SECOND analyst. Another analyst is building the same list
-separately; you have NOT seen it. Take no side: list ALL the evidence
-you can find in the reports above — bullish AND bearish. Work theme by
-theme — momentum, trend, profitability, valuation, balance sheet, macro
-pressures, news — then double-check you covered every report field. You
-give no score; code computes the outlook score from your direction
-tags.
-
-{list_rules}
-
-{link_rules}
-
-Reply with JSON only:
-{{"items": [{item_shape}],
- "no_data_dimensions": []}}"""
+{shape}"""
 
 _CITATION_FIX_TEMPLATE = """Collected evidence (the ONLY facts you may use — no outside knowledge):
 {evidence}
@@ -453,27 +476,6 @@ The code's error list:
 
 Reply with JSON only:
 {{"votes": {{ ...every vote above, corrected, same keys... }}}}"""
-
-_MERGE_TEMPLATE = """{context}
-Match the two evidence lists below. Two analysts worked independently;
-your only job is the match map — code assembles the merged list.
-
-The first analyst's list:
-{first_items}
-
-The second analyst's list:
-{second_items}
-
-For EVERY bullet on the second list, say which first-list bullet covers
-the SAME evidence with the SAME direction ("covered_by": its id), or
-null if there is none. Rules:
-- "Covers" means the same underlying fact, even if worded differently.
-- A bullet citing the same fact with the OPPOSITE direction is a real
-  dispute — leave it unmatched (null) so both versions face the votes.
-- Never stretch a match; an unmatched bullet simply joins the list.
-
-Reply with JSON only:
-{{"match_map": [{{"own_id": "T1", "covered_by": "T2"}}, {{"own_id": "F3", "covered_by": null}}]}}"""
 
 _CHECK_TEMPLATE = """{context}
 The merged evidence list (every bullet's numbers already code-verified):
@@ -590,6 +592,10 @@ def _flatten_summary(model: StructuredSummaryModel) -> str:
 
 _StageParse = Callable[[dict], Any]
 
+#: One analyst sheet after conversion + citation fixes: (bullets, still
+#: broken bullet id → errors, bullet id → the field ref it grades).
+_SheetResult = Tuple[List[EvidenceItemModel], Dict[str, List[str]], Dict[str, str]]
+
 
 class DebateEngine:
     """Runs the v8 evidence vote. Never raises out of run()."""
@@ -652,28 +658,33 @@ class DebateEngine:
         warnings: List[str],
         items: List[Dict[str, Any]],
     ) -> DebateResult:
-        ceilings = max_items_per_dimension(dimensions)
+        refs = gradable_field_refs(dimensions)
+        if not refs:
+            warnings.append(
+                "no gradable report fields collected — tier-2 verdict voided"
+            )
+            return DebateResult(items=items, warnings=warnings)
 
-        # Step 1 — the two analyst lists, in parallel (blind), each with
-        # its own citation-fix loop.
-        first, second = self._listers(
-            context, dimensions, data_dimensions, ceilings, warnings
-        )
+        # Step 1 — the two analyst grade sheets, in parallel (blind),
+        # each converted to bullets with its own citation-fix loop.
+        first, second = self._listers(context, dimensions, refs, warnings)
         if first is None and second is None:
             warnings.append(
-                "both analyst lists invalid after retry — tier-2 verdict voided"
+                "both analyst grade sheets invalid after retry — tier-2 "
+                "verdict voided"
             )
             return DebateResult(items=items, warnings=warnings)
         if first is None or second is None:
             which = "first" if first is None else "second"
             warnings.append(
-                f"{which} analyst list invalid after retry — proceeding with "
-                "the other list only"
+                f"{which} analyst grade sheet invalid after retry — "
+                "proceeding with the other sheet only"
             )
 
-        # Step 2 — merge. Covered pairs = listed independently by both
-        # (2-0 confirmed); uncovered second-list bullets join the list.
-        items.extend(self._assemble(context, first, second, warnings))
+        # Step 2 — code merge by graded field. Same field + same
+        # direction = listed independently by both (2-0 confirmed);
+        # everything else on the second sheet joins the list.
+        items.extend(self._assemble(first, second))
         for item in items:
             if item["struck"]:
                 warnings.append(
@@ -797,34 +808,28 @@ class DebateEngine:
         self,
         context: str,
         dimensions: Sequence[DimensionResult],
-        data_dimensions: List[str],
-        ceilings: Dict[str, int],
+        refs: Dict[str, List[str]],
         warnings: List[str],
-    ) -> Tuple[
-        Optional[Tuple[List[EvidenceItemModel], Dict[str, List[str]]]],
-        Optional[Tuple[List[EvidenceItemModel], Dict[str, List[str]]]],
-    ]:
-        """Each entry: (all items with fixes applied, still-broken map),
-        or None when the list never validated."""
-        ceiling_text = ", ".join(
-            f"{dim}: {MIN_ITEMS_PER_DIMENSION}-{ceilings[dim]}"
-            for dim in DIMENSIONS
-            if dim in ceilings and dim in data_dimensions
-        )
-        list_rules = _LIST_RULES.format(ceilings=ceiling_text)
+    ) -> Tuple[Optional["_SheetResult"], Optional["_SheetResult"]]:
+        """Each entry: (bullets with fixes applied, still-broken map,
+        bullet id → graded field ref), or None when the sheet never
+        validated."""
+        all_refs = [ref for dimension in refs for ref in refs[dimension]]
+        field_rows = "\n".join(f"- {ref}" for ref in all_refs)
         prompts = [
             template.format(
                 context=context,
-                list_rules=list_rules,
+                field_rows=field_rows,
+                grade_rules=_GRADE_RULES,
                 link_rules=_LINK_RULES,
-                item_shape=_ITEM_SHAPE,
+                shape=_GRADE_SHAPE,
             )
-            for template in (_LISTER1_TEMPLATE, _LISTER2_TEMPLATE)
+            for template in (_GRADER1_TEMPLATE, _GRADER2_TEMPLATE)
         ]
 
-        def parse(parsed: dict):
-            model = ListModel.model_validate(parsed)
-            check_opening_items(model.items, data_dimensions, ceilings)
+        def parse(parsed: dict) -> GradeSheetModel:
+            model = GradeSheetModel.model_validate(parsed)
+            check_grade_sheet(model.grades, all_refs)
             return model
 
         # The usage tracker is thread-local; hand it to the workers so
@@ -836,10 +841,13 @@ class DebateEngine:
                 model, stage_warnings = self._call_validated(prompt, parse, stage)
                 if model is None:
                     return None, stage_warnings
-                fixed_items, broken = self._fix_citations(
-                    model.items, dimensions, stage, stage_warnings
+                sheet_items, ref_by_id = self._sheet_items(
+                    model, refs, dimensions
                 )
-                return (fixed_items, broken), stage_warnings
+                fixed_items, broken = self._fix_citations(
+                    sheet_items, dimensions, stage, stage_warnings
+                )
+                return (fixed_items, broken, ref_by_id), stage_warnings
 
             if tracker is None:
                 return job()
@@ -848,8 +856,8 @@ class DebateEngine:
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [
-                pool.submit(run_stage, prompts[0], "first analyst list"),
-                pool.submit(run_stage, prompts[1], "second analyst list"),
+                pool.submit(run_stage, prompts[0], "first analyst grade sheet"),
+                pool.submit(run_stage, prompts[1], "second analyst grade sheet"),
             ]
             (first, first_warnings), (second, second_warnings) = (
                 futures[0].result(),
@@ -859,51 +867,96 @@ class DebateEngine:
         warnings.extend(second_warnings)
         return first, second
 
-    # -- step 2: the merge -------------------------------------------------
+    @staticmethod
+    def _sheet_items(
+        sheet: GradeSheetModel,
+        refs: Dict[str, List[str]],
+        dimensions: Sequence[DimensionResult],
+    ) -> Tuple[List[EvidenceItemModel], Dict[str, str]]:
+        """Non-neutral grades as evidence bullets. Ids are assigned by
+        code in field order; the graded field's own citation is injected
+        by code with the exact display value (the AI cannot misquote its
+        own field), so the fix loop only polices the claim wording and
+        any extra cross-field links."""
+        items: List[EvidenceItemModel] = []
+        ref_by_id: Dict[str, str] = {}
+        counters: Dict[str, int] = {}
+        for dimension, dim_refs in refs.items():
+            prefix = DIMENSION_PREFIX[dimension]
+            for ref in dim_refs:
+                grade = sheet.grades[ref]
+                if grade.direction == "neutral":
+                    continue
+                counters[prefix] = counters.get(prefix, 0) + 1
+                item_id = f"{prefix}{counters[prefix]}"
+                _resolves, value = _payload_value(ref, dimensions)
+                own_link = LinkModel(ref=ref, value=display_value(value))
+                extra_links = [
+                    link for link in grade.links if link.ref.strip() != ref
+                ]
+                items.append(
+                    EvidenceItemModel(
+                        id=item_id,
+                        dimension=dimension,
+                        direction=grade.direction,
+                        claim=(grade.claim or "").strip(),
+                        links=[own_link, *extra_links],
+                        weight=grade.weight,
+                        weight_reason=grade.weight_reason,
+                    )
+                )
+                ref_by_id[item_id] = ref
+        return items, ref_by_id
+
+    # -- step 2: the code merge --------------------------------------------
 
     def _assemble(
         self,
-        context: str,
-        first: Optional[Tuple[List[EvidenceItemModel], Dict[str, List[str]]]],
-        second: Optional[Tuple[List[EvidenceItemModel], Dict[str, List[str]]]],
-        warnings: List[str],
+        first: Optional["_SheetResult"],
+        second: Optional["_SheetResult"],
     ) -> List[Dict[str, Any]]:
-        """The merged bullet list: the first list's bullets (authors=2
-        where the second analyst independently listed the same evidence),
-        the second list's uncovered bullets renumbered in, and both
-        lists' struck bullets kept for the audit trail."""
+        """The merged bullet list, matched by graded field in pure code:
+        the first sheet's bullets (authors=2 where the second analyst
+        graded the same field the same direction), the second sheet's
+        unmatched bullets renumbered in (a different field, or the same
+        field graded the OPPOSITE direction — a genuine dispute the
+        votes settle), and both sheets' struck bullets kept for the
+        audit trail."""
         lead_author = 1
         if first is None:
-            first, second = second, None  # the surviving list leads
+            first, second = second, None  # the surviving sheet leads
             lead_author = 2
-        first_items, first_broken = first
-        first_healthy = [m for m in first_items if m.id not in first_broken]
+        first_items, first_broken, first_refs = first
 
-        # covered: first-list id → the SECOND author's model of the same
-        # evidence (the match map is how their rating and its reason
-        # ride in).
+        # covered: first-sheet id → the SECOND author's bullet for the
+        # same field (how their rating and its reason ride in).
         covered: Dict[str, EvidenceItemModel] = {}
         extra_models: List[EvidenceItemModel] = []
+        extra_refs: Dict[str, str] = {}
         extra_broken: Dict[str, List[str]] = {}
         if second is not None:
-            second_items, second_broken = second
-            second_healthy = [m for m in second_items if m.id not in second_broken]
-            merge = self._merge(context, first_healthy, second_healthy, warnings)
-            if merge is None:
-                warnings.append("merge invalid after retry — second list dropped")
-            else:
-                second_by_id = {m.id: m for m in second_healthy}
-                for entry in merge.match_map:
-                    if entry.covered_by is not None:
-                        covered[entry.covered_by] = second_by_id[entry.own_id]
-                    else:
-                        extra_models.append(second_by_id[entry.own_id])
-                for item_id, problems in second_broken.items():
-                    model = next(m for m in second_items if m.id == item_id)
+            second_items, second_broken, second_refs = second
+            first_id_by_key = {
+                (first_refs[m.id], m.direction): m.id
+                for m in first_items
+                if m.id not in first_broken
+            }
+            for model in second_items:
+                if model.id in second_broken:
                     extra_models.append(model)
-                    extra_broken[item_id] = problems
+                    extra_refs[model.id] = second_refs[model.id]
+                    extra_broken[model.id] = second_broken[model.id]
+                    continue
+                target = first_id_by_key.get(
+                    (second_refs[model.id], model.direction)
+                )
+                if target is not None:
+                    covered[target] = model
+                else:
+                    extra_models.append(model)
+                    extra_refs[model.id] = second_refs[model.id]
 
-        # Renumber second-list bullets to continue the first list's ids.
+        # Renumber second-sheet bullets to continue the first sheet's ids.
         next_number: Dict[str, int] = {}
         for model in first_items:
             prefix = DIMENSION_PREFIX[model.dimension]
@@ -920,6 +973,7 @@ class DebateEngine:
                     authors=2 if second_model is not None else 1,
                     author_no=lead_author,
                     second_model=second_model,
+                    field=first_refs.get(model.id),
                 )
             )
         for model in extra_models:
@@ -928,36 +982,14 @@ class DebateEngine:
             renumbered = model.model_copy(update={"id": f"{prefix}{next_number[prefix]}"})
             items.append(
                 self._base_item(
-                    renumbered, extra_broken.get(model.id), authors=1, author_no=2
+                    renumbered,
+                    extra_broken.get(model.id),
+                    authors=1,
+                    author_no=2,
+                    field=extra_refs.get(model.id),
                 )
             )
         return items
-
-    def _merge(
-        self,
-        context: str,
-        first_healthy: Sequence[EvidenceItemModel],
-        second_healthy: Sequence[EvidenceItemModel],
-        warnings: List[str],
-    ) -> Optional[MergeModel]:
-        first_by_id = {m.id: m for m in first_healthy}
-        second_by_id = {m.id: m for m in second_healthy}
-        prompt = _MERGE_TEMPLATE.format(
-            context=context,
-            first_items=_items_json(first_healthy),
-            second_items=_items_json(second_healthy),
-        )
-
-        def parse(parsed: dict) -> MergeModel:
-            model = MergeModel.model_validate(parsed)
-            check_match_map(
-                model.match_map, list(second_by_id), first_by_id, second_by_id
-            )
-            return model
-
-        model, stage_warnings = self._call_validated(prompt, parse, "merge")
-        warnings.extend(stage_warnings)
-        return model
 
     # -- citation verification + the fix loops -----------------------------
 
@@ -1413,13 +1445,15 @@ class DebateEngine:
         authors: int,
         author_no: int = 1,
         second_model: Optional[EvidenceItemModel] = None,
+        field: Optional[str] = None,
     ) -> Dict[str, Any]:
         """One list bullet. ``problems`` non-empty → the bullet is struck:
         code could not fix its citations, so it renders crossed out and
         never enters a pool. ``authors`` = how many analysts listed it
         independently (2 = confirmed at birth); ``author_no`` = which
         lister wrote it (1 or 2); ``second_model`` is the second lister's
-        own bullet for the same evidence when both listed it."""
+        own bullet for the same evidence when both listed it; ``field``
+        is the report field ref the bullet grades (v12)."""
         struck = bool(problems)
         author_votes = [
             {
@@ -1440,6 +1474,7 @@ class DebateEngine:
         return {
             "id": model.id,
             "dimension": model.dimension,
+            "field": field,
             "direction": model.direction,
             "claim": model.claim.strip(),
             "links": [_link_detail(link) for link in model.links],

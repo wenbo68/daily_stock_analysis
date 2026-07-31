@@ -1,25 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the tier-2 evidence vote (v11 — weighted 1-5).
+"""Offline tests for the tier-2 evidence vote (v12 — graded sheet).
 
-Fake-LLM tests covering: the vote choreography (two blind analyst lists
-in parallel, each with a code citation check + fix loop → merge → check
-round on single-author bullets → deciding round on 1-1 ties → summary),
-the vote arithmetic (author = first valid vote; both-listed = confirmed
-2-0; majority of three decides), the deterministic weighted score
-(every voter rates a bullet's importance 1-5; a bullet's weight is the
-median of its voters' ratings, mean when there are two; score =
-10 × Σweight(bullish) / Σweight(all); snapshots initial/final),
-the display-value citation contract (links are {ref, value} copied
-exactly as the report pages display it), the vote citation contract (reasons stating numbers
-must cite them; unfixable votes are discarded), struck bullets from
-either analyst, the Pydantic retry-once contract, and every failure
-rule — both lists failing voids the verdict (tier 2 falls back to
-tier 1), one list failing proceeds with the other, a failed merge drops
-the second list, a failed check round counts bullets on the author's
+Fake-LLM tests covering: the vote choreography (two blind analyst GRADE
+SHEETS in parallel — one grade per code-enumerated report field,
+converted to bullets with a code citation check + fix loop → code merge
+by field → check round on single-author bullets → deciding round on 1-1
+ties → summary), the deterministic one-grade-per-field contract (a
+reply that skips, invents or double-grades a field is rejected and
+retried), the vote arithmetic (author = first valid vote; same field
+graded the same direction by both = confirmed 2-0; majority of three
+decides), the deterministic weighted score (every voter rates a
+bullet's importance 1-5; a bullet's weight is the median of its voters'
+ratings, mean when there are two; score = 10 × Σweight(bullish) /
+Σweight(all); snapshots initial/final), the display-value citation
+contract (the graded field's link is injected by code with the exact
+display string; the claim must contain it), the vote citation contract
+(reasons stating numbers must cite them; unfixable votes are
+discarded), struck bullets from either analyst, the Pydantic
+retry-once contract, and every failure rule — both sheets failing voids
+the verdict (tier 2 falls back to tier 1), one sheet failing proceeds
+with the other, a failed check round counts bullets on the author's
 vote alone, a failed deciding round excludes ties as unresolved, and a
 broken summary never voids a computed verdict.
 
-The two list calls (and their fix loops) run in parallel threads, so
+The two sheet calls (and their fix loops) run in parallel threads, so
 the fake LLM routes replies by prompt content, not call order.
 """
 from __future__ import annotations
@@ -33,7 +37,7 @@ from src.tiered_analysis.debate import (
     DebateResult,
     DebateVerdict,
     direction_from_final,
-    max_items_per_dimension,
+    gradable_field_refs,
     value_pattern,
 )
 from src.tiered_analysis.llm_support import (
@@ -57,11 +61,11 @@ def _technicals():
         dimension="technicals",
         kind=SourceKind.NUMERIC,
         coverage=Coverage.FULL,
-        # "macd" is a grouping on purpose: the leaf-only link rule must
+        # "macd" is a grouping on purpose: the leaf-only ref rule must
         # reject "technicals.macd" but accept "technicals.macd.signal".
-        # Leaf count = 4 (close, rsi_14, score, macd.signal). Display
-        # strings: close "100", rsi_14 "71.20", score "68", signal "1.20".
-        payload={"close": 100.0, "rsi_14": 71.2, "score": 68, "macd": {"signal": 1.2}},
+        # Gradable rows = 4 (rsi_14, close, score, macd.signal). Display
+        # strings: rsi_14 "71.20", close "100", score "68", signal "1.20".
+        payload={"rsi_14": 71.2, "close": 100.0, "score": 68, "macd": {"signal": 1.2}},
     )
 
 
@@ -70,10 +74,10 @@ def _positioning():
         dimension="positioning",
         kind=SourceKind.NUMERIC,
         coverage=Coverage.FULL,
-        # Leaf count = 4. Display strings: "3.10", "1.80", "61.55", "0.92".
+        # Gradable rows = 4. Display strings: "61.55", "3.10", "1.80", "0.92".
         payload={
-            "short_interest": {"short_pct_of_float": 3.1, "days_to_cover": 1.8},
             "ownership": {"institutional_pct": 61.55},
+            "short_interest": {"short_pct_of_float": 3.1, "days_to_cover": 1.8},
             "options": {"put_call_oi_ratio": 0.92},
         },
         citations=[Citation(source_name="FINRA short interest via Yahoo Finance")],
@@ -82,6 +86,21 @@ def _positioning():
 
 def _dimensions():
     return [_technicals(), _positioning()]
+
+
+#: The code-enumerated grade-sheet rows for the fixture, in report order.
+T_REFS = [
+    "technicals.rsi_14",
+    "technicals.close",
+    "technicals.score",
+    "technicals.macd.signal",
+]
+P_REFS = [
+    "positioning.ownership.institutional_pct",
+    "positioning.short_interest.short_pct_of_float",
+    "positioning.short_interest.days_to_cover",
+    "positioning.options.put_call_oi_ratio",
+]
 
 
 def _tier1(direction=Direction.BUY, dimensions=()):
@@ -101,23 +120,67 @@ def _tier1(direction=Direction.BUY, dimensions=()):
 
 # ---------------------------------------------------------------------------
 # Reply builders — the default run:
-#   first list:  T1 bullish (RSI), T2 bearish (close), P1 bullish, P2 bearish
-#   second list: T1/P1/P2 identical (→ covered, confirmed 2-0),
-#                T2 bullish (tech score, → renumbered T3),
-#                P3 bearish (→ stays P3)
+#   sheet 1: rsi bullish (→ T1), close bearish (→ T2), inst bullish (→ P1),
+#            short bearish (→ P2), everything else neutral
+#   sheet 2: rsi/inst/short identical (→ covered, confirmed 2-0),
+#            score bullish (→ its own T2, unmatched, renumbered T3),
+#            days-to-cover bearish (→ its own P3, renumbered P3)
 #   check round on T2/T3/P3: T2 voted invalid (→ tied), T3/P3 valid
 #   deciding round on T2: valid → counted 2-1
 #
 # Score (flat counting): initial = final = 10 × 3 bullish / 6 = 5.00 → hold
 # ---------------------------------------------------------------------------
 
+RSI_CLAIM = "The 14-day RSI (71.20) is above 70, showing strong momentum."
+CLOSE_CLAIM = "The closing price (100) is below the 105 resistance."
+SCORE_CLAIM = "The technical score (68) is strong."
+INST_CLAIM = "Institutional ownership (61.55) is a solid majority."
+SHORT_CLAIM = "Short interest (3.10) rose against the float."
+DAYS_CLAIM = "Days to cover (1.80) means shorts can exit quickly."
+
+NEUTRAL = {"direction": "neutral"}
+
+
+def _grade(direction, claim=None, links=(), weight=2, weight_reason=None):
+    if direction == "neutral":
+        return dict(NEUTRAL)
+    return {"direction": direction, "claim": claim, "links": list(links),
+            "weight": weight, "weight_reason": weight_reason}
+
 
 def _vlink(ref, value):
     return {"ref": ref, "value": value}
 
 
+SHEET_1 = {
+    "technicals.rsi_14": _grade("bullish", RSI_CLAIM),
+    "technicals.close": _grade("bearish", CLOSE_CLAIM),
+    "technicals.score": NEUTRAL,
+    "technicals.macd.signal": NEUTRAL,
+    "positioning.ownership.institutional_pct": _grade("bullish", INST_CLAIM),
+    "positioning.short_interest.short_pct_of_float": _grade("bearish", SHORT_CLAIM),
+    "positioning.short_interest.days_to_cover": NEUTRAL,
+    "positioning.options.put_call_oi_ratio": NEUTRAL,
+}
+
+SHEET_2 = {
+    **SHEET_1,
+    "technicals.close": NEUTRAL,
+    "technicals.score": _grade("bullish", SCORE_CLAIM),
+    "positioning.short_interest.days_to_cover": _grade("bearish", DAYS_CLAIM),
+}
+
+#: Sheet 1 with the close claim misquoting the value (report shows 100).
+BROKEN_CLOSE_CLAIM = "The closing price (999) is below the 105 resistance."
+SHEET_1_BROKEN_CLOSE = {
+    **SHEET_1,
+    "technicals.close": _grade("bearish", BROKEN_CLOSE_CLAIM),
+}
+
+
 def _item(item_id, dimension, direction, claim, links, weight=2,
           weight_reason=None):
+    """A citation-fix reply bullet (the fix loop speaks the item shape)."""
     return {
         "id": item_id,
         "dimension": dimension,
@@ -129,54 +192,22 @@ def _item(item_id, dimension, direction, claim, links, weight=2,
     }
 
 
+#: The corrected close bullet a fix round can splice back in.
+CLOSE_FIX_ITEM = _item("T2", "technicals", "bearish", CLOSE_CLAIM,
+                       [_vlink("technicals.close", "100")])
+#: A fix reply that stays broken (link value misquoted).
+STILL_BROKEN_T2 = _item("T2", "technicals", "bearish", BROKEN_CLOSE_CLAIM,
+                        [_vlink("technicals.close", "999")])
+
+
 def _vote(verdict="valid", reason=None, links=(), weight=2,
           weight_reason=None):
     return {"verdict": verdict, "reason": reason, "links": list(links),
             "weight": weight, "weight_reason": weight_reason}
 
 
-LIST_1 = [
-    _item("T1", "technicals", "bullish",
-          "The 14-day RSI (71.20) is above 70, showing strong momentum.",
-          [_vlink("technicals.rsi_14", "71.20")]),
-    _item("T2", "technicals", "bearish",
-          "The closing price (100) is below the 105 resistance.",
-          [_vlink("technicals.close", "100")]),
-    _item("P1", "positioning", "bullish",
-          "Institutional ownership (61.55) is a solid majority.",
-          [_vlink("positioning.ownership.institutional_pct", "61.55")]),
-    _item("P2", "positioning", "bearish",
-          "Short interest (3.10) rose against the float.",
-          [_vlink("positioning.short_interest.short_pct_of_float", "3.10")]),
-]
-
-LIST_2 = [
-    LIST_1[0],
-    _item("T2", "technicals", "bullish",
-          "The technical score (68) is strong.",
-          [_vlink("technicals.score", "68")]),
-    LIST_1[2],
-    LIST_1[3],
-    _item("P3", "positioning", "bearish",
-          "Days to cover (1.80) means shorts can exit quickly.",
-          [_vlink("positioning.short_interest.days_to_cover", "1.80")]),
-]
-
-DEFAULT_MATCH_MAP = [
-    {"own_id": "T1", "covered_by": "T1"},
-    {"own_id": "T2", "covered_by": None},
-    {"own_id": "P1", "covered_by": "P1"},
-    {"own_id": "P2", "covered_by": "P2"},
-    {"own_id": "P3", "covered_by": None},
-]
-
-BROKEN_T2 = _item("T2", "technicals", "bearish",
-                  "The closing price (999) is below the 105 resistance.",
-                  [_vlink("technicals.close", "999")])
-
-
-def _list_reply(items):
-    return json.dumps({"items": items, "no_data_dimensions": []})
+def _sheet_reply(grades):
+    return json.dumps({"grades": grades})
 
 
 def _fix(items):
@@ -185,12 +216,6 @@ def _fix(items):
 
 def _vote_fix(votes):
     return json.dumps({"votes": votes})
-
-
-def _merge(match_map=None):
-    return json.dumps(
-        {"match_map": match_map if match_map is not None else DEFAULT_MATCH_MAP}
-    )
 
 
 def _check(votes=None):
@@ -244,9 +269,8 @@ def _summary():
 
 def _replies(**overrides):
     replies = {
-        "lister1": _list_reply(LIST_1),
-        "lister2": _list_reply(LIST_2),
-        "merge": _merge(),
+        "lister1": _sheet_reply(SHEET_1),
+        "lister2": _sheet_reply(SHEET_2),
         "check": _check(),
         "decider": _decider(),
         "summary": _summary(),
@@ -264,7 +288,6 @@ MARKERS = [
     ("summary failed the code's citation check", "summary_fix"),
     ("You are the FIRST analyst", "lister1"),
     ("You are the SECOND analyst", "lister2"),
-    ("Match the two evidence lists", "merge"),
     ("cast the deciding vote", "decider"),
     ("cast the second vote", "check"),
     ("Write the user-facing report", "summary"),
@@ -281,7 +304,7 @@ def stage_of(prompt):
 
 
 class RoutedSummarizer:
-    """Routes replies by prompt content; thread-safe (the two lists and
+    """Routes replies by prompt content; thread-safe (the two sheets and
     their fix loops run in parallel). ``retry_replies`` serve the second
     attempt of a stage."""
 
@@ -376,32 +399,17 @@ class ValuePatternTest(unittest.TestCase):
         self.assertIsNotNone(value_pattern("golden_cross").search("a Golden Cross formed"))
 
 
-class CeilingsTest(unittest.TestCase):
-    def test_ceiling_is_the_leaf_count_of_the_report(self):
-        ceilings = max_items_per_dimension(_dimensions())
-        # close, rsi_14, score, macd.signal — the macd grouping is not a leaf.
-        self.assertEqual(ceilings["technicals"], 4)
+class GradeSheetRowsTest(unittest.TestCase):
+    """Code enumerates the sheet: every citable leaf, in report order."""
 
-    def test_positioning_ceiling_is_its_leaf_count(self):
-        ceilings = max_items_per_dimension(_dimensions())
-        # short_pct_of_float, days_to_cover, institutional_pct,
-        # put_call_oi_ratio — the group headings are not leaves.
-        self.assertEqual(ceilings["positioning"], 4)
+    def test_rows_are_the_leaf_refs_in_report_order(self):
+        refs = gradable_field_refs(_dimensions())
+        self.assertEqual(refs["technicals"], T_REFS)
+        self.assertEqual(refs["positioning"], P_REFS)
 
-    def test_ceiling_never_drops_below_the_floor(self):
-        dims = [
-            DimensionResult(
-                dimension="technicals",
-                kind=SourceKind.NUMERIC,
-                coverage=Coverage.FULL,
-                payload={"close": 100.0},
-            )
-        ]
-        self.assertEqual(max_items_per_dimension(dims)["technicals"], 2)
-
-    def test_envelope_counts_as_one_leaf_not_three(self):
-        # v2 metrics are {name, explanation, value}: one citable fact.
-        # Counting the prose keys would triple every ceiling.
+    def test_envelope_counts_as_one_row_not_three(self):
+        # v2 metrics are {name, explanation, value}: one gradable fact.
+        # Counting the prose keys would triple every sheet.
         dims = [
             DimensionResult(
                 dimension="technicals",
@@ -418,7 +426,31 @@ class CeilingsTest(unittest.TestCase):
                 },
             )
         ]
-        self.assertEqual(max_items_per_dimension(dims)["technicals"], 3)
+        self.assertEqual(
+            gradable_field_refs(dims)["technicals"],
+            ["technicals.price.close", "technicals.price.high_1y",
+             "technicals.daily.rsi_14"],
+        )
+
+    def test_blank_fields_get_no_row(self):
+        # A blank field (value null) carries no evidence — code knows why
+        # it is blank, so the AI is never asked to grade it.
+        dims = [
+            DimensionResult(
+                dimension="technicals",
+                kind=SourceKind.NUMERIC,
+                coverage=Coverage.FULL,
+                payload={
+                    "daily": {
+                        "rsi_14": {"name": "n", "explanation": "e", "value": 56.28},
+                        "sma_200": {"name": "n", "explanation": "e", "value": None},
+                    },
+                },
+            )
+        ]
+        self.assertEqual(
+            gradable_field_refs(dims)["technicals"], ["technicals.daily.rsi_14"]
+        )
 
 
 class EnvelopeRefResolutionTest(unittest.TestCase):
@@ -465,39 +497,67 @@ class EnvelopeRefResolutionTest(unittest.TestCase):
         resolves, _ = _payload_value("technicals.daily", self._dims(56.28))
         self.assertFalse(resolves)
 
-    def test_too_many_items_for_the_ceiling_is_rejected(self):
-        # 5 technicals bullets against a ceiling of 4 → retry with the error.
-        many = [
-            LIST_1[0], LIST_1[1],
-            _item("T3", "technicals", "bullish",
-                  "The technical score (68) is high.",
-                  [_vlink("technicals.score", "68")]),
-            _item("T4", "technicals", "bullish",
-                  "The MACD signal (1.20) is positive.",
-                  [_vlink("technicals.macd.signal", "1.20")]),
-            _item("T5", "technicals", "bullish",
-                  "The technical score (68) is strong.",
-                  [_vlink("technicals.score", "68")]),
-            LIST_1[2], LIST_1[3],
-        ]
+
+class GradeSheetContractTest(unittest.TestCase):
+    """The deterministic one-grade-per-field rule: exact key coverage,
+    enforced by code with a retry, not by prompt wording."""
+
+    def test_a_missing_grade_is_rejected_then_retried(self):
+        incomplete = {ref: grade for ref, grade in SHEET_1.items()
+                      if ref != "technicals.close"}
         result, fake = _run(
-            _replies(lister1=_list_reply(many)),  # 5 technicals vs ceiling 4
-            retry_replies={"lister1": _list_reply(LIST_1)},
+            _replies(lister1=_sheet_reply(incomplete)),
+            retry_replies={"lister1": _sheet_reply(SHEET_1)},
         )
         self.assertIsNotNone(result.verdict)
         retry_prompt = next(
             p for p in fake.prompts
             if RETRY_MARKER in p and "You are the FIRST analyst" in p
         )
-        self.assertIn("the maximum is 4", retry_prompt)
+        self.assertIn("missing grade for: technicals.close", retry_prompt)
+
+    def test_an_invented_field_key_is_rejected_then_retried(self):
+        invented = {**SHEET_1, "technicals.bogus": _grade("bullish", "Made up.")}
+        result, fake = _run(
+            _replies(lister1=_sheet_reply(invented)),
+            retry_replies={"lister1": _sheet_reply(SHEET_1)},
+        )
+        self.assertIsNotNone(result.verdict)
+        retry_prompt = next(
+            p for p in fake.prompts
+            if RETRY_MARKER in p and "You are the FIRST analyst" in p
+        )
+        self.assertIn("unknown grade keys: technicals.bogus", retry_prompt)
+
+    def test_a_directional_grade_without_a_claim_is_rejected(self):
+        claimless = {**SHEET_1, "technicals.score": {"direction": "bullish"}}
+        result, fake = _run(
+            _replies(lister1=_sheet_reply(claimless)),
+            retry_replies={"lister1": _sheet_reply(SHEET_1)},
+        )
+        self.assertIsNotNone(result.verdict)
+        retry_prompt = next(
+            p for p in fake.prompts
+            if RETRY_MARKER in p and "You are the FIRST analyst" in p
+        )
+        self.assertIn("has no claim sentence", retry_prompt)
+
+    def test_the_graded_field_link_is_injected_by_code(self):
+        # The AI never writes its own field's citation — code attaches
+        # {ref, exact display value}, so the ref can never be misquoted.
+        result, _ = _run()
+        t1 = _item_by_id(result, "T1")
+        self.assertEqual(t1["field"], "technicals.rsi_14")
+        self.assertEqual(t1["links"][0],
+                         {"ref": "technicals.rsi_14", "value": "71.20"})
 
 
 class ChoreographyTest(unittest.TestCase):
-    def test_full_run_six_calls_and_the_computed_verdict(self):
+    def test_full_run_five_calls_and_the_computed_verdict(self):
         result, fake = _run()
         self.assertEqual(
             sorted(fake.stages()),
-            sorted(["lister1", "lister2", "merge", "check", "decider", "summary"]),
+            sorted(["lister1", "lister2", "check", "decider", "summary"]),
         )
         verdict = result.verdict
         self.assertIsNotNone(verdict)
@@ -528,13 +588,13 @@ class ChoreographyTest(unittest.TestCase):
         self.assertEqual(verdict.pools["final"]["bullish"], 3)
         self.assertEqual(verdict.pools["final"]["bearish"], 3)
 
-    def test_the_two_lists_run_before_everything_else(self):
+    def test_the_two_sheets_run_before_everything_else(self):
         _, fake = _run()
         stages = fake.stages()
         self.assertEqual(sorted(stages[:2]), ["lister1", "lister2"])
-        self.assertEqual(stages[2:], ["merge", "check", "decider", "summary"])
+        self.assertEqual(stages[2:], ["check", "decider", "summary"])
 
-    def test_both_listed_bullets_are_confirmed_without_any_vote(self):
+    def test_same_field_same_direction_is_confirmed_without_any_vote(self):
         result, _ = _run()
         for item_id in ("T1", "P1", "P2"):
             item = _item_by_id(result, item_id)
@@ -542,11 +602,12 @@ class ChoreographyTest(unittest.TestCase):
             self.assertEqual(item["votes"], [])
             self.assertEqual(item["final_status"], "counted")
 
-    def test_the_uncovered_second_list_bullet_is_renumbered_in(self):
+    def test_the_unmatched_second_sheet_bullet_is_renumbered_in(self):
         result, _ = _run()
         t3 = _item_by_id(result, "T3")
         self.assertEqual(t3["authors"], 1)
-        self.assertEqual(t3["claim"], "The technical score (68) is strong.")
+        self.assertEqual(t3["claim"], SCORE_CLAIM)
+        self.assertEqual(t3["field"], "technicals.score")
         self.assertEqual(t3["final_status"], "counted")
 
     def test_a_tied_bullet_carries_both_votes_and_the_majority_wins(self):
@@ -559,16 +620,11 @@ class ChoreographyTest(unittest.TestCase):
         )
         self.assertEqual(t2["final_status"], "counted")  # 2-1
 
-    def test_all_covered_lists_skip_both_vote_rounds(self):
-        match_map = [
-            {"own_id": item["id"], "covered_by": item["id"]} for item in LIST_1
-        ]
-        result, fake = _run(
-            _replies(lister2=_list_reply(LIST_1), merge=_merge(match_map))
-        )
+    def test_identical_sheets_skip_both_vote_rounds(self):
+        result, fake = _run(_replies(lister2=_sheet_reply(SHEET_1)))
         self.assertEqual(
             sorted(fake.stages()),
-            sorted(["lister1", "lister2", "merge", "summary"]),
+            sorted(["lister1", "lister2", "summary"]),
         )
         self.assertTrue(
             any("check round skipped" in w for w in result.warnings)
@@ -585,39 +641,34 @@ class ChoreographyTest(unittest.TestCase):
         }
         result, fake = _run(_replies(check=_check(votes)))
         self.assertNotIn("decider", fake.stages())
-        self.assertEqual(len(fake.prompts), 5)
+        self.assertEqual(len(fake.prompts), 4)
         for item in result.items:
             self.assertEqual(item["final_status"], "counted")
 
-    def test_an_opposite_direction_match_is_rejected_and_becomes_a_dispute(self):
-        # The second analyst reads the same RSI as bearish; matching it to
-        # the first analyst's bullish bullet must be rejected — both
-        # versions face the votes instead.
-        rsi_bear = _item("T2", "technicals", "bearish",
-                         "The 14-day RSI (71.20) is overbought territory.",
-                         [_vlink("technicals.rsi_14", "71.20")])
-        second = [LIST_1[0], rsi_bear, LIST_1[2], LIST_1[3], LIST_2[4]]
-        bad_map = [
-            {"own_id": "T1", "covered_by": "T1"},
-            {"own_id": "T2", "covered_by": "T1"},  # opposite direction!
-            {"own_id": "P1", "covered_by": "P1"},
-            {"own_id": "P2", "covered_by": "P2"},
-            {"own_id": "P3", "covered_by": None},
-        ]
-        good_map = [dict(row) for row in bad_map]
-        good_map[1] = {"own_id": "T2", "covered_by": None}
-        result, fake = _run(
-            _replies(lister2=_list_reply(second), merge=_merge(bad_map)),
-            retry_replies={"merge": _merge(good_map)},
+    def test_an_opposite_direction_grade_is_a_dispute_both_face_the_votes(self):
+        # The second analyst reads the same RSI field as bearish. Code
+        # matches by (field, direction), so the clash never merges — both
+        # versions join the list and the votes settle it.
+        disputed = {
+            **SHEET_2,
+            "technicals.rsi_14": _grade(
+                "bearish", "The 14-day RSI (71.20) is overbought territory."
+            ),
+        }
+        votes = {
+            item_id: _vote("valid", "Fair reading.")
+            for item_id in ("T1", "T2", "T3", "T4", "P3")
+        }
+        result, _ = _run(
+            _replies(lister2=_sheet_reply(disputed), check=_check(votes))
         )
         self.assertIsNotNone(result.verdict)
-        retry_prompt = next(
-            p for p in fake.prompts
-            if RETRY_MARKER in p and "Match the two evidence lists" in p
-        )
-        self.assertIn("must be left unmatched", retry_prompt)
+        t1 = _item_by_id(result, "T1")  # the first analyst's bullish RSI
+        self.assertEqual(t1["direction"], "bullish")
+        self.assertEqual(t1["authors"], 1)
         t3 = _item_by_id(result, "T3")  # the bearish RSI, renumbered in
         self.assertEqual(t3["direction"], "bearish")
+        self.assertEqual(t3["field"], "technicals.rsi_14")
         self.assertEqual(t3["final_status"], "counted")
 
 
@@ -660,9 +711,8 @@ class VoteOutcomeTest(unittest.TestCase):
             self.assertEqual(item["final_status"], "counted")
 
     def test_empty_final_pool_defaults_to_neutral_five(self):
-        # Everything single-authored dies; the both-listed bullets are the
-        # only survivors — so kill them too by making the second list fail
-        # and voting every bullet down, unbreakable ties resolved against.
+        # Kill the second sheet, then vote every surviving bullet down,
+        # ties resolved against — nothing survives to be weighed.
         votes = {
             item_id: _vote("invalid", "Flawed.")
             for item_id in ("T1", "T2", "P1", "P2")
@@ -693,18 +743,16 @@ class WeightTest(unittest.TestCase):
     median of its voters' ratings (mean when there are two) and the
     score is 10 × Σweight(bullish) / Σweight(all)."""
 
-    RSI_HEAVY = _item("T1", "technicals", "bullish",
-                      "The 14-day RSI (71.20) is above 70, showing strong momentum.",
-                      [_vlink("technicals.rsi_14", "71.20")], weight=5,
-                      weight_reason="Momentum this strong drives the thesis.")
+    HEAVY_RSI = _grade("bullish", RSI_CLAIM, weight=5,
+                       weight_reason="Momentum this strong drives the thesis.")
 
     def test_a_heavy_bullet_moves_the_weighted_score(self):
         # Both authors rate the bullish RSI a 5 → its weight is 5 while
         # everything else stays 2. Bullish weight 5+2+2=9 of 15 total.
-        first = [self.RSI_HEAVY, LIST_1[1], LIST_1[2], LIST_1[3]]
-        second = [self.RSI_HEAVY, LIST_2[1], LIST_2[2], LIST_2[3], LIST_2[4]]
+        first = {**SHEET_1, "technicals.rsi_14": self.HEAVY_RSI}
+        second = {**SHEET_2, "technicals.rsi_14": self.HEAVY_RSI}
         result, _ = _run(
-            _replies(lister1=_list_reply(first), lister2=_list_reply(second))
+            _replies(lister1=_sheet_reply(first), lister2=_sheet_reply(second))
         )
         t1 = _item_by_id(result, "T1")
         self.assertEqual(t1["author_weights"], [5, 5])
@@ -733,23 +781,23 @@ class WeightTest(unittest.TestCase):
 
     def test_two_voters_take_the_mean_so_halves_happen(self):
         # T3: its single author rated it 3; the checker rates it 2 → 2.5.
-        heavy_score = _item("T2", "technicals", "bullish",
-                            "The technical score (68) is strong.",
-                            [_vlink("technicals.score", "68")], weight=3)
-        second = [LIST_2[0], heavy_score, LIST_2[2], LIST_2[3], LIST_2[4]]
-        result, _ = _run(_replies(lister2=_list_reply(second)))
+        second = {
+            **SHEET_2,
+            "technicals.score": _grade("bullish", SCORE_CLAIM, weight=3),
+        }
+        result, _ = _run(_replies(lister2=_sheet_reply(second)))
         t3 = _item_by_id(result, "T3")
         self.assertEqual(t3["author_weights"], [3])
         self.assertEqual(t3["weight"], 2.5)
         self.assertEqual(result.verdict.pools["final"]["total_weight"], 12.5)
 
-    def test_both_author_ratings_ride_in_on_the_match_map(self):
+    def test_both_author_ratings_ride_in_on_the_field_match(self):
         # First analyst rates the RSI a 1, the second a 5 → mean 3.
-        light = dict(self.RSI_HEAVY, weight=1)
-        first = [light, LIST_1[1], LIST_1[2], LIST_1[3]]
-        second = [self.RSI_HEAVY, LIST_2[1], LIST_2[2], LIST_2[3], LIST_2[4]]
+        light = _grade("bullish", RSI_CLAIM, weight=1)
+        first = {**SHEET_1, "technicals.rsi_14": light}
+        second = {**SHEET_2, "technicals.rsi_14": self.HEAVY_RSI}
         result, _ = _run(
-            _replies(lister1=_list_reply(first), lister2=_list_reply(second))
+            _replies(lister1=_sheet_reply(first), lister2=_sheet_reply(second))
         )
         t1 = _item_by_id(result, "T1")
         self.assertEqual(t1["author_weights"], [1, 5])
@@ -758,12 +806,12 @@ class WeightTest(unittest.TestCase):
     def test_an_omitted_weight_defaults_to_the_neutral_3(self):
         # Replies without any "weight" keys reproduce flat counting: every
         # weight lands on the 1-5 middle, so the sums cancel out.
-        def stripped(items):
-            return [
-                {key: value for key, value in item.items()
-                 if key not in ("weight", "weight_reason")}
-                for item in items
-            ]
+        def stripped(sheet):
+            return {
+                ref: {key: value for key, value in grade.items()
+                      if key not in ("weight", "weight_reason")}
+                for ref, grade in sheet.items()
+            }
 
         bare = {key: {"verdict": vote["verdict"], "reason": vote["reason"],
                       "links": vote["links"]}
@@ -773,8 +821,8 @@ class WeightTest(unittest.TestCase):
                         for key, vote in json.loads(_decider())["votes"].items()}
         result, _ = _run(
             _replies(
-                lister1=_list_reply(stripped(LIST_1)),
-                lister2=_list_reply(stripped(LIST_2)),
+                lister1=_sheet_reply(stripped(SHEET_1)),
+                lister2=_sheet_reply(stripped(SHEET_2)),
                 check=_check(bare),
                 decider=_decider(bare_decider),
             )
@@ -786,11 +834,15 @@ class WeightTest(unittest.TestCase):
     def test_the_author_rating_survives_a_citation_fix(self):
         # The fix reply comes back without the original rating or its
         # reason — code freezes both so they cannot silently reset.
-        broken_heavy = dict(BROKEN_T2, weight=5, weight_reason="Key level.")
+        heavy_broken = {
+            **SHEET_1,
+            "technicals.close": _grade("bearish", BROKEN_CLOSE_CLAIM,
+                                       weight=5, weight_reason="Key level."),
+        }
         result, _ = _run(
             _replies(
-                lister1=_list_reply([LIST_1[0], broken_heavy, LIST_1[2], LIST_1[3]]),
-                fix=_fix([LIST_1[1]]),  # the fixed bullet says weight 2
+                lister1=_sheet_reply(heavy_broken),
+                fix=_fix([CLOSE_FIX_ITEM]),  # the fixed bullet says weight 2
             )
         )
         t2 = _item_by_id(result, "T2")
@@ -799,14 +851,18 @@ class WeightTest(unittest.TestCase):
         self.assertEqual(t2["author_votes"][0]["weight_reason"], "Key level.")
 
     def test_author_votes_carry_the_lister_number_and_the_reason(self):
-        # v11 attribution: a both-listed bullet keeps each lister's own
-        # rating and reason; a second-list extra is lister 2's.
-        first_heavy = dict(self.RSI_HEAVY, weight=4,
-                           weight_reason="Strong but not decisive.")
-        first = [first_heavy, LIST_1[1], LIST_1[2], LIST_1[3]]
-        second = [self.RSI_HEAVY, LIST_2[1], LIST_2[2], LIST_2[3], LIST_2[4]]
+        # v11 attribution: a both-graded field keeps each lister's own
+        # rating and reason; a second-sheet extra is lister 2's.
+        first = {
+            **SHEET_1,
+            "technicals.rsi_14": _grade(
+                "bullish", RSI_CLAIM, weight=4,
+                weight_reason="Strong but not decisive.",
+            ),
+        }
+        second = {**SHEET_2, "technicals.rsi_14": self.HEAVY_RSI}
         result, _ = _run(
-            _replies(lister1=_list_reply(first), lister2=_list_reply(second))
+            _replies(lister1=_sheet_reply(first), lister2=_sheet_reply(second))
         )
         t1 = _item_by_id(result, "T1")
         self.assertEqual(
@@ -818,9 +874,9 @@ class WeightTest(unittest.TestCase):
                  "weight_reason": "Momentum this strong drives the thesis."},
             ],
         )
-        t2 = _item_by_id(result, "T2")  # single-author, from the first list
+        t2 = _item_by_id(result, "T2")  # single-author, from the first sheet
         self.assertEqual([v["lister"] for v in t2["author_votes"]], [1])
-        t3 = _item_by_id(result, "T3")  # renumbered second-list extra
+        t3 = _item_by_id(result, "T3")  # renumbered second-sheet extra
         self.assertEqual([v["lister"] for v in t3["author_votes"]], [2])
 
     def test_vote_score_reasons_are_stored_with_the_votes(self):
@@ -842,12 +898,11 @@ class StruckBulletTest(unittest.TestCase):
     """Bullets whose citations code cannot fix are struck — crossed out,
     never voted on, in no pool — from either analyst."""
 
-    def test_an_unfixable_first_list_bullet_is_struck_and_sits_out(self):
-        broken_first = [LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]
+    def test_an_unfixable_first_sheet_bullet_is_struck_and_sits_out(self):
         result, fake = _run(
             _replies(
-                lister1=_list_reply(broken_first),
-                fix=_fix([BROKEN_T2]),
+                lister1=_sheet_reply(SHEET_1_BROKEN_CLOSE),
+                fix=_fix([STILL_BROKEN_T2]),
                 check=_check({
                     "T3": _vote("valid", "Fair reading."),
                     "P3": _vote("valid", "Fair reading."),
@@ -864,9 +919,7 @@ class StruckBulletTest(unittest.TestCase):
         self.assertTrue(
             any("struck from the list" in w for w in result.warnings)
         )
-        # The struck bullet never reaches the merge or the votes…
-        merge_prompt = next(p for p in fake.prompts if stage_of(p) == "merge")
-        self.assertNotIn("999", merge_prompt)
+        # The struck bullet never reaches the votes…
         check_prompt = next(p for p in fake.prompts if stage_of(p) == "check")
         self.assertNotIn("999", check_prompt)
         # …and never enters a pool: initial = T1, P1, P2, T3, P3.
@@ -874,18 +927,22 @@ class StruckBulletTest(unittest.TestCase):
         # flat counting: 3 bullish of the 5 surviving bullets → 6.0
         self.assertEqual(result.verdict.initial_score, 6.0)
 
-    def test_an_unfixable_second_list_bullet_is_struck_too(self):
-        broken_p3 = _item("P3", "positioning", "bearish",
-                          "Days to cover (9.99) means shorts can exit quickly.",
-                          [_vlink("positioning.short_interest.days_to_cover",
-                                  "9.99")])
-        second = [LIST_2[0], LIST_2[1], LIST_2[2], LIST_2[3], broken_p3]
-        match_map = [row for row in DEFAULT_MATCH_MAP if row["own_id"] != "P3"]
+    def test_an_unfixable_second_sheet_bullet_is_struck_too(self):
+        broken_days = {
+            **SHEET_2,
+            "positioning.short_interest.days_to_cover": _grade(
+                "bearish", "Days to cover (9.99) means shorts can exit quickly."
+            ),
+        }
+        broken_p3_item = _item(
+            "P3", "positioning", "bearish",
+            "Days to cover (9.99) means shorts can exit quickly.",
+            [_vlink("positioning.short_interest.days_to_cover", "9.99")],
+        )
         result, fake = _run(
             _replies(
-                lister2=_list_reply(second),
-                fix=_fix([broken_p3]),
-                merge=_merge(match_map),
+                lister2=_sheet_reply(broken_days),
+                fix=_fix([broken_p3_item]),
                 check=_check({
                     "T2": _vote("valid", "Fair reading."),
                     "T3": _vote("valid", "Fair reading."),
@@ -900,11 +957,10 @@ class StruckBulletTest(unittest.TestCase):
         self.assertEqual(result.verdict.pools["initial"]["total"], 5)
 
     def test_a_fixed_bullet_rejoins_without_a_trace(self):
-        broken_first = [LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]
         result, fake = _run(
             _replies(
-                lister1=_list_reply(broken_first),
-                fix=_fix([LIST_1[1]]),
+                lister1=_sheet_reply(SHEET_1_BROKEN_CLOSE),
+                fix=_fix([CLOSE_FIX_ITEM]),
             )
         )
         self.assertEqual(fake.stages().count("fix"), 1)
@@ -915,18 +971,19 @@ class StruckBulletTest(unittest.TestCase):
         self.assertFalse(any("struck" in w for w in result.warnings))
 
     def test_the_fix_prompt_carries_only_the_broken_bullets_and_errors(self):
-        broken_first = [LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]
         _, fake = _run(
             _replies(
-                lister1=_list_reply(broken_first),
-                fix=_fix([LIST_1[1]]),
+                lister1=_sheet_reply(SHEET_1_BROKEN_CLOSE),
+                fix=_fix([CLOSE_FIX_ITEM]),
             )
         )
         fix_prompt = next(p for p in fake.prompts if stage_of(p) == "fix")
         self.assertIn('"T2"', fix_prompt)
         self.assertIn("999", fix_prompt)
         self.assertNotIn("The 14-day RSI", fix_prompt)  # healthy bullets stay out
-        self.assertIn("must be copied exactly", fix_prompt)
+        # The claim misquotes the value; the injected link is correct, so
+        # the error is "the value must appear in the sentence".
+        self.assertIn("must appear in the", fix_prompt)
         self.assertIn("'100'", fix_prompt)  # the correct display string is shown
 
 
@@ -994,30 +1051,36 @@ class VoteCitationTest(unittest.TestCase):
 
 class RetryContractTest(unittest.TestCase):
     def test_an_invalid_first_reply_is_retried_with_the_errors_shown(self):
-        bad = _list_reply([LIST_1[0], LIST_1[2], LIST_1[3]])
+        incomplete = {ref: grade for ref, grade in SHEET_1.items()
+                      if not ref.startswith("positioning.")}
         result, fake = _run(
-            _replies(lister1=bad),
-            retry_replies={"lister1": _list_reply(LIST_1)},
+            _replies(lister1=_sheet_reply(incomplete)),
+            retry_replies={"lister1": _sheet_reply(SHEET_1)},
         )
         self.assertIsNotNone(result.verdict)
         self.assertTrue(
-            any("first analyst list needed a retry" in w for w in result.warnings)
+            any("first analyst grade sheet needed a retry" in w
+                for w in result.warnings)
         )
         retry_prompt = next(
             p for p in fake.prompts
             if RETRY_MARKER in p and "You are the FIRST analyst" in p
         )
-        self.assertIn("only 1 item(s)", retry_prompt)
+        self.assertIn("missing grade for:", retry_prompt)
 
     def test_a_link_without_a_value_is_rejected_by_the_form(self):
-        items = [
-            _item("T1", "technicals", "bullish",
-                  "The 14-day RSI (71.20) is above 70.",
-                  [{"ref": "technicals.rsi_14"}]),
-        ] + LIST_1[1:]
+        crossref = {
+            **SHEET_1,
+            "technicals.rsi_14": {
+                "direction": "bullish",
+                "claim": "The 14-day RSI (71.20) is hot while the close (100) holds.",
+                "links": [{"ref": "technicals.close"}],  # value missing
+                "weight": 2,
+            },
+        }
         result, fake = _run(
-            _replies(lister1=_list_reply(items)),
-            retry_replies={"lister1": _list_reply(LIST_1)},
+            _replies(lister1=_sheet_reply(crossref)),
+            retry_replies={"lister1": _sheet_reply(SHEET_1)},
         )
         self.assertIsNotNone(result.verdict)
         retry_prompt = next(
@@ -1026,28 +1089,18 @@ class RetryContractTest(unittest.TestCase):
         )
         self.assertIn('must carry "value"', retry_prompt)
 
-    def test_a_match_map_pointing_at_unknown_ids_is_rejected(self):
-        bad_map = [dict(row) for row in DEFAULT_MATCH_MAP]
-        bad_map[0] = {"own_id": "T1", "covered_by": "T9"}
-        result, _ = _run(
-            _replies(merge=_merge(bad_map)),
-            retry_replies={"merge": _merge()},
-        )
-        self.assertIsNotNone(result.verdict)
-        self.assertTrue(any("merge needed a retry" in w for w in result.warnings))
-
 
 class FailureRulesTest(unittest.TestCase):
-    def test_both_lists_invalid_twice_voids(self):
+    def test_both_sheets_invalid_twice_voids(self):
         result, _ = _run(_replies(lister1="not json", lister2="not json"))
         self.assertIsNone(result.verdict)
         self.assertEqual(result.items, [])
         self.assertTrue(
-            any("both analyst lists invalid after retry — tier-2 verdict voided" in w
-                for w in result.warnings)
+            any("both analyst grade sheets invalid after retry — tier-2 "
+                "verdict voided" in w for w in result.warnings)
         )
 
-    def test_one_list_invalid_twice_proceeds_with_the_other(self):
+    def test_one_sheet_invalid_twice_proceeds_with_the_other(self):
         votes = {
             item_id: _vote("valid", "Fair reading.")
             for item_id in ("T1", "T2", "P1", "P2", "P3")
@@ -1056,30 +1109,36 @@ class FailureRulesTest(unittest.TestCase):
             _replies(lister1="not json", check=_check(votes))
         )
         self.assertIsNotNone(result.verdict)
-        self.assertNotIn("merge", fake.stages())
         self.assertTrue(
-            any("first analyst list invalid after retry — proceeding with "
-                "the other list only" in w for w in result.warnings)
+            any("first analyst grade sheet invalid after retry — "
+                "proceeding with the other sheet only" in w
+                for w in result.warnings)
         )
-        # The surviving list's bullets are all single-author.
+        # The surviving sheet's bullets are all single-author.
         self.assertEqual(len(result.items), 5)
         for item in result.items:
             self.assertEqual(item["authors"], 1)
 
-    def test_merge_invalid_twice_drops_the_second_list(self):
-        votes = {
-            item_id: _vote("valid", "Fair reading.")
-            for item_id in ("T1", "T2", "P1", "P2")
-        }
-        result, fake = _run(
-            _replies(merge="not json", check=_check(votes))
-        )
-        self.assertIsNotNone(result.verdict)
+    def test_no_gradable_fields_voids_without_any_llm_call(self):
+        blank_dims = [
+            DimensionResult(
+                dimension="technicals",
+                kind=SourceKind.NUMERIC,
+                coverage=Coverage.PARTIAL,
+                payload={
+                    "daily": {
+                        "rsi_14": {"name": "n", "explanation": "e", "value": None},
+                    },
+                },
+            )
+        ]
+        result, fake = _run(dimensions=blank_dims)
+        self.assertIsNone(result.verdict)
+        self.assertEqual(fake.prompts, [])
         self.assertTrue(
-            any("merge invalid after retry — second list dropped" in w
+            any("no gradable report fields collected" in w
                 for w in result.warnings)
         )
-        self.assertEqual(len(result.items), 4)  # first list only
 
     def test_broken_summary_never_voids_a_computed_verdict(self):
         result, _ = _run(_replies(summary="not json"))
@@ -1099,7 +1158,7 @@ class FailureRulesTest(unittest.TestCase):
         )
 
     def test_llm_failure_mid_debate_fails_loud_without_a_verdict(self):
-        result, _ = _run(_replies(merge=RuntimeError("llm down")))
+        result, _ = _run(_replies(check=RuntimeError("llm down")))
         self.assertIsNone(result.verdict)
         self.assertTrue(any("debate LLM call failed" in w for w in result.warnings))
 
@@ -1163,7 +1222,7 @@ class FailureRulesTest(unittest.TestCase):
 
 
 class UsageTrackingTest(unittest.TestCase):
-    def test_parallel_list_calls_report_into_the_active_tracker(self):
+    def test_parallel_sheet_calls_report_into_the_active_tracker(self):
         routed = RoutedSummarizer(_replies())
 
         def fake(prompt):
@@ -1178,14 +1237,14 @@ class UsageTrackingTest(unittest.TestCase):
                 result = engine.run("AAPL", _tier1(dimensions=dims), dims)
         self.assertIsNotNone(result.verdict)
         detail = tracker.to_detail()
-        self.assertEqual(detail["stages"]["tier2_debate"]["calls"], 6)
-        self.assertEqual(detail["stages"]["tier2_debate"]["prompt_tokens"], 60)
+        self.assertEqual(detail["stages"]["tier2_debate"]["calls"], 5)
+        self.assertEqual(detail["stages"]["tier2_debate"]["prompt_tokens"], 50)
 
     def test_fix_round_calls_are_counted_too(self):
         routed = RoutedSummarizer(
             _replies(
-                lister1=_list_reply([LIST_1[0], BROKEN_T2, LIST_1[2], LIST_1[3]]),
-                fix=_fix([LIST_1[1]]),
+                lister1=_sheet_reply(SHEET_1_BROKEN_CLOSE),
+                fix=_fix([CLOSE_FIX_ITEM]),
             )
         )
 
@@ -1201,22 +1260,23 @@ class UsageTrackingTest(unittest.TestCase):
                 result = engine.run("AAPL", _tier1(dimensions=dims), dims)
         self.assertIsNotNone(result.verdict)
         detail = tracker.to_detail()
-        self.assertEqual(detail["stages"]["tier2_debate"]["calls"], 7)
+        self.assertEqual(detail["stages"]["tier2_debate"]["calls"], 6)
 
 
 class PromptContentTest(unittest.TestCase):
-    def test_list_prompts_carry_the_ceilings_and_the_link_rules(self):
+    def test_grade_prompts_enumerate_every_field_and_carry_the_rules(self):
         _, fake = _run()
         first = next(p for p in fake.prompts if "You are the FIRST analyst" in p)
-        self.assertIn("technicals: 2-4", first)
-        self.assertIn("positioning: 2-4", first)
-        self.assertIn("room, not a quota", first)
+        for ref in T_REFS + P_REFS:
+            self.assertIn(f"- {ref}", first)
+        self.assertIn("EXACTLY one grade per field key", first)
+        self.assertIn("invents a field key, or grades a", first)
         self.assertIn("Link rules", first)
         self.assertIn("copied EXACTLY", first)
         self.assertIn("do not wrap them in quotation marks", first)
         self.assertIn("You give no score", first)
         second = next(p for p in fake.prompts if "You are the SECOND analyst" in p)
-        self.assertIn("you have NOT seen it", second)
+        self.assertIn("you have NOT seen their work", second)
 
     def test_the_evidence_block_shows_display_values(self):
         _, fake = _run()
@@ -1225,14 +1285,6 @@ class PromptContentTest(unittest.TestCase):
         self.assertIn('"rsi_14": "71.20"', first)
         self.assertIn('"close": "100"', first)
         self.assertIn('"signal": "1.20"', first)
-
-    def test_merge_prompt_shows_both_lists_and_the_direction_rule(self):
-        _, fake = _run()
-        merge = next(p for p in fake.prompts if "Match the two evidence lists" in p)
-        self.assertIn("The technical score (68) is strong.", merge)
-        self.assertIn("The 14-day RSI (71.20)", merge)
-        self.assertIn("OPPOSITE direction", merge)
-        self.assertIn("code assembles the merged list", merge)
 
     def test_check_prompt_names_the_single_author_bullets_only(self):
         _, fake = _run()
@@ -1247,7 +1299,7 @@ class PromptContentTest(unittest.TestCase):
         decider = next(p for p in fake.prompts if "cast the deciding vote" in p)
         self.assertIn('"votes" must cover exactly these bullet ids: T2', decider)
         self.assertIn("objection: A single close below one level", decider)
-        self.assertIn("The closing price (100) is below the 105 resistance.", decider)
+        self.assertIn(CLOSE_CLAIM, decider)
 
     def test_summary_prompt_carries_the_computed_pool_scores(self):
         _, fake = _run()
@@ -1262,11 +1314,11 @@ class PromptContentTest(unittest.TestCase):
         self.assertIn("outlook: neutral", summary)
         self.assertNotIn("verdict:", summary)
 
-    def test_list_and_vote_prompts_carry_the_weight_rubric(self):
+    def test_grade_and_vote_prompts_carry_the_weight_rubric(self):
         _, fake = _run()
         first = next(p for p in fake.prompts if "You are the FIRST analyst" in p)
         self.assertIn("5 (very important", first)
-        self.assertIn('"weight": 3', first)  # the item shape shows it
+        self.assertIn('"weight": 3', first)  # the grade shape shows it
         self.assertIn('"weight_reason"', first)
         check = next(p for p in fake.prompts if "cast the second vote" in p)
         self.assertIn("regardless of your", check)
@@ -1282,6 +1334,8 @@ class DetailShapeTest(unittest.TestCase):
         self.assertEqual(detail["format"], 11)
         self.assertEqual(detail["turns"], [])
         self.assertEqual(len(detail["items"]), 6)
+        # v12 addition: every bullet names the field it grades.
+        self.assertEqual(detail["items"][0]["field"], "technicals.rsi_14")
         verdict = detail["verdict"]
         self.assertEqual(verdict["direction"], "hold")
         self.assertEqual(verdict["final_score"], 5.0)
