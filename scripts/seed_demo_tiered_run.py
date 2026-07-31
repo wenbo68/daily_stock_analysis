@@ -229,9 +229,6 @@ FAKE_YAHOO_INFO = {
     "marketCap": 850e9,
     "sector": "Technology",
     "industry": "Semiconductors",
-    # Next dividend payment ~6 weeks out, midnight UTC.
-    "dividendDate": calendar.timegm((TODAY + timedelta(days=40)).timetuple()),
-    "lastDividendValue": 0.26,
 }
 
 EARNINGS_DATE = TODAY + timedelta(days=24)

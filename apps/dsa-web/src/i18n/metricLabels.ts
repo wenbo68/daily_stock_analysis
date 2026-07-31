@@ -106,7 +106,7 @@ const en: Record<string, MetricEntry> = {
     full: 'The average number of shares traded per day over the last 20 trading days.\nUsed to judge whether a position could be sold in one day without pushing the price down.',
   },
   worst_day_pct_1y: {
-    short: 'Worst price drop: 1y range',
+    short: 'Worst price drop (1y range)',
     full: "The single worst one-day drop of the past year, measured from one day's closing price to the next.\nUnit: percent, negative — e.g. -14.5 means that day lost 14.5%.",
     interp: 'Shows how far one overnight surprise (bad earnings, bad news) can jump the price straight past a stop-loss.',
     blank: 'Less than about a month of price history was loaded — too few days to report a meaningful worst drop.',
@@ -130,7 +130,7 @@ const en: Record<string, MetricEntry> = {
     full: 'What the market as a whole is doing, and whether this stock is leading it or lagging behind it.',
   },
   regime: {
-    short: 'Benchmark: market',
+    short: 'Benchmark (market)',
     full: 'Is the overall market — not this stock — healthy? Judged on the benchmark index (S&P 500 for US stocks): is the index above its own 200-day average price, and is it in the upper or lower half of its one-year range?\nValues: bullish / bearish / mixed.',
     interp: "Most stocks follow the market. Buying in a bearish market usually fails even when this stock's own chart looks good — demand a stronger setup and use a smaller position.",
     blank: 'This market has no benchmark index set up, or the index data failed to load.',
@@ -178,19 +178,19 @@ const en: Record<string, MetricEntry> = {
     interp: 'With fewer than 60, the weekly trend read is shaky.',
   },
   rs_1m: {
-    short: '1m return diff: stock vs market',
+    short: '1m return diff (stock vs market)',
     full: "The stock's return over the last month minus the market's return over the same month: +5 means it beat the market by 5 points.\nUnit: percentage points; usually between -20 and +20.",
     interp: 'Positive = leading the market; negative = lagging it.',
     blank: 'This market has no benchmark index set up, the index data failed to load, or there is less than a month of history.',
   },
   rs_3m: {
-    short: '3m return diff: stock vs market',
+    short: '3m return diff (stock vs market)',
     full: "The stock's return over the last 3 months minus the market's return over the same window: +5 means it beat the market by 5 points, -20 means it lost to it by 20.\nUnit: percentage points; usually between -30 and +30.",
     interp: 'Positive = leading the market; negative = lagging it.',
     blank: 'This market has no benchmark index set up, the index data failed to load, or there is less than 3 months of history.',
   },
   rs_label: {
-    short: 'Relative strength: stock',
+    short: 'Relative strength (stock)',
     full: 'A one-word verdict from the two numbers above: leader = beat the market over both the 1-month and 3-month windows; laggard = lost to it over both; neutral = mixed.',
     interp: 'Prefer buying leaders — buying a laggard needs a clear reason from the other reports.',
     blank: 'The two return-difference numbers above are blank (no benchmark set up or the index data failed to load), so there is nothing to conclude from.',
@@ -202,7 +202,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'Fewer than 6 days of price history were loaded.',
   },
   range_pct_1y: {
-    short: 'Current price ranking: 1y range',
+    short: 'Current price ranking (1y range)',
     full: "Where today's price sits inside its past-year range, as a position out of 100.\n0/100 = at the year's low, 100/100 = at the year's high.",
     interp: 'Above ~80/100 = strong but risky to chase; below ~20/100 = a falling knife unless it is clearly bottoming out.',
     blank: "The one-year high and low are unavailable (too little history), or they are equal so a position can't be computed.",
@@ -218,7 +218,7 @@ const en: Record<string, MetricEntry> = {
     interp: 'How far the market has actually let this stock fall in a year.',
   },
   trend: {
-    short: 'Trend: SMA + pivots',
+    short: 'Trend (SMA + pivots)',
     full: "The overall direction, from two independent checks that must agree: (1) is the price above or below its own average lines (SMA), and (2) are the chart's recent peaks and dips ('pivots') stepping higher or lower?\nValues: bullish / bearish / neutral (neutral = the two checks disagree).",
     interp: 'The direction filter: trades should only go the way the weekly trend points, and dip-buying works best when the daily and weekly trends agree.',
     blank: 'One of the two checks (average lines, or recent peaks and dips) has too little history to answer.',
@@ -230,7 +230,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'Fewer than 10 weeks of price history were loaded.',
   },
   stretch_10w_atr: {
-    short: 'Diff: closing price vs 10w SMA',
+    short: 'Diff (closing price vs 10w SMA)',
     full: 'How far the price is above (+) or below (-) its 10-week average, measured in normal weekly moves (ATR units).\nRange: usually -4 to +4.',
     interp: 'Above ~+1.5 = stretched too far, wait for a dip; -0.5 to +1 in an uptrend = a good dip-buy zone.',
     blank: 'The 10-week average or the normal-move gauge (ATR) is unavailable because the history is too short.',
@@ -242,7 +242,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'Fewer than 50 days of price history were loaded.',
   },
   stretch_50d_atr: {
-    short: 'Diff: closing price vs 50d SMA',
+    short: 'Diff (closing price vs 50d SMA)',
     full: 'How far the price is above (+) or below (-) its 50-day average, in normal daily moves (ATR units).\nRange: usually -5 to +5.',
     interp: '-1 to +1 in an uptrend = a good entry zone; above +3 = chasing.',
     blank: 'The 50-day average or the normal-move gauge (ATR) is unavailable because the history is too short.',
@@ -260,7 +260,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'The RSI or MACD gauge behind it is unavailable because the history is too short.',
   },
   atr_pct: {
-    short: '14d ATR: % of price',
+    short: '14d ATR (% of price)',
     full: 'The normal daily move as a percent of the price — lets you compare a $10 stock with a $500 stock.\nUnit: percent; typically 1 to 6.',
     interp: 'Above ~6 = a wild stock; consider a smaller position.',
     blank: 'Fewer than about 15 days of price history were loaded, so the normal daily move cannot be measured.',
@@ -284,7 +284,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'Fewer than 5 days of price history were loaded.',
   },
   vol_ratio_5_60: {
-    short: 'Volume ratio: 5d/60d',
+    short: 'Volume ratio (5d/60d)',
     full: "This week's average volume versus the 3-month normal.\nUnit: a ratio; usually 0.5 to 2, where 1.0 = normal.",
     interp: 'Above ~1.5 while the price pushes through a ceiling = real interest confirms the move; below ~0.7 = the move is suspect.',
     blank: 'One of the two volume averages it is built from is unavailable (history too short).',
@@ -302,7 +302,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'The price is at its highest point in about 6 months — there is no past ceiling above it.',
   },
   typical_pullback_atr: {
-    short: 'Typical price drop: 6m range',
+    short: 'Typical price drop (6m range)',
     full: "How deep this stock's normal dips have been over the last ~6 months — from each local top down to the next local bottom — measured in normal daily moves (ATR units).\nRange: usually 1 to 5.",
     interp: 'If a stop is closer than this, ordinary wiggling will hit it even when the trade idea is right.',
     blank: 'Fewer than 2 completed dips were found in the last ~6 months, so there is no typical depth to report.',
@@ -332,7 +332,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'No past report history was available, or none of the past reports had an analyst estimate to compare against.',
   },
   avg_surprise_pct_4q: {
-    short: '4q avg diff: EPS vs estimate',
+    short: '4q avg diff (EPS vs estimate)',
     full: 'On average, how far above or below the analyst estimate the reported EPS landed, across those 4 reports.\nUnit: percent.',
     interp: 'Says whether the company tends to clear the bar analysts set — not how the stock reacts. Read it together with the report-day move below.',
     blank: 'No past report history was available, or the reports had no analyst estimates to measure against.',
@@ -355,19 +355,21 @@ const en: Record<string, MetricEntry> = {
     interp: 'Rising forecasts tend to pull the price up over weeks; cuts are a headwind even when the chart looks good.',
     blank: 'No analyst estimates were available, or the 90-days-ago estimate was so close to zero that a percent change would be meaningless.',
   },
+  // Dividend fields: old runs only (the group was dropped from the
+  // TODO.md final field list on 2026-07-31).
   dividend: {
     short: 'Dividend',
-    full: 'The scheduled cash payout to shareholders — a small, known event that nudges the price on a set date.',
+    full: 'Old runs only: the scheduled cash payout to shareholders — a small, known event that nudges the price on a set date.',
   },
   days_until_dividend: {
     short: 'Days until next dividend payment',
-    full: 'How many days from today until the company next pays its dividend.',
+    full: 'Old runs only: how many days from today until the company next pays its dividend.',
     interp: 'The cash arrives on this date, but the price dips earlier: on the ex-dividend date the stock starts trading without the payout and opens lower by roughly the dividend amount.',
     blank: 'The company pays no dividend, or no payment date is scheduled yet.',
   },
   dividend_amount_est: {
     short: 'Estimated dividend amount',
-    full: 'The most recent dividend payment per share — the best available guess for the next one.\nUnit: USD.',
+    full: 'Old runs only: the most recent dividend payment per share — the best available guess for the next one.\nUnit: USD.',
     interp: 'Small versus the stock price = a minor scheduled dip around the ex-dividend date; a large payout can clip a tight stop on its own.',
     blank: 'The company pays no dividend, or Yahoo Finance had no record of the last payment.',
   },
@@ -390,25 +392,25 @@ const en: Record<string, MetricEntry> = {
     full: 'Quarterly growth from the latest official SEC filings — the freshest read on whether the business is expanding.',
   },
   revenue_yoy_q: {
-    short: 'Quarterly sales: year over year',
+    short: 'Quarterly sales (yoy)',
     full: "The latest quarter's sales compared with the same quarter last year.\nUnit: percent.",
     interp: 'Positive and rising = an expanding business; the direction of change matters more than the level.',
     blank: "The SEC filings were unavailable, or there is no same-quarter-last-year sales figure to compare against.",
   },
   revenue_growth_trend: {
-    short: 'Growth trend: sales',
+    short: 'Growth trend (sales)',
     full: 'Whether that sales growth sped up or slowed compared with the quarter before.\nValues: accelerating / slowing / steady (changes smaller than 2 percentage points count as steady).',
     interp: 'Speeding-up growth is the classic fuel for multi-week rallies; slowing growth often ends them even while growth is still positive.',
     blank: "Needs the previous quarter's growth rate too — blank when either quarter's year-over-year sales comparison is unavailable.",
   },
   eps_yoy_q: {
-    short: 'Quarterly EPS: year over year',
+    short: 'Quarterly EPS (yoy)',
     full: "The latest quarter's earnings per share (EPS — the quarter's earnings divided by the share count) compared with the same quarter last year.\nUnit: percent.",
     interp: 'Can differ from sales growth when margins or the share count change — share buybacks boost it, issuing new shares drags it.',
     blank: "The SEC filings were unavailable, there is no same-quarter-last-year EPS, or last year's EPS was so close to zero (under $0.05) that a percent change would be meaningless.",
   },
   eps_growth_trend: {
-    short: 'Growth trend: EPS',
+    short: 'Growth trend (EPS)',
     full: 'Whether EPS growth sped up or slowed versus the quarter before.\nValues: accelerating / slowing / steady (same 2-point buffer).',
     interp: 'The market pays for the change in direction, not the level.',
     blank: "Needs the previous quarter's growth rate too — blank when either quarter's year-over-year EPS comparison is unavailable.",
@@ -452,13 +454,13 @@ const en: Record<string, MetricEntry> = {
     full: 'What the company owns versus what it owes — its financial strength.',
   },
   current_ratio: {
-    short: 'Assets to liabilities: short term',
+    short: 'Assets to liabilities (short term)',
     full: "Short-term assets divided by short-term bills — can the company pay what's due within a year (latest fiscal year)?",
     interp: 'Above about 1.5 is comfortable; below 1 hints at a cash crunch, where bad news hits twice as hard.',
     blank: 'The SEC filings were unavailable, or the short-term assets and liabilities figures are not both available for the same fiscal year.',
   },
   debt_to_equity: {
-    short: 'Liabilities to equity: total',
+    short: 'Liabilities to equity (total)',
     full: "Everything the company owes compared with the shareholders' money (equity) — how much it runs on borrowed money.",
     interp: 'Heavy borrowing makes moves bigger both ways and hurts most when interest rates are high; compare it against companies in the same industry.',
     blank: 'The SEC filings were unavailable, or the total-liabilities and equity figures are not both available for the same fiscal year.',
@@ -778,7 +780,7 @@ const zh: Record<string, MetricEntry> = {
     full: '最近20个交易日平均每天成交的股数。\n用于判断仓位能否在一天内卖出而不把价格砸下去。',
   },
   worst_day_pct_1y: {
-    short: '最差单日跌幅：一年区间',
+    short: '最差单日跌幅（一年区间）',
     full: '过去一年最糟糕的单日跌幅，按前一天收盘价到当天收盘价计算。\n单位：百分比，负数——如 -14.5 表示那天跌了 14.5%。',
     interp: '说明一次隔夜坏消息（差财报、坏新闻）实际能把价格越过止损打到多远。',
     blank: '载入的价格历史不足约一个月——天数太少，最差单日没有意义。',
@@ -864,7 +866,7 @@ const zh: Record<string, MetricEntry> = {
     blank: '载入的价格历史不足6天。',
   },
   range_pct_1y: {
-    short: '当前价格排位：一年区间',
+    short: '当前价格排位（一年区间）',
     full: '今天的价格在过去一年区间里的位置，按满分100表示。\n0/100 = 一年最低点，100/100 = 一年最高点。',
     interp: '约80/100以上 = 强势但追高有风险；约20/100以下 = 除非明确在筑底，否则是接飞刀。',
     blank: '一年最高价和最低价不可用（历史太短），或两者相等而无法计算排位。',
@@ -875,7 +877,7 @@ const zh: Record<string, MetricEntry> = {
     interp: '价格常在旧高点下方停滞——当年在那里买入的人正等着解套卖出。目标价定在它上方，等于假设股价能闯进新高区，那比逢低买入更难。',
   },
   trend: {
-    short: '趋势：均线+转折点',
+    short: '趋势（均线+转折点）',
     full: '整体方向，由两个必须一致的独立检查得出：（1）价格在自己的均线上方还是下方；（2）图上近期的高点和低点在抬高还是降低。\n取值：bullish / bearish / neutral（neutral = 两个检查不一致）。',
     interp: '方向过滤器：交易只应顺着周线趋势的方向做，日线逢低买入在两个时间框架一致时效果最好。',
     blank: '两个检查（均线、近期高低点）中有一个因历史数据不足而无法回答。',
@@ -911,7 +913,7 @@ const zh: Record<string, MetricEntry> = {
     blank: '历史太短，它背后的 RSI 或 MACD 不可用。',
   },
   atr_pct: {
-    short: '14日ATR：占价格%',
+    short: '14日ATR（占价格%）',
     full: '正常单日波动占价格的百分比——让 $10 的股票能和 $500 的股票比较。\n单位：百分比；通常 1 到 6。',
     interp: '超过约6 = 很暴躁的股票，考虑用更小的仓位。',
     blank: '载入的价格历史不足约15天，无法测量正常单日波动。',
@@ -929,7 +931,7 @@ const zh: Record<string, MetricEntry> = {
     blank: '载入的价格历史不足60天。',
   },
   vol_ratio_5_60: {
-    short: '量比：5日/60日',
+    short: '量比（5日/60日）',
     full: '本周平均成交量和3个月正常水平的比值。\n单位：比率；通常 0.5 到 2，1.0 = 正常。',
     interp: '价格突破天花板时高于约1.5 = 真实买盘确认行情；低于约0.7 = 这波行情存疑。',
     blank: '构成它的两个均量之一不可用（历史太短）。',
@@ -947,7 +949,7 @@ const zh: Record<string, MetricEntry> = {
     blank: '价格正处于约6个月来的最高点——上方已没有过去的天花板。',
   },
   typical_pullback_atr: {
-    short: '典型回调深度：6个月区间',
+    short: '典型回调深度（6个月区间）',
     full: '最近约6个月里，这只股票正常回调的深度——从每个局部顶点跌到随后的局部底部——用正常单日波动（ATR）作单位。\n范围：通常 1 到 5。',
     interp: '止损比它还近的话，正常的来回晃动就会把你震出去，哪怕交易思路是对的。',
     blank: '最近约6个月里找到的完整回调不足2次，没有"典型深度"可报。',
@@ -977,7 +979,7 @@ const zh: Record<string, MetricEntry> = {
     blank: '没有可用的历史财报记录，或过去的财报没有分析师预期可作对比。',
   },
   avg_surprise_pct_4q: {
-    short: '近4季平均差值：EPS对比预期',
+    short: '近4季平均差值（EPS对比预期）',
     full: '这4次财报中，实际 EPS 平均比分析师预期高出或低出多少。\n单位：百分比。',
     interp: '只说明公司是否常越过分析师定的门槛——不代表股价怎么反应。请和下面的财报日波动一起看。',
     blank: '没有可用的历史财报记录，或这些财报没有分析师预期可作衡量。',
@@ -1000,19 +1002,20 @@ const zh: Record<string, MetricEntry> = {
     interp: '预测上调往往在数周内推高股价；下调是逆风，图形再好也一样。',
     blank: '没有可用的分析师预期，或90天前的预测值太接近零，百分比变化没有意义。',
   },
+  // 股息字段：仅旧运行（2026-07-31 从 TODO.md 最终清单移除）。
   dividend: {
     short: '股息',
-    full: '公司定期发给股东的现金——一个日期已知的小事件，会在固定日子影响股价。',
+    full: '仅旧运行：公司定期发给股东的现金——一个日期已知的小事件，会在固定日子影响股价。',
   },
   days_until_dividend: {
     short: '距下次股息发放天数',
-    full: '从今天到公司下次发放股息还有多少天。',
+    full: '仅旧运行：从今天到公司下次发放股息还有多少天。',
     interp: '现金在这一天到账，但价格更早就会下调：在除息日（股票开始不带这期股息交易的日子），股价会低开大约股息的金额。',
     blank: '公司不派股息，或尚未排定下次发放日期。',
   },
   dividend_amount_est: {
     short: '预计股息金额',
-    full: '最近一次每股派发的股息——对下一次的最佳估计。\n单位：美元。',
+    full: '仅旧运行：最近一次每股派发的股息——对下一次的最佳估计。\n单位：美元。',
     interp: '相对股价很小 = 除息日附近的一次小幅下调；金额大的派息本身就可能击中紧止损。',
     blank: '公司不派股息，或 Yahoo Finance 没有上次派息的记录。',
   },
@@ -1029,25 +1032,25 @@ const zh: Record<string, MetricEntry> = {
   },
   growth: { short: '成长性', full: '取自最新 SEC 官方季报的季度增长——业务是否在扩张的最新读数。' },
   revenue_yoy_q: {
-    short: '季度营收：同比',
+    short: '季度营收（同比）',
     full: '最新季度的营收与去年同一季度相比的增长率（同比 = 和去年同期比）。\n单位：百分比。',
     interp: '为正且上升 = 业务在扩张；变化的方向比数字本身更重要。',
     blank: 'SEC 财报不可用，或没有去年同季度的营收可作对比。',
   },
   revenue_growth_trend: {
-    short: '增速趋势：营收',
+    short: '增速趋势（营收）',
     full: '这个营收增速与上一季度相比是加快了还是放慢了。\n取值：accelerating（加速）/ slowing（放缓）/ steady（变化不到2个百分点算平稳）。',
     interp: '增速加快是数周级行情的经典燃料；增速放缓即使仍在增长，也常终结行情。',
     blank: '还需要上一季度的增速——两个季度中任一季的同比营收对比不可用时留空。',
   },
   eps_yoy_q: {
-    short: '季度EPS：同比',
+    short: '季度EPS（同比）',
     full: '最新季度的每股利润（EPS = 当季利润除以股份数）与去年同一季度相比的增长率。\n单位：百分比。',
     interp: '当利润率或股本变化时会和营收增速不同——回购推高它，增发新股拖累它。',
     blank: 'SEC 财报不可用、没有去年同季度的 EPS，或去年同期 EPS 太接近零（低于 $0.05），百分比变化没有意义。',
   },
   eps_growth_trend: {
-    short: '增速趋势：EPS',
+    short: '增速趋势（EPS）',
     full: 'EPS 的增速与上一季度相比是加快还是放慢。\n取值：accelerating / slowing / steady（同样的2个百分点缓冲）。',
     interp: '市场付钱买的是方向的变化，不是水平。',
     blank: '还需要上一季度的增速——两个季度中任一季的同比 EPS 对比不可用时留空。',
@@ -1085,13 +1088,13 @@ const zh: Record<string, MetricEntry> = {
   },
   balance: { short: '资产负债', full: '公司拥有什么、欠什么——它的财务实力。' },
   current_ratio: {
-    short: '资产比负债：短期',
+    short: '资产比负债（短期）',
     full: '短期资产除以短期账单——公司付得起一年内到期的钱吗（最新财年）？',
     interp: '约1.5以上比较从容；低于1提示现金紧张——这种时候坏消息的伤害会加倍。',
     blank: 'SEC 财报不可用，或短期资产和短期负债没有同一财年的完整数字。',
   },
   debt_to_equity: {
-    short: '负债比股东资金：总体',
+    short: '负债比股东资金（总体）',
     full: '公司欠的所有钱和股东投入资金的比值——公司有多依赖借来的钱运转。',
     interp: '高负债让涨跌都被放大，利率高的时候伤害最大；要和同行业公司比较。',
     blank: 'SEC 财报不可用，或总负债和股东资金没有同一财年的完整数字。',
@@ -1129,13 +1132,13 @@ const zh: Record<string, MetricEntry> = {
     blank: 'Yahoo Finance 的市场数据不可用，或公司没有营收可作除数。',
   },
   pe_ttm: {
-    short: '价格比利润：过去12月',
+    short: '价格比利润（过去12月）',
     full: '股价除以过去12个月的每股利润。粗略地说：买下当前利润要付几年的价钱。',
     interp: '高 = 大量预期已经在价格里，好消息只够维持现状；低 = 便宜，或市场预期业绩下滑。',
     blank: '公司过去12个月是亏损的（亏损时这个比率没有定义），或 Yahoo Finance 的市场数据不可用。',
   },
   pe_forward: {
-    short: '价格比利润：未来12月',
+    short: '价格比利润（未来12月）',
     full: '股价除以分析师预期的未来12个月每股利润。',
     interp: '明显低于"过去12月"那个数字 = 分析师预期利润增长；高于它 = 预期萎缩。',
     blank: '分析师预测亏损、没有分析师覆盖这只股票，或 Yahoo Finance 的市场数据不可用。',

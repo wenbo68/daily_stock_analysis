@@ -4,8 +4,9 @@
 Groups and field names follow the TODO.md final-truth list: ``meta``
 (company/sector/industry + data as-of dates), ``balance``,
 ``profitability`` (incl. free cash flow and its ratio to earnings),
-``growth``, ``valuation``, ``quarterly report`` (the earnings-event
-block) and ``dividend``. Every published metric ships as a
+``growth``, ``valuation`` and ``quarterly report`` (the earnings-event
+block; the short-lived dividend group was dropped from the list on
+2026-07-31). Every published metric ships as a
 ``{name, explanation, interpretation, value}`` envelope — the same
 contract as technicals v2 — and computed metrics carry UI formula
 receipts in ``DimensionResult.formulas``. Fields that cannot be
@@ -17,8 +18,8 @@ Sources, split by what each can actually answer:
   growth (10-Q), profitability / balance ratios (10-K), free cash
   flow (TTM from FY + YTD rows). Series math lives in
   ``edgar_series.py``.
-- **Yahoo summary (yfinance)** — market-priced valuation ratios, the
-  sector/industry profile and the dividend schedule.
+- **Yahoo summary (yfinance)** — market-priced valuation ratios and
+  the sector/industry profile.
 - **Yahoo earnings data (yfinance)** — the earnings calendar (next
   date), the surprise history and the analyst EPS estimate trend.
 - **Daily bars** (optional, injected) — the realized report-day moves.
@@ -126,16 +127,6 @@ def _has_values(section: Optional[Mapping[str, Any]]) -> bool:
     return bool(section) and any(
         metric_value(node) is not None for node in section.values()
     )
-
-
-def _epoch_to_date(value: Any) -> Optional[date]:
-    number = _to_float(value)
-    if number is None or number <= 0:
-        return None
-    try:
-        return datetime.fromtimestamp(number, tz=timezone.utc).date()
-    except (OverflowError, OSError, ValueError):
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +553,6 @@ class FundamentalsUSProvider(DimensionProvider):
             "quarterly_report": self._quarterly_report_group(
                 symbol, citations, warnings, formulas
             ),
-            "dividend": self._dividend_group(info, formulas),
         }
 
         edgar_ok = facts is not None and any(
@@ -764,7 +754,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "avg_surprise_pct_4q": make_metric(
-                "4q avg diff: EPS vs estimate",
+                "4q avg diff (EPS vs estimate)",
                 "Average gap between reported EPS and the analyst "
                 "estimate over the last 4 reports, in %.",
                 surprises["avg_surprise_pct"],
@@ -797,52 +787,6 @@ class FundamentalsUSProvider(DimensionProvider):
             ),
         }
 
-    def _dividend_group(
-        self, info: Optional[Mapping[str, Any]], formulas: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        today = self._today()
-        pay_date = _epoch_to_date(info.get("dividendDate")) if info else None
-        if pay_date is not None and pay_date < today:
-            pay_date = None  # a past payment date is history, not a coming payout
-        days_until = (pay_date - today).days if pay_date is not None else None
-        amount = _to_float(info.get("lastDividendValue")) if info else None
-
-        if days_until is not None:
-            formulas["dividend.days_until_dividend"] = {
-                "formula": "next_dividend_payment_date − today",
-                "inputs": {
-                    "next_dividend_payment_date": pay_date.isoformat(),
-                    "today": today.isoformat(),
-                },
-            }
-
-        return {
-            "days_until_dividend": make_metric(
-                "days until next dividend payment",
-                "Days from today until the company next pays its "
-                "dividend. Blank when the company pays no dividend or "
-                "none is scheduled yet.",
-                days_until,
-                interpretation=(
-                    "The cash arrives on this date, but the price dips "
-                    "earlier: on the ex-dividend date the stock starts "
-                    "trading without the payout and opens lower by "
-                    "roughly the dividend amount."
-                ),
-            ),
-            "dividend_amount_est": make_metric(
-                "estimated dividend amount",
-                "The most recent dividend payment per share, in USD — "
-                "the best available guess for the next one.",
-                amount,
-                interpretation=(
-                    "Small versus the stock price = a minor scheduled "
-                    "dip around the ex-dividend date; a large payout can "
-                    "clip a tight stop on its own."
-                ),
-            ),
-        }
-
     @staticmethod
     def _growth_group(
         facts: Optional[Mapping[str, Any]], formulas: Dict[str, Any]
@@ -855,11 +799,6 @@ class FundamentalsUSProvider(DimensionProvider):
         revenue = growth.get("revenue") or {}
         eps = growth.get("eps") or {}
 
-        trend_branches = [
-            {"label": "accelerating", "condition": "yoy_now − yoy_prior > 2"},
-            {"label": "slowing", "condition": "yoy_now − yoy_prior < -2"},
-            {"label": "steady", "condition": None},
-        ]
         for series_key, entry in (("revenue", revenue), ("eps", eps)):
             # Receipt variable names follow the user-facing word canon:
             # "sales", never "revenue" (payload keys stay stable).
@@ -876,17 +815,28 @@ class FundamentalsUSProvider(DimensionProvider):
                     },
                 }
             if entry.get("trend") is not None:
+                # The current-quarter ingredient IS the published YoY
+                # row, so the receipt names it by its payload key — the
+                # UI then labels it with the field's display name and
+                # links the plugged number back to that row.
+                yoy_key = f"{series_key}_yoy_q"
                 formulas[f"growth.{series_key}_growth_trend"] = {
-                    "branches": trend_branches,
+                    "branches": [
+                        {"label": "accelerating",
+                         "condition": f"{yoy_key} − prior_quarter_yoy > 2"},
+                        {"label": "slowing",
+                         "condition": f"{yoy_key} − prior_quarter_yoy < -2"},
+                        {"label": "steady", "condition": None},
+                    ],
                     "inputs": {
-                        "yoy_now": round(entry["yoy"], 2),
-                        "yoy_prior": round(entry["yoy_prior"], 2),
+                        yoy_key: round(entry["yoy"], 2),
+                        "prior_quarter_yoy": round(entry["yoy_prior"], 2),
                     },
                 }
 
         return {
             "revenue_yoy_q": make_metric(
-                "quarterly sales: year over year",
+                "quarterly sales (yoy)",
                 "Latest reported quarter's sales versus the same "
                 "quarter last year, in %.",
                 _round(revenue.get("yoy")),
@@ -896,7 +846,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "revenue_growth_trend": make_metric(
-                "growth trend: sales",
+                "growth trend (sales)",
                 "Whether that sales growth rate sped up or slowed "
                 "versus the previous quarter (±2 percentage-point dead "
                 "band).",
@@ -908,7 +858,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "eps_yoy_q": make_metric(
-                "quarterly EPS: year over year",
+                "quarterly EPS (yoy)",
                 "Latest reported quarter's earnings per share (EPS) "
                 "versus the same quarter last year, in %.",
                 _round(eps.get("yoy")),
@@ -919,7 +869,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "eps_growth_trend": make_metric(
-                "growth trend: EPS",
+                "growth trend (EPS)",
                 "Whether EPS growth sped up or slowed versus the "
                 "previous quarter (±2 percentage-point dead band).",
                 eps.get("trend"),
@@ -1068,7 +1018,7 @@ class FundamentalsUSProvider(DimensionProvider):
 
         return {
             "current_ratio": make_metric(
-                "assets to liabilities: short term",
+                "assets to liabilities (short term)",
                 "Short-term assets divided by short-term liabilities — "
                 "can it pay what's due within a year (latest fiscal "
                 "year).",
@@ -1079,7 +1029,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "debt_to_equity": make_metric(
-                "liabilities to equity: total",
+                "liabilities to equity (total)",
                 "Total liabilities compared to shareholders' capital "
                 "(equity) — how much the company runs on borrowed "
                 "money.",

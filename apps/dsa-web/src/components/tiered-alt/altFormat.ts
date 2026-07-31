@@ -35,6 +35,7 @@ const METRIC_UNIT: Record<string, string> = {
   fcf: 'USD',
   fcf_to_earnings_pct: '%',
   market_cap: 'USD',
+  // Dividend fields: old stored runs only (group dropped 2026-07-31).
   days_until_dividend: 'days',
   dividend_amount_est: 'USD',
   // Legacy fundamentals keys old stored runs still render.

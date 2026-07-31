@@ -43,6 +43,9 @@ const INPUT_ROW_PATH: Record<string, string> = {
   // quarterly_report with no receipt referencing it.
   next_earnings_date: 'fundamentals.earnings.next_earnings_date',
   fcf: 'fundamentals.profitability.fcf',
+  // The growth-trend receipts cite the published YoY rows by key.
+  revenue_yoy_q: 'fundamentals.growth.revenue_yoy_q',
+  eps_yoy_q: 'fundamentals.growth.eps_yoy_q',
 };
 
 // On-screen names for receipt-only ingredients (values the formula needs
@@ -75,8 +78,7 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   sales_q_year_ago: 'sales same quarter last year',
   eps_q: 'quarterly EPS',
   eps_q_year_ago: 'EPS same quarter last year',
-  yoy_now: 'latest quarter YoY %',
-  yoy_prior: 'prior quarter YoY %',
+  prior_quarter_yoy: "prior quarter's yoy growth",
   gross_earnings: 'gross earnings',
   operating_earnings: 'operating earnings',
   earnings: 'earnings',
@@ -98,6 +100,8 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   operating_income: 'operating earnings',
   net_income: 'earnings',
   revenue: 'sales (fiscal year)',
+  yoy_now: "this quarter's yoy growth",
+  yoy_prior: "prior quarter's yoy growth",
 };
 
 // Helper names win over metricLabels here: a receipt ingredient like

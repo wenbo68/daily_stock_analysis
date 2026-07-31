@@ -31,7 +31,7 @@ function makeFundamentals(): TieredDimension {
         industry: env('industry', 'Consumer Electronics'),
       },
       balance: {
-        current_ratio: env('assets to liabilities: short term', 2),
+        current_ratio: env('assets to liabilities (short term)', 2),
       },
       profitability: {
         gross_margin_pct: env('gross earnings to sales', 40),
@@ -39,8 +39,8 @@ function makeFundamentals(): TieredDimension {
         fcf_to_earnings_pct: env('free cash flow to earnings', 123.75),
       },
       growth: {
-        revenue_yoy_q: env('quarterly sales: year over year', 20),
-        revenue_growth_trend: env('growth trend: sales', 'accelerating'),
+        revenue_yoy_q: env('quarterly sales (yoy)', 20),
+        revenue_growth_trend: env('growth trend (sales)', 'accelerating'),
       },
       valuation: {
         pe_ttm: env('trailing price to earnings', 28.5),
@@ -49,11 +49,7 @@ function makeFundamentals(): TieredDimension {
         next_earnings_date: env('next report date', '2025-07-20'),
         eps_rev_90d_pct: env('90d EPS estimate change', null),
         beats_4q: env('4q EPS beat estimate history', '3/4'),
-        avg_surprise_pct_4q: env('4q avg diff: EPS vs estimate', 2.5),
-      },
-      dividend: {
-        days_until_dividend: env('days until next dividend payment', 40),
-        dividend_amount_est: env('estimated dividend amount', 0.25),
+        avg_surprise_pct_4q: env('4q avg diff (EPS vs estimate)', 2.5),
       },
     },
     formulas: {
@@ -63,19 +59,15 @@ function makeFundamentals(): TieredDimension {
       },
       'growth.revenue_growth_trend': {
         branches: [
-          { label: 'accelerating', condition: 'yoy_now − yoy_prior > 2' },
-          { label: 'slowing', condition: 'yoy_now − yoy_prior < -2' },
+          { label: 'accelerating', condition: 'revenue_yoy_q − prior_quarter_yoy > 2' },
+          { label: 'slowing', condition: 'revenue_yoy_q − prior_quarter_yoy < -2' },
           { label: 'steady', condition: null },
         ],
-        inputs: { yoy_now: 20, yoy_prior: 12 },
+        inputs: { revenue_yoy_q: 20, prior_quarter_yoy: 12 },
       },
       'profitability.fcf_to_earnings_pct': {
         formula: 'fcf / earnings × 100',
         inputs: { fcf: 99e9, earnings: 80e9 },
-      },
-      'dividend.days_until_dividend': {
-        formula: 'next_dividend_payment_date − today',
-        inputs: { next_dividend_payment_date: '2025-08-10', today: '2025-07-01' },
       },
     },
   };
@@ -127,7 +119,6 @@ describe('AltDimensions — fundamentals v3', () => {
     expect(within(card).getByText('Meta info')).toBeInTheDocument();
     expect(within(card).getByText('Balance')).toBeInTheDocument();
     expect(within(card).getByText('Quarterly report')).toBeInTheDocument();
-    expect(within(card).getByText('Dividend')).toBeInTheDocument();
     expect(within(card).getByText('Growth')).toBeInTheDocument();
     // Envelopes (4-key, with interpretation) unwrap to one value row.
     expect(within(card).getByText('Technology')).toBeInTheDocument();
@@ -140,9 +131,6 @@ describe('AltDimensions — fundamentals v3', () => {
   it('appends units to fundamentals values', () => {
     renderFundamentals();
     expect(screen.getByTestId('alt-metric-formula-revenue_yoy_q').textContent).toBe('20 %');
-    expect(screen.getByTestId('alt-metric-formula-days_until_dividend').textContent).toBe(
-      '40 days',
-    );
     expect(screen.getByText('99.00 billion USD')).toBeInTheDocument();
     expect(screen.getByTestId('alt-metric-formula-fcf_to_earnings_pct').textContent).toBe(
       '123.75 %',
@@ -182,6 +170,22 @@ describe('AltDimensions — fundamentals v3', () => {
     expect(within(modal).getAllByText(/slowing/).length).toBeGreaterThan(0);
   });
 
+  it('growth-trend receipt names and links the published yoy row', () => {
+    renderFundamentals();
+    fireEvent.click(screen.getByTestId('alt-metric-formula-revenue_growth_trend'));
+    const modal = screen.getByTestId('alt-metric-formula-modal');
+    // The ingredient carries the field's display name, not a helper name…
+    expect(within(modal).getAllByText('Quarterly sales (yoy)').length).toBeGreaterThan(0);
+    expect(within(modal).queryByText(/latest quarter YoY/)).toBeNull();
+    // …and its plugged number is a jump button back to the row.
+    expect(
+      within(modal).getAllByRole('button', { name: 'Quarterly sales (yoy)' }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(modal).getAllByText("prior quarter's yoy growth").length,
+    ).toBeGreaterThan(0);
+  });
+
   it('links the FCF-to-earnings receipt back to the free-cash-flow row', () => {
     renderFundamentals();
     fireEvent.click(screen.getByTestId('alt-metric-formula-fcf_to_earnings_pct'));
@@ -203,7 +207,7 @@ describe('AltDimensions — fundamentals v3', () => {
 
   it('shows Meaning + Interpretation blocks in the label tooltip', () => {
     renderFundamentals();
-    const label = screen.getAllByText('Quarterly sales: year over year')[0];
+    const label = screen.getAllByText('Quarterly sales (yoy)')[0];
     fireEvent.mouseEnter(label.closest('span[class*="inline-flex"]') ?? label);
     const tooltip = screen.getByRole('tooltip');
     expect(within(tooltip).getByText('Meaning:')).toBeInTheDocument();

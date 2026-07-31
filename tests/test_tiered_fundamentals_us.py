@@ -116,9 +116,6 @@ FAKE_INFO = {
     "marketCap": 3.4e12,
     "sector": "Technology",
     "industry": "Consumer Electronics",
-    # 2025-08-10 UTC — 40 days after the fixture's "today" (2025-07-01).
-    "dividendDate": 1754784000,
-    "lastDividendValue": 0.25,
 }
 
 FAKE_EARNINGS_ROWS = [
@@ -370,8 +367,6 @@ class TestFundamentalsUSProvider(unittest.TestCase):
             ("quarterly_report", "avg_surprise_pct_4q", 2.5),
             ("quarterly_report", "reaction_avg_abs_pct", 7.0),
             ("quarterly_report", "reaction_worst_pct", -6.0),
-            ("dividend", "days_until_dividend", 40),
-            ("dividend", "dividend_amount_est", 0.25),
         ):
             node = payload[group][key]
             self.assertTrue(is_envelope(node), f"{group}.{key} not an envelope")
@@ -380,10 +375,12 @@ class TestFundamentalsUSProvider(unittest.TestCase):
 
     def test_retired_fields_are_gone(self):
         payload = _provider().collect("AAPL").payload
-        # Old group keys retired by the 2026-07-31 regroup.
+        # Old group keys retired by the 2026-07-31 regroup (and the
+        # short-lived dividend group dropped from the TODO list).
         self.assertNotIn("profile", payload)
         self.assertNotIn("earnings", payload)
         self.assertNotIn("balance_sheet", payload)
+        self.assertNotIn("dividend", payload)
         # Retired fields.
         self.assertNotIn("net_margin_pct", payload["profitability"])
         self.assertNotIn("pb", payload["valuation"])
@@ -398,7 +395,7 @@ class TestFundamentalsUSProvider(unittest.TestCase):
             list(payload),
             [
                 "meta", "balance", "profitability", "growth",
-                "valuation", "quarterly_report", "dividend",
+                "valuation", "quarterly_report",
             ],
         )
 
@@ -420,14 +417,24 @@ class TestFundamentalsUSProvider(unittest.TestCase):
             80e9,
         )
         self.assertIn("balance.current_ratio", formulas)
-        self.assertIn("dividend.days_until_dividend", formulas)
         self.assertNotIn("earnings.days_until_earnings", formulas)
         self.assertNotIn("balance_sheet.current_ratio", formulas)
 
-    def test_past_dividend_payment_date_is_filtered(self):
-        provider = _provider(today=lambda: date(2025, 9, 1))
-        payload = provider.collect("AAPL").payload
-        self.assertIsNone(metric_value(payload["dividend"]["days_until_dividend"]))
+    def test_growth_trend_receipt_cites_the_published_yoy_row(self):
+        # The trend's current-quarter ingredient IS the displayed YoY
+        # field, so the receipt keys it by its payload key (the UI links
+        # it back to that row) instead of an unlinked helper name.
+        formulas = _provider().collect("AAPL").formulas
+        trend = formulas["growth.revenue_growth_trend"]
+        self.assertAlmostEqual(trend["inputs"]["revenue_yoy_q"], 20.0)
+        self.assertAlmostEqual(trend["inputs"]["prior_quarter_yoy"], 12.0)
+        self.assertIn(
+            "revenue_yoy_q − prior_quarter_yoy > 2",
+            trend["branches"][0]["condition"],
+        )
+        eps_trend = formulas["growth.eps_growth_trend"]
+        self.assertIn("eps_yoy_q", eps_trend["inputs"])
+        self.assertNotIn("yoy_now", trend["inputs"])
 
     def test_edgar_down_degrades_to_partial_with_warning(self):
         def _edgar_boom(symbol):

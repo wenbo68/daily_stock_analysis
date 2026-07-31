@@ -983,17 +983,8 @@ class TechnicalsProvider(DimensionProvider):
                 ),
             },
             "volume": {
-                # 60d before 5d (TODO.md order 2026-07-30): the baseline
-                # first, then the recent read compared against it.
-                "avg_vol_60d": make_metric(
-                    "60d avg volume",
-                    "Mean daily share volume over the last 60 bars.",
-                    _round(avg_vol_60, 0),
-                    interpretation=(
-                        "The liquidity baseline an order size is judged "
-                        "against."
-                    ),
-                ),
+                # 5d before 60d (TODO.md order 2026-07-31): the recent
+                # read first, then the baseline it is compared against.
                 "avg_vol_5d": make_metric(
                     "5d avg volume",
                     "Mean daily share volume over the last 5 bars.",
@@ -1003,8 +994,17 @@ class TechnicalsProvider(DimensionProvider):
                         "compares against the 60-day baseline."
                     ),
                 ),
+                "avg_vol_60d": make_metric(
+                    "60d avg volume",
+                    "Mean daily share volume over the last 60 bars.",
+                    _round(avg_vol_60, 0),
+                    interpretation=(
+                        "The liquidity baseline an order size is judged "
+                        "against."
+                    ),
+                ),
                 "vol_ratio_5_60": make_metric(
-                    "volume ratio (5d ÷ 60d)",
+                    "volume ratio (5d/60d)",
                     "Average volume of the last 5 bars over the 60-bar "
                     "average.",
                     vol_ratio,
@@ -1081,7 +1081,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "stretch_10w_atr": make_metric(
-                    "diff: closing price vs 10w SMA",
+                    "diff (closing price vs 10w SMA)",
                     "Distance of the close from the 10-week average, in "
                     "weekly ATR units (weekly ATR ≈ daily ATR × √5).",
                     stretch_10w,
@@ -1092,7 +1092,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "trend": make_metric(
-                    "weekly trend (SMA + pivots)",
+                    "trend (SMA + pivots)",
                     _trend_explanation(
                         weekly_trend, weekly_stack, weekly_struct,
                         f"{WEEKLY_SMA_FAST}-week", f"{WEEKLY_SMA_SLOW}-week",
@@ -1127,7 +1127,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "stretch_50d_atr": make_metric(
-                    "diff: closing price vs 50d SMA",
+                    "diff (closing price vs 50d SMA)",
                     "Distance of the close from the 50-day average, in "
                     "ATR units.",
                     stretch_50d,
@@ -1137,7 +1137,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "trend": make_metric(
-                    "daily trend (SMA + pivots)",
+                    "trend (SMA + pivots)",
                     _trend_explanation(
                         daily_trend, daily_stack, daily_struct,
                         f"{DAILY_SMA_FAST}-day", f"{DAILY_SMA_MID}-day",
@@ -1499,10 +1499,10 @@ class TechnicalsProvider(DimensionProvider):
         its fetch fails; the last element maps "rs_1m" / "rs_3m" /
         "rs_label" / "regime" to that receipt's plugged-in inputs (a key
         is absent when its ingredients are)."""
-        regime_name = "benchmark: market"
-        rs_1m_name = "1m return diff: stock vs market"
-        rs_name = "3m return diff: stock vs market"
-        rs_label_name = "relative strength: stock"
+        regime_name = "benchmark (market)"
+        rs_1m_name = "1m return diff (stock vs market)"
+        rs_name = "3m return diff (stock vs market)"
+        rs_label_name = "relative strength (stock)"
         rs_1m_explanation = (
             "Stock return minus benchmark return over the last "
             f"{RS_WINDOW_1M} trading days (about 1 month), in percentage "
