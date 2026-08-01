@@ -14,166 +14,112 @@
   - hold window: RESOLVED (owner decision 2026-07-29) — no numeric constant and no new user input
     - the app is swing trading only, so the AI prompts state the horizon in words ("swing trade, held days to weeks") and the AI uses its own judgement; the only place a number is needed is the deterministic event warnings (earnings_soon uses the 7-day EARNINGS_WARNING_DAYS; a future macro_event_soon should reuse the same constant)
 
+---
+use this as the final truth:
 - technicals
-  - meta
-    - as of
+  - meta info
+    - bars up to
     - daily bars
     - weekly bars
   - overall market
-    - benchmark: market
-    - 1m return diff: stock vs market
-    - 3m return diff: stock vs market
-    - relative strength: stock
+    - benchmark (market)
+    - 1m return diff (stock vs market)
+    - 3m return diff (stock vs market)
+    - relative strength (stock)
     - sector relative strength (sector ETF vs market, ~1–3 months)
       - meaning: whether the ticker's sector has been leading or lagging the overall market recently (computed from sector-ETF prices; needs the sector label from fundamentals)
       - interpretation: swing moves in leading sectors run further and pull back shallower; fighting a lagging sector cuts the win rate even on a clean chart
       - new: the standard middle layer between macro and the single name; lives here because this group already computes stock-vs-market relative strength the same way
-  - stock price
+- price
     - closing price
     - 5d price change
     - 1y highest price
     - 1y lowest price
-    - current price ranking: 1y
+    - current price ranking (1y range)
   - volume
-    - 60d avg volume
     - 5d avg volume
-    - volume ratio: 5d/60d
+    - 60d avg volume
+    - volume ratio (5d/60d)
   - volatility
     - 14d ATR
-    - 14d ATR (this is the percentage one)
+    - 14d ATR
     - ATR trend
-    - typical price drop (same as typical pullback in atr): but what's the time range?
-    - worst price drop: 1y
+    - typical price drop (6m range)
+    - worst price drop (1y range)
   - weekly timeframe
     - 10w SMA
-    - diff: closing price vs 10w SMA
-    - trend: SMA + pivots
+    - diff (closing price vs 10w SMA)
+    - trend (SMA + pivots)
   - daily timeframe
     - 50d SMA
     - 200d SMA
-    - diff: closing price vs 50d SMA
-    - trend: SMA + pivots
+    - diff (closing price vs 50d SMA)
+    - trend (SMA + pivots)
     - 14d RSI
     - momentum
   - levels
     - nearest support
     - nearest resistance
-
 - fundamentals
-  - profile
-    - sector / industry label
-      - meaning: the company's sector and industry classification (fetched)
-      - interpretation: margins, debt/equity and P/S only mean anything against industry peers; also tells the analysis which macro series to weight (oil for energy, 10y yield for long-duration tech, curve spread for banks)
-      - new: several interpretations below say "compare within the same industry" but no field says what the industry is; one fetched string unlocks those comparisons and the sector-strength field in technicals
-  - earnings
-    - next earnings: next earnings date
-      - meaning: the date the company next reports quarterly results (fetched)
-      - interpretation: a report inside your hold window means the stock can gap straight past your stop overnight — exit before it or size for it
-      - good: earnings are very important
-    - days until earnings
-      - meaning: how many days from today until that report (computed from the date)
-      - interpretation: small number = event risk is live now; big number = a free window to trade in
-      - good: drives the earnings_soon plan warning; a report inside the hold window is the biggest single-stock event risk
-    - earnings date confirmation status
-      - meaning: whether the next earnings date is company-confirmed or a provider estimate
-      - interpretation: estimated dates slip by days to weeks; an unconfirmed date near the hold-window boundary is a range, not a point
-      - new: earnings_soon keys entirely off this date, so a wrong estimate makes the warning silently fire late or not at all; caveat — our current source (yfinance calendar) does not expose the flag, so this needs a second source (e.g. Nasdaq's calendar)
-    - earnings surprise history (last ~4 quarters: beat or miss, by how much)
-      - meaning: whether reported profit came in above or below what analysts expected, for each recent quarter
-      - interpretation: says whether the company tends to clear the bar analysts set — not how the stock reacts; read it together with the price-reaction field below
-      - new: consistent beaters get the benefit of the doubt into a report; habitual missers lose it
-    - post-earnings price reaction (last ~4 reports: next-day % move)
-      - meaning: how the stock actually moved the day after each recent report (computed from the price history technicals already fetches)
-      - interpretation: the realized reaction distribution is this name's true event risk — a stock that routinely moves ±10% on earnings needs a different plan than one that moves ±2%
-      - new: completes the surprise history — beat/miss says whether they cleared the bar, this says what the stock does about it (beats that still drop are common)
-    - analyst estimate revisions (EPS estimates being raised or cut)
-      - meaning: whether analysts have been raising or lowering their profit forecasts recently
-      - interpretation: rising estimates tend to pull the price up over weeks; cuts are a headwind even on a good chart
-      - new: one of the best-documented medium-term signals; rising estimates support a swing long, cuts undermine it
-    - ex-dividend date (when inside the hold window)
-      - meaning: the date the stock starts trading without its next dividend; the price mechanically opens lower by roughly the dividend amount (fetched)
-      - interpretation: a small scheduled gap-down that can clip a tight stop on a long
-      - new: nearly free to fetch, and it's the one scheduled gap the other event fields don't cover
-  - growth (currently annual 10-K numbers)
-    - revenue YoY
-      - meaning: how much sales grew versus the prior fiscal year, in percent (computed from EDGAR statement values)
-      - interpretation: positive and rising = expanding business; negative = shrinking, a headwind for any long
-      - bad: annual figures are up to a year stale for a days-to-weeks hold; the quarterly version below replaces it
-    - net income YoY
-      - meaning: how much total profit grew versus the prior fiscal year (computed)
-      - interpretation: profit growing faster than sales means margins are improving; slower means they're compressing
-      - bad: same staleness problem as revenue YoY
-    - EPS YoY
-      - meaning: profit-per-share growth versus the prior fiscal year (computed)
-      - interpretation: differs from net income growth when share count changes — buybacks boost it, dilution drags it
-      - bad: same staleness problem as revenue YoY
-    - quarterly revenue YoY + whether growth is accelerating or slowing
-      - meaning: latest quarter's sales versus the same quarter last year, and whether that growth rate sped up or slowed versus the quarter before
-      - interpretation: acceleration is the classic fuel for multi-week runs; deceleration often ends them even while growth is still positive
-      - new: fresh growth direction is what actually moves a stock over weeks; annual numbers can't show a turn
-    - quarterly EPS YoY + whether growth is accelerating or slowing
-      - meaning: same as above but for profit per share
-      - interpretation: the market pays for the change in trajectory, not the level
-      - new: same as quarterly revenue — the direction of change is the signal
+  - meta info
+    - company
+    - sector
+    - industry
+    - annual data up to
+    - quarterly data up to
+  - balance
+    - assets to liabilities (short term)
+    - liabilities to equity (total)
   - profitability
-    - gross margin
-      - meaning: percent of each sales dollar left after the direct cost of making the product (computed)
-      - interpretation: high or rising = pricing power; falling = competition or cost pressure biting
-      - good: pricing power; a shrinking gross margin is an early business-quality warning
-    - operating margin
-      - meaning: percent of sales left after all the costs of running the business, before interest and taxes (computed)
-      - interpretation: the efficiency number the market judges at earnings; a trend break here moves the stock
-      - good: core business efficiency; the margin the market watches at earnings
-    - net margin
-      - meaning: percent of sales that ends up as final bottom-line profit (computed)
-      - interpretation: same story as operating margin, plus taxes and one-off items
-      - bad: mostly duplicates operating margin plus one-off noise (taxes, write-offs); two margins are enough
-    - ROE
-      - meaning: yearly profit as a percent of the shareholders' capital tied up in the business (computed)
-      - interpretation: sustained ~15%+ marks a quality business; very low or negative means the business burns capital
-      - good: capital efficiency; separates quality names from junk when the chart looks the same
-    - free cash flow (TTM)
-      - meaning: cash actually generated over the last 12 months after paying operating costs and equipment spending
-      - interpretation: positive and close to reported profit = the earnings are real; reported profits with negative cash flow is a red flag
-      - new: reported earnings can be engineered, cash generation can't; a standard professional quality check
-  - balance sheet
-    - current ratio
-      - meaning: short-term assets divided by short-term bills — can it pay what's due within a year (computed)
-      - interpretation: above ~1.5 is comfortable; below 1 hints at a cash crunch, where bad news hits twice as hard
-      - good: near-term solvency; flags the stress cases where bad news hits hardest
-    - debt to equity
-      - meaning: total liabilities compared to shareholders' capital — how leveraged the company is (computed)
-      - interpretation: high leverage amplifies moves both ways and hurts most when rates are high; compare within the same industry
-      - good: leverage amplifies drawdowns and matters more when rates are high
-    - cash (raw dollar amount)
-      - meaning: dollars of cash on hand at the end of the fiscal year (fetched)
-      - interpretation: only meaningful relative to company size, debt and spending rate — a raw number says little
-      - bad: a raw dollar figure with no scale context is uninterpretable; current ratio + debt/equity already carry the health signal
+    - gross earnings to sales
+    - operating earnings to sales
+    - earnings to equity
+    - free cash flow
+    - free cash flow to earnings
+  - growth
+    - quarterly sales (yoy)
+    - growth trend (sales)
+    - quarterly EPS (yoy)
+    - growth trend (EPS)
   - valuation
-    - trailing P/E
-      - meaning: price divided by the last 12 months of profit — how many years of current profit you pay for the stock (fetched)
-      - interpretation: high = big expectations already priced in, good news is needed just to hold the level; low = cheap, or the market expects decline
-      - good: how much hope is priced in; extreme values change how news lands
-    - forward P/E
-      - meaning: price divided by the profit analysts expect over the next 12 months (fetched)
-      - interpretation: well below trailing P/E = analysts expect growth; above it = expected shrinkage
-      - good: embeds analyst estimates; the gap vs trailing P/E shows expected growth
-    - P/S
-      - meaning: price divided by annual sales (fetched)
-      - interpretation: the gauge for unprofitable companies; a very high P/S needs flawless growth to be justified
-      - good: the valuation gauge for unprofitable names where P/E is meaningless
-    - P/B
-      - meaning: price divided by the company's accounting net worth (fetched)
-      - interpretation: below 1 = the market values the assets at less than their book value; mostly relevant for banks
-      - bad: only informative for banks and asset-heavy businesses; noise for most swing candidates
     - market cap
-      - meaning: total value of all the company's shares (fetched)
-      - interpretation: mega caps grind, small caps gap and squeeze; also sets what liquidity to expect
-      - good: sizes the company; small caps trade, gap and squeeze differently
-  - meta: period end + basis (annual 10-K)
-    - meaning: which fiscal year the statement numbers come from
-    - interpretation: if the period end is nearly a year old, treat every statement number above as stale background
-    - good: tells the reader exactly how stale the statements are; once the quarterly growth fields land, show the latest 10-Q period end here alongside the 10-K one
+    - price to sales
+    - trailing price to earnings
+    - forward price to earnings
+  - quarterly report
+    - next report date
+    - 90d EPS estimate change
+    - 4q EPS beat estimate history
+    - 4q avg diff (EPS vs estimate)
+    - 4q avg report day price change magnitude
+    - 4q worst report day price drop
+- positioning
+  - meta info
+    - ownership structure up to
+    - short interest up to
+    - options betting up to
+  - ownership structure
+    - institutional ownership
+    - institutional ownership diff (current vs prev quarter)
+    - top-10 institutional ownership
+    - insider ownership: explain who counts as insider in tooltip
+    - float
+  - short interest
+    - shorted shares to float
+    - shorted shares to avg daily volume
+    - shorted shares diff (current vs prev report)
+  - insider trades: say open-market in tooltip and explain what it doesn't include
+    - 6m total insider buys
+    - 6m total insider sells
+    - 6m money diff (insider buys vs sells)
+  - options
+    - puts to calls (held)
+    - puts to calls (traded today)
+    - total held options
+    - implied stock volatility: say at the money in tooltip and explain what it doesn't count
+    - implied stock volatility ranking (1y range)
+    - implied quarterly report day price change magnitude
+---
 
 - positioning
   - short interest

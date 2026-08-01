@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the US positioning provider.
+"""Offline tests for the US positioning provider (v2 envelopes).
 
 Pure-function coverage (short interest, ownership, insider window,
-options ratios) plus the provider's explicit degradation contract:
-FULL when all four blocks land, PARTIAL when some fail with warnings,
-UNAVAILABLE (never a raise) when everything fails.
+options board, implied report-day move) plus the provider's explicit
+degradation contract: FULL when all four blocks land, PARTIAL when some
+fail with warnings, UNAVAILABLE (never a raise) when everything fails.
+All five payload groups are always present; failed blocks publish blank
+envelopes, never omitted fields.
 """
 from __future__ import annotations
 
@@ -15,11 +17,13 @@ from src.tiered_analysis.providers.base import Coverage, Market, SourceKind
 from src.tiered_analysis.providers.positioning import (
     INSIDER_WINDOW_DAYS,
     PositioningUSProvider,
+    implied_report_move,
     insider_metrics,
     options_metrics,
     ownership_metrics,
     short_interest_metrics,
 )
+from src.tiered_analysis.providers.technicals import metric_value
 
 # 2026-07-01 as unix seconds (UTC midnight) for the as_of conversion.
 _SHORT_INTEREST_EPOCH = 1782864000
@@ -30,13 +34,16 @@ _INFO = {
     "shortPercentOfFloat": 0.031,
     "shortRatio": 1.8,
     "floatShares": 1_600_000_000,
-    "sharesOutstanding": 1_700_000_000,
     "heldPercentInstitutions": 0.6155,
     "heldPercentInsiders": 0.021,
     "dateShortInterest": _SHORT_INTEREST_EPOCH,
 }
 
-_HOLDERS = [{"pctHeld": 0.05}, {"pctHeld": 0.04}, {"pctHeld": 0.03}]
+_HOLDERS = [
+    {"pctHeld": 0.05, "date_reported": "2026-03-31"},
+    {"pctHeld": 0.04, "date_reported": "2026-03-31"},
+    {"pctHeld": 0.03, "date_reported": "2025-12-31"},
+]
 
 _TODAY = date(2026, 7, 24)
 
@@ -56,20 +63,28 @@ _INSIDER_ROWS = [
      "shares": 10, "value": 950},
 ]
 
-_CHAINS = [
-    {"expiration": "2026-08-21", "call_oi": 1000.0, "put_oi": 800.0,
-     "call_volume": 200.0, "put_volume": 300.0},
-    {"expiration": "2026-09-18", "call_oi": 500.0, "put_oi": 580.0,
-     "call_volume": 100.0, "put_volume": 60.0},
-]
+_BOARD = {
+    "current_price": 100.0,
+    "iv30": 26.08,
+    "chains": [
+        {"expiration": "2026-08-21", "call_oi": 1000.0, "put_oi": 800.0,
+         "call_volume": 200.0, "put_volume": 300.0,
+         "atm_strike": 100.0, "atm_call_bid": 3.0, "atm_call_ask": 3.4,
+         "atm_put_bid": 2.8, "atm_put_ask": 3.2},
+        {"expiration": "2026-09-18", "call_oi": 500.0, "put_oi": 580.0,
+         "call_volume": 100.0, "put_volume": 60.0,
+         "atm_strike": 100.0, "atm_call_bid": 4.0, "atm_call_ask": 4.6,
+         "atm_put_bid": 3.8, "atm_put_ask": 4.4},
+    ],
+}
 
 
 class ShortInterestMetricsTest(unittest.TestCase):
     def test_fractions_become_percentages_and_epochs_become_dates(self):
         metrics = short_interest_metrics(_INFO)
         self.assertAlmostEqual(metrics["short_pct_of_float"], 3.1)
+        self.assertFalse(metrics["short_pct_computed"])
         self.assertEqual(metrics["days_to_cover"], 1.8)
-        self.assertEqual(metrics["shares_short"], 50_000_000)
         self.assertAlmostEqual(metrics["change_vs_prior_month_pct"], 25.0)
         self.assertEqual(metrics["as_of"], "2026-07-01")
 
@@ -78,6 +93,10 @@ class ShortInterestMetricsTest(unittest.TestCase):
         del info["shortPercentOfFloat"]
         metrics = short_interest_metrics(info)
         self.assertAlmostEqual(metrics["short_pct_of_float"], 3.125)
+        # The fallback is a computation and must carry receipt ingredients.
+        self.assertTrue(metrics["short_pct_computed"])
+        self.assertEqual(metrics["shares_short"], 50_000_000)
+        self.assertEqual(metrics["float_shares"], 1_600_000_000)
 
     def test_missing_prior_month_yields_no_change(self):
         info = {k: v for k, v in _INFO.items() if k != "sharesShortPriorMonth"}
@@ -89,13 +108,13 @@ class ShortInterestMetricsTest(unittest.TestCase):
 
 
 class OwnershipMetricsTest(unittest.TestCase):
-    def test_percentages_and_top10_concentration(self):
+    def test_percentages_top10_and_latest_report_date(self):
         metrics = ownership_metrics(_INFO, _HOLDERS)
         self.assertAlmostEqual(metrics["institutional_pct"], 61.55)
         self.assertAlmostEqual(metrics["insider_pct"], 2.1)
         self.assertAlmostEqual(metrics["top10_institutions_pct"], 12.0)
         self.assertEqual(metrics["float_shares"], 1_600_000_000)
-        self.assertEqual(metrics["shares_outstanding"], 1_700_000_000)
+        self.assertEqual(metrics["as_of"], "2026-03-31")
 
     def test_only_the_ten_largest_holders_count(self):
         holders = [{"pctHeld": 0.01}] * 15
@@ -106,9 +125,11 @@ class OwnershipMetricsTest(unittest.TestCase):
         metrics = ownership_metrics({}, [{"% Out": 0.07}])
         self.assertAlmostEqual(metrics["top10_institutions_pct"], 7.0)
 
-    def test_no_holders_leaves_concentration_none(self):
-        self.assertIsNone(ownership_metrics(_INFO, None)["top10_institutions_pct"])
-        self.assertIsNone(ownership_metrics(_INFO, [])["top10_institutions_pct"])
+    def test_no_holders_leaves_concentration_and_date_none(self):
+        for holders in (None, []):
+            metrics = ownership_metrics(_INFO, holders)
+            self.assertIsNone(metrics["top10_institutions_pct"])
+            self.assertIsNone(metrics["as_of"])
 
 
 class InsiderMetricsTest(unittest.TestCase):
@@ -116,7 +137,8 @@ class InsiderMetricsTest(unittest.TestCase):
         metrics = insider_metrics(_INSIDER_ROWS, _TODAY)
         self.assertEqual(metrics["buy_count"], 1)
         self.assertEqual(metrics["sell_count"], 1)
-        self.assertEqual(metrics["net_shares"], 600.0)
+        self.assertEqual(metrics["buy_value_usd"], 100_000.0)
+        self.assertEqual(metrics["sell_value_usd"], 44_000.0)
         self.assertEqual(metrics["net_value_usd"], 56_000.0)
 
     def test_the_window_edge_is_inclusive(self):
@@ -129,46 +151,111 @@ class InsiderMetricsTest(unittest.TestCase):
         metrics = insider_metrics([], _TODAY)
         self.assertEqual(metrics["buy_count"], 0)
         self.assertEqual(metrics["sell_count"], 0)
-        self.assertEqual(metrics["net_shares"], 0.0)
+        self.assertEqual(metrics["net_value_usd"], 0.0)
 
 
 class OptionsMetricsTest(unittest.TestCase):
-    def test_ratios_are_summed_over_all_fetched_expirations(self):
-        metrics, warnings = options_metrics(_CHAINS)
+    def test_ratios_are_summed_over_the_nearest_expirations(self):
+        metrics, warnings = options_metrics(_BOARD)
         self.assertAlmostEqual(metrics["put_call_oi_ratio"], 1380.0 / 1500.0)
         self.assertAlmostEqual(metrics["put_call_volume_ratio"], 1.2)
         self.assertEqual(metrics["total_open_interest"], 2880.0)
-        self.assertEqual(metrics["expirations_covered"], 2)
+        self.assertEqual(metrics["implied_vol_pct"], 26.08)
+        self.assertEqual(metrics["bets_through"], "2026-09-18")
         self.assertEqual(warnings, [])
 
+    def test_only_the_nearest_expirations_feed_the_sums(self):
+        chains = [
+            {"expiration": f"2026-0{n}-15", "call_oi": 10.0, "put_oi": 10.0}
+            for n in range(1, 7)  # six expirations; only the first 4 count
+        ]
+        metrics, _warnings = options_metrics({"chains": chains, "iv30": 20.0})
+        self.assertEqual(metrics["total_open_interest"], 80.0)
+        self.assertEqual(metrics["bets_through"], "2026-04-15")
+
     def test_zero_call_side_yields_none_with_warnings_not_a_crash(self):
-        chains = [{"call_oi": 0, "put_oi": 10, "call_volume": 0, "put_volume": 5}]
-        metrics, warnings = options_metrics(chains)
+        board = {"chains": [
+            {"expiration": "2026-08-21", "call_oi": 0, "put_oi": 10,
+             "call_volume": 0, "put_volume": 5},
+        ]}
+        metrics, warnings = options_metrics(board)
         self.assertIsNone(metrics["put_call_oi_ratio"])
         self.assertIsNone(metrics["put_call_volume_ratio"])
         self.assertIsNone(metrics["total_open_interest"])
-        self.assertEqual(len(warnings), 2)
+        self.assertEqual(len(warnings), 3)  # OI + volume + missing iv30
 
     def test_zero_put_side_is_blank_not_a_misleading_zero(self):
         # Yahoo intraday chains often carry no open interest; a zero put
-        # side must never surface as "put/call OI ratio 0" (owner report
-        # 2026-07-24 — a real NVDA run showed exactly that).
-        chains = [
-            {"call_oi": 25, "put_oi": 0, "call_volume": 1000, "put_volume": 550},
-        ]
-        metrics, warnings = options_metrics(chains)
+        # side must never surface as "puts to calls (held) 0" (owner
+        # report 2026-07-24 — a real NVDA run showed exactly that).
+        board = {"iv30": 20.0, "chains": [
+            {"expiration": "2026-08-21", "call_oi": 25, "put_oi": 0,
+             "call_volume": 1000, "put_volume": 550},
+        ]}
+        metrics, warnings = options_metrics(board)
         self.assertIsNone(metrics["put_call_oi_ratio"])
         self.assertIsNone(metrics["total_open_interest"])
         self.assertAlmostEqual(metrics["put_call_volume_ratio"], 0.55)
         self.assertTrue(any("open interest" in w for w in warnings))
-        self.assertFalse(any("volume" in w for w in warnings))
+        self.assertFalse(any("volume missing" in w for w in warnings))
 
-    def test_missing_oi_columns_are_blank_not_zero(self):
-        chains = [{"call_volume": 1000, "put_volume": 550}]
-        metrics, warnings = options_metrics(chains)
-        self.assertIsNone(metrics["put_call_oi_ratio"])
-        self.assertIsNone(metrics["total_open_interest"])
-        self.assertTrue(any("open interest" in w for w in warnings))
+    def test_missing_or_zero_iv30_is_blank_with_a_warning(self):
+        for iv30 in (None, 0.0):
+            board = {"iv30": iv30, "chains": _BOARD["chains"]}
+            metrics, warnings = options_metrics(board)
+            self.assertIsNone(metrics["implied_vol_pct"])
+            self.assertTrue(any("implied volatility" in w for w in warnings))
+
+
+class ImpliedReportMoveTest(unittest.TestCase):
+    def test_straddle_on_the_first_post_report_expiration(self):
+        move, warning = implied_report_move(_BOARD, "2026-08-10", _TODAY)
+        self.assertIsNone(warning)
+        # 2026-08-21 chain: call mid 3.2 + put mid 3.0 = 6.2 on price 100.
+        self.assertAlmostEqual(move["move_pct"], 6.2)
+        self.assertEqual(move["expiration"], "2026-08-21")
+        self.assertAlmostEqual(move["atm_call_price"], 3.2)
+        self.assertAlmostEqual(move["atm_put_price"], 3.0)
+
+    def test_report_date_on_the_expiration_day_uses_that_expiration(self):
+        move, warning = implied_report_move(_BOARD, "2026-08-21", date(2026, 8, 10))
+        self.assertIsNone(warning)
+        self.assertEqual(move["expiration"], "2026-08-21")
+
+    def test_unknown_report_date_is_a_reasoned_blank(self):
+        move, warning = implied_report_move(_BOARD, None, _TODAY)
+        self.assertIsNone(move)
+        self.assertIn("report date unknown", warning)
+
+    def test_a_far_away_report_is_a_reasoned_blank_not_a_drift_number(self):
+        # A straddle months out prices ordinary drift, not the report
+        # jump (a live AAPL run read ±12.4% that way) — never publish it.
+        move, warning = implied_report_move(_BOARD, "2026-09-01", _TODAY)
+        self.assertIsNone(move)
+        self.assertIn("more than", warning)
+
+    def test_no_expiration_after_the_report_is_a_reasoned_blank(self):
+        board = {
+            "current_price": 100.0,
+            "chains": [{"expiration": "2026-07-31", "call_oi": 1.0}],
+        }
+        move, warning = implied_report_move(board, "2026-08-05", _TODAY)
+        self.assertIsNone(move)
+        self.assertIn("no fetched option expiration", warning)
+
+    def test_missing_price_or_quotes_is_a_reasoned_blank(self):
+        no_price = {**_BOARD, "current_price": None}
+        move, warning = implied_report_move(no_price, "2026-08-10", _TODAY)
+        self.assertIsNone(move)
+        self.assertIn("no stock price", warning)
+
+        no_quotes = {
+            "current_price": 100.0,
+            "chains": [{"expiration": "2026-08-14", "call_oi": 1.0}],
+        }
+        move, warning = implied_report_move(no_quotes, "2026-08-10", _TODAY)
+        self.assertIsNone(move)
+        self.assertIn("at-the-money", warning)
 
 
 def _provider(**overrides):
@@ -176,7 +263,8 @@ def _provider(**overrides):
         "info_loader": lambda symbol: _INFO,
         "holders_loader": lambda symbol: _HOLDERS,
         "insider_loader": lambda symbol: _INSIDER_ROWS,
-        "options_loader": lambda symbol: _CHAINS,
+        "options_loader": lambda symbol: _BOARD,
+        "earnings_lookup": lambda symbol: "2026-08-10",
         "today": lambda: _TODAY,
     }
     loaders.update(overrides)
@@ -187,6 +275,9 @@ def _boom(symbol):
     raise RuntimeError("boom")
 
 
+_GROUPS = ["insider_activity_6m", "meta", "options", "ownership", "short_interest"]
+
+
 class ProviderTest(unittest.TestCase):
     def test_supports_us_only(self):
         provider = _provider()
@@ -194,35 +285,62 @@ class ProviderTest(unittest.TestCase):
         for market in (Market.CN, Market.HK, Market.JP, Market.UNKNOWN):
             self.assertFalse(provider.supports(market))
 
-    def test_full_coverage_carries_all_four_blocks_and_citations(self):
+    def test_full_coverage_carries_all_groups_envelopes_and_citations(self):
         result = _provider().collect("AAPL")
         self.assertEqual(result.dimension, "positioning")
         self.assertEqual(result.kind, SourceKind.NUMERIC)
         self.assertEqual(result.coverage, Coverage.FULL)
         self.assertTrue(result.is_actionable)
-        self.assertEqual(
-            sorted(result.payload),
-            ["insider_activity_6m", "options", "ownership", "short_interest"],
-        )
-        self.assertEqual(len(result.citations), 4)
+        self.assertEqual(sorted(result.payload), _GROUPS)
+        self.assertEqual(len(result.citations), 3)
         self.assertEqual(result.warnings, [])
+        # Envelope contract: {name, explanation, interpretation, value}.
+        node = result.payload["short_interest"]["short_pct_of_float"]
+        self.assertEqual(node["name"], "shorted shares to float")
+        self.assertAlmostEqual(node["value"], 3.1)
+        self.assertIn("interpretation", node)
+        # Meta dates from all three blocks.
+        meta = result.payload["meta"]
+        self.assertEqual(metric_value(meta["ownership_as_of"]), "2026-03-31")
+        self.assertEqual(metric_value(meta["short_interest_as_of"]), "2026-07-01")
+        self.assertEqual(metric_value(meta["options_bets_through"]), "2026-09-18")
+        # The implied report-day move landed with its receipt.
+        options = result.payload["options"]
+        self.assertAlmostEqual(metric_value(options["implied_report_move_pct"]), 6.2)
+        self.assertIn("options.implied_report_move_pct", result.formulas)
+        self.assertIn("insider_activity_6m.net_value_usd", result.formulas)
+        self.assertIn("options.put_call_oi_ratio", result.formulas)
 
-    def test_one_failing_block_degrades_to_partial_with_a_warning(self):
+    def test_unsourced_truth_fields_ship_blank_never_fabricated(self):
+        payload = _provider().collect("AAPL").payload
+        self.assertIsNone(
+            metric_value(payload["ownership"]["institutional_diff_q_pp"])
+        )
+        self.assertIsNone(
+            metric_value(payload["options"]["implied_vol_rank_1y"])
+        )
+
+    def test_one_failing_block_degrades_to_partial_with_blank_envelopes(self):
         result = _provider(options_loader=_boom).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.PARTIAL)
-        self.assertNotIn("options", result.payload)
+        # The group stays present; every field is a blank envelope.
+        options = result.payload["options"]
+        self.assertTrue(all(metric_value(node) is None for node in options.values()))
+        self.assertIsNone(metric_value(result.payload["meta"]["options_bets_through"]))
         self.assertTrue(any("options chain failed" in w for w in result.warnings))
 
     def test_no_listed_options_is_an_explicit_warning(self):
-        result = _provider(options_loader=lambda symbol: []).collect("AAPL")
+        result = _provider(
+            options_loader=lambda symbol: {"chains": []}
+        ).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.PARTIAL)
         self.assertTrue(any("no listed options" in w for w in result.warnings))
 
     def test_info_failure_takes_out_both_summary_blocks(self):
         result = _provider(info_loader=_boom).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.PARTIAL)
-        self.assertNotIn("short_interest", result.payload)
-        self.assertNotIn("ownership", result.payload)
+        short = result.payload["short_interest"]
+        self.assertTrue(all(metric_value(node) is None for node in short.values()))
         # One warning for the shared fetch, not one per block.
         self.assertEqual(
             sum("Yahoo summary failed" in w for w in result.warnings), 1
@@ -244,17 +362,30 @@ class ProviderTest(unittest.TestCase):
         # when computed from actual rows.
         result = _provider(insider_loader=lambda symbol: []).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.PARTIAL)
-        self.assertNotIn("insider_activity_6m", result.payload)
+        insiders = result.payload["insider_activity_6m"]
+        self.assertTrue(all(metric_value(node) is None for node in insiders.values()))
         self.assertTrue(
             any("no insider transaction rows" in w for w in result.warnings)
         )
 
-    def test_holders_failure_only_degrades_concentration(self):
+    def test_holders_failure_only_degrades_concentration_and_date(self):
         result = _provider(holders_loader=_boom).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertIsNone(result.payload["ownership"]["top10_institutions_pct"])
+        ownership = result.payload["ownership"]
+        self.assertIsNone(metric_value(ownership["top10_institutions_pct"]))
+        self.assertIsNone(metric_value(result.payload["meta"]["ownership_as_of"]))
         self.assertTrue(
             any("institutional holders failed" in w for w in result.warnings)
+        )
+
+    def test_earnings_lookup_failure_only_blanks_the_report_move(self):
+        result = _provider(earnings_lookup=_boom).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.FULL)
+        self.assertIsNone(
+            metric_value(result.payload["options"]["implied_report_move_pct"])
+        )
+        self.assertTrue(
+            any("earnings date lookup failed" in w for w in result.warnings)
         )
 
     def test_everything_failing_is_unavailable_not_a_raise(self):

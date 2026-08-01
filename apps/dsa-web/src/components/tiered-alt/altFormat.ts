@@ -44,14 +44,34 @@ const METRIC_UNIT: Record<string, string> = {
   eps_yoy_pct: '%',
   net_margin_pct: '%',
   cash: 'USD',
+  // Positioning v2 (2026-08-01).
+  short_pct_of_float: '%',
+  days_to_cover: 'days',
+  change_vs_prior_month_pct: '%',
+  institutional_pct: '%',
+  institutional_diff_q_pp: '%',
+  top10_institutions_pct: '%',
+  insider_pct: '%',
+  float_shares: 'shares',
+  net_value_usd: 'USD',
+  total_open_interest: 'contracts',
+  implied_vol_pct: '%',
 };
 
 // A metric value with its unit appended when it has one.
 export const formatMetricValue = (key: string, value: unknown): string => {
-  // The 1y price ranking reads as a position on a 0-100 scale: "30/100"
+  // The 1y rankings read as a position on a 0-100 scale: "30/100"
   // (owner format 2026-07-28).
-  if (key === 'range_pct_1y' && typeof value === 'number') {
+  if (
+    (key === 'range_pct_1y' || key === 'implied_vol_rank_1y') &&
+    typeof value === 'number'
+  ) {
     return `${Math.round(value)}/100`;
+  }
+  // The implied report-day move is a magnitude, not a direction — the
+  // "±" tells the reader the jump can go either way.
+  if (key === 'implied_report_move_pct' && typeof value === 'number') {
+    return `±${formatValue(value)} %`;
   }
   const text = formatValue(value);
   const unit = typeof value === 'number' ? METRIC_UNIT[key] : undefined;

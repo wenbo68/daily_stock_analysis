@@ -46,6 +46,9 @@ const INPUT_ROW_PATH: Record<string, string> = {
   // The growth-trend receipts cite the published YoY rows by key.
   revenue_yoy_q: 'fundamentals.growth.revenue_yoy_q',
   eps_yoy_q: 'fundamentals.growth.eps_yoy_q',
+  // Positioning receipts: the float is the one ingredient that is
+  // also a published row.
+  float_shares: 'positioning.ownership.float_shares',
 };
 
 // On-screen names for receipt-only ingredients (values the formula needs
@@ -93,6 +96,19 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   estimate_90d_ago: 'consensus EPS estimate 90 days ago',
   next_dividend_payment_date: 'next dividend payment date',
   today: 'today',
+  // Positioning receipt ingredients (2026-08-01) — raw disclosure and
+  // options-board values that are not published rows.
+  shorted_shares: 'shorted shares',
+  prior_report_shares: 'shorted shares (prior report)',
+  insider_buy_money: 'insider buying ($)',
+  insider_sell_money: 'insider selling ($)',
+  held_puts: 'held put contracts',
+  held_calls: 'held call contracts',
+  puts_traded_today: 'puts traded today',
+  calls_traded_today: 'calls traded today',
+  atm_call_price: 'at-the-money call price',
+  atm_put_price: 'at-the-money put price',
+  stock_price: 'stock price',
   // Old stored runs' receipts used the pre-canon variable names.
   revenue_q: 'quarterly sales',
   revenue_q_year_ago: 'sales same quarter last year',
