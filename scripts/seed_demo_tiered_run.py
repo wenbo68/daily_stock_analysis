@@ -231,7 +231,10 @@ FAKE_YAHOO_INFO = {
     "industry": "Semiconductors",
 }
 
-EARNINGS_DATE = TODAY + timedelta(days=24)
+# Inside positioning's 21-day implied-report-move window, outside the
+# 7-day earnings_soon plan warning — so the demo shows the implied move
+# without tripping the report warning.
+EARNINGS_DATE = TODAY + timedelta(days=16)
 
 #: Past report dates ~3 weeks after each quarter end; all four beats, so
 #: the demo shows "4/4" with a mid-single-digit average surprise.
@@ -263,11 +266,21 @@ FAKE_POSITIONING_INFO = {
     ),
 }
 
+def _last_quarter_end(today: date) -> date:
+    """The most recent calendar quarter end — the 13F as-of date."""
+    quarter_month = ((today.month - 1) // 3) * 3
+    if quarter_month == 0:
+        return date(today.year - 1, 12, 31)
+    last_day = calendar.monthrange(today.year, quarter_month)[1]
+    return date(today.year, quarter_month, last_day)
+
+
+_Q13F = _last_quarter_end(TODAY).isoformat()
+
 FAKE_HOLDERS = [
-    {"pctHeld": 0.062}, {"pctHeld": 0.048}, {"pctHeld": 0.041},
-    {"pctHeld": 0.033}, {"pctHeld": 0.027}, {"pctHeld": 0.022},
-    {"pctHeld": 0.019}, {"pctHeld": 0.016}, {"pctHeld": 0.013},
-    {"pctHeld": 0.011},
+    {"pctHeld": pct, "date_reported": _Q13F}
+    for pct in (0.062, 0.048, 0.041, 0.033, 0.027,
+                0.022, 0.019, 0.016, 0.013, 0.011)
 ]
 
 FAKE_INSIDER_ROWS = [
@@ -285,14 +298,33 @@ FAKE_INSIDER_ROWS = [
      "shares": 4_000, "value": 532_000},
 ]
 
-FAKE_OPTION_CHAINS = [
-    {"expiration": (TODAY + timedelta(days=18)).isoformat(),
-     "call_oi": 410_000.0, "put_oi": 330_000.0,
-     "call_volume": 96_000.0, "put_volume": 71_000.0},
-    {"expiration": (TODAY + timedelta(days=46)).isoformat(),
-     "call_oi": 265_000.0, "put_oi": 240_000.0,
-     "call_volume": 41_000.0, "put_volume": 36_000.0},
-]
+def fake_option_board(price: float) -> dict:
+    """The CBOE-board shape the v2 options loader returns: underlying
+    price + 30-day ATM implied volatility + per-expiration sums and
+    at-the-money quotes. The straddle mids are ~5.4% of the price, so
+    the implied report-day move reads ±5.4% on the first expiration
+    after EARNINGS_DATE (18 days out)."""
+    def chain(days_out, call_oi, put_oi, call_volume, put_volume):
+        call_mid = 0.0275 * price
+        put_mid = 0.026 * price
+        return {
+            "expiration": (TODAY + timedelta(days=days_out)).isoformat(),
+            "call_oi": call_oi, "put_oi": put_oi,
+            "call_volume": call_volume, "put_volume": put_volume,
+            "atm_strike": round(price),
+            "atm_call_bid": round(call_mid - 0.2, 2),
+            "atm_call_ask": round(call_mid + 0.2, 2),
+            "atm_put_bid": round(put_mid - 0.2, 2),
+            "atm_put_ask": round(put_mid + 0.2, 2),
+        }
+    return {
+        "current_price": price,
+        "iv30": 27.5,
+        "chains": [
+            chain(18, 410_000.0, 330_000.0, 96_000.0, 71_000.0),
+            chain(46, 265_000.0, 240_000.0, 41_000.0, 36_000.0),
+        ],
+    }
 
 
 def _monthly_dates(count: int) -> list:
@@ -404,9 +436,10 @@ def build_debate_replies(payloads: dict) -> dict:
     rev_trend_d = fval("growth", "revenue_growth_trend")
     margin_d = fval("profitability", "operating_margin_pct")
     pe_d = fval("valuation", "pe_ttm")
-    short_d = dv(pos["short_interest"]["short_pct_of_float"])
-    inst_d = dv(pos["ownership"]["institutional_pct"])
-    buys_d = dv(pos["insider_activity_6m"]["buy_count"])
+    # Positioning is v2 envelopes now — cite the unwrapped values.
+    short_d = dv(pos["short_interest"]["short_pct_of_float"]["value"])
+    inst_d = dv(pos["ownership"]["institutional_pct"]["value"])
+    buys_d = dv(pos["insider_activity_6m"]["buy_count"]["value"])
     vix_d = dv(macro["markets"]["vix"])
     fed_d = dv(macro["rates"]["fed_funds_rate_pct"])
     dxy_d = dv(macro["markets"]["dollar_index_broad"])
@@ -682,7 +715,9 @@ def build_outcome():
             info_loader=lambda s: FAKE_POSITIONING_INFO,
             holders_loader=lambda s: FAKE_HOLDERS,
             insider_loader=lambda s: FAKE_INSIDER_ROWS,
-            options_loader=lambda s: FAKE_OPTION_CHAINS,
+            options_loader=lambda s: fake_option_board(bars[-1].close),
+            earnings_lookup=lambda s: EARNINGS_DATE.isoformat(),
+            today=lambda: TODAY,
         ),
         MacroEconProvider(
             series_fetcher=fake_fred_series,
@@ -754,8 +789,17 @@ def main() -> None:
     print(f"ranking name:  {tech.payload['price']['range_pct_1y']['name']}")
     print(f"ranking recpt: {tech.formulas['price.range_pct_1y']['formula']}")
 
+    pos = next(
+        d for d in outcome.report.dimensions if d.dimension == "positioning"
+    )
+    print(f"13F up to:     {pos.payload['meta']['ownership_as_of']['value']}")
+    print(f"implied move:  ±{pos.payload['options']['implied_report_move_pct']['value']}%")
+
     assert final.direction is Direction.BUY, "demo run must be bullish"
     assert (final.debate_detail or {}).get("verdict"), "debate verdict missing"
+    assert pos.payload["options"]["implied_report_move_pct"]["value"] is not None, (
+        "demo implied report-day move must be populated"
+    )
 
     if args.dry_run:
         print("\ndry run — nothing stored")
