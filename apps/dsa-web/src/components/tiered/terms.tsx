@@ -40,12 +40,18 @@ export const HelpTerm = ({ label, helpKey, underline = true }: HelpTermProps) =>
 interface MetricTermProps {
   term: string;
   underline?: boolean;
+  /** Keep the label on one line, ellipsizing when space runs out (the
+      tooltip's bold header always carries the full name). Truncation
+      must sit on the text INSIDE the tooltip's inline-flex wrapper —
+      an ellipsis on a block clipping an atomic inline box renders
+      inconsistently across browsers. */
+  truncate?: boolean;
 }
 
 // Compact vocab (e.g. "SMA 20") with the full plain-language definition in
 // a popup: hover shows it, click/tap keeps it open (focus), clicking
 // elsewhere or Escape closes it. Unknown keys render as-is, no popup.
-export const MetricTerm = ({ term, underline = true }: MetricTermProps) => {
+export const MetricTerm = ({ term, underline = true, truncate = false }: MetricTermProps) => {
   const { language } = useUiLanguage();
   const entry = metricEntry(term, language);
 
@@ -59,6 +65,7 @@ export const MetricTerm = ({ term, underline = true }: MetricTermProps) => {
   return (
     <Tooltip
       focusable
+      className={truncate ? 'max-w-full' : undefined}
       content={
         <span className="block max-w-[16rem] whitespace-pre-line">
           <span className="block font-semibold text-foreground">{entry.short}</span>
@@ -84,6 +91,7 @@ export const MetricTerm = ({ term, underline = true }: MetricTermProps) => {
         className={cn(
           'cursor-help',
           underline ? 'border-b border-dotted border-secondary-text/60' : '',
+          truncate ? 'min-w-0 truncate' : '',
         )}
       >
         {entry.short}

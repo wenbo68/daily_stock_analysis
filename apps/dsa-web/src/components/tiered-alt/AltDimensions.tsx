@@ -144,15 +144,18 @@ interface MetricRowProps {
   dateAnchorPath?: string;
 }
 
+// Every row stays a single line (owner request 2026-08-01): the value
+// never wraps, and the label ellipsizes when the remaining space runs
+// out — the tooltip's bold header always carries the full name.
 const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: MetricRowProps) => (
   <div
     id={metricAnchorId(anchorPath)}
     className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
   >
-    <dt className="text-xs">
-      <MetricTerm term={term} underline={false} />
+    <dt className="min-w-0 truncate text-xs">
+      <MetricTerm term={term} underline={false} truncate />
     </dt>
-    <dd className="text-xs tabular-nums text-gray-300">
+    <dd className="shrink-0 whitespace-nowrap text-xs tabular-nums text-gray-300">
       {value == null ? (
         // Blank field: "n/a" opens the why-is-this-blank modal.
         <AltBlankValue term={term} />
