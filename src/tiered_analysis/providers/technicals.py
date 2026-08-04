@@ -118,6 +118,8 @@ OPTIONAL_METRICS = frozenset({
     "volume.vol_ratio_5_60",
     "levels.support_1",
     "levels.resistance_1",
+    "levels.support_dist_atr",
+    "levels.resistance_dist_atr",
     "volatility.typical_pullback_atr",
 })
 
@@ -848,6 +850,11 @@ class TechnicalsProvider(DimensionProvider):
             if sma_mid_d is not None and atr
             else None
         )
+        stretch_200d = (
+            _round((close - sma_long_d) / atr)
+            if sma_long_d is not None and atr
+            else None
+        )
 
         high_1y = compute_swing_high(bars, YEAR_BARS)
         low_1y = compute_swing_low(bars, YEAR_BARS)
@@ -867,6 +874,14 @@ class TechnicalsProvider(DimensionProvider):
 
         support = nearest_support(daily_lows, close)
         resistance = nearest_resistance(daily_highs, close)
+        support_dist = (
+            _round((close - support) / atr) if support is not None and atr else None
+        )
+        resistance_dist = (
+            _round((resistance - close) / atr)
+            if resistance is not None and atr
+            else None
+        )
         pullback = typical_pullback_atr(daily_highs, daily_lows, atr)
 
         regime, rs_1m, rs_3m, rs_label, bench_receipts = (
@@ -894,7 +909,7 @@ class TechnicalsProvider(DimensionProvider):
         payload: Dict[str, Dict[str, Any]] = {
             "meta": {
                 "as_of": make_metric(
-                    "as of",
+                    "bars up to",
                     "Date of the last completed daily bar.",
                     # Some loaders ship "YYYY-MM-DD 00:00:00"; the date part
                     # is the fact.
@@ -1106,6 +1121,8 @@ class TechnicalsProvider(DimensionProvider):
                 ),
             },
             "daily": {
+                # Truth order (2026-08-04): each average directly followed
+                # by its distance diff.
                 "sma_50": make_metric(
                     "50d SMA",
                     "50-day simple moving average.",
@@ -1113,6 +1130,16 @@ class TechnicalsProvider(DimensionProvider):
                     interpretation=(
                         "The classic swing pullback level — dip-buys "
                         "near it are the standard swing entry."
+                    ),
+                ),
+                "stretch_50d_atr": make_metric(
+                    "diff (closing price vs 50d SMA)",
+                    "Distance of the close from the 50-day average, in "
+                    "ATR units.",
+                    stretch_50d,
+                    interpretation=(
+                        "-1 to +1 in an uptrend = pullback entry zone; "
+                        "above +3 = extended, chasing."
                     ),
                 ),
                 "sma_200": make_metric(
@@ -1126,14 +1153,15 @@ class TechnicalsProvider(DimensionProvider):
                         "counter-trend."
                     ),
                 ),
-                "stretch_50d_atr": make_metric(
-                    "diff (closing price vs 50d SMA)",
-                    "Distance of the close from the 50-day average, in "
+                "stretch_200d_atr": make_metric(
+                    "diff (closing price vs 200d SMA)",
+                    "Distance of the close from the 200-day average, in "
                     "ATR units.",
-                    stretch_50d,
+                    stretch_200d,
                     interpretation=(
-                        "-1 to +1 in an uptrend = pullback entry zone; "
-                        "above +3 = extended, chasing."
+                        "Positive = long-term uptrend intact; negative = "
+                        "below the long-term line, longs are "
+                        "counter-trend."
                     ),
                 ),
                 "trend": make_metric(
@@ -1186,6 +1214,18 @@ class TechnicalsProvider(DimensionProvider):
                         "an arbitrary percent."
                     ),
                 ),
+                "support_dist_atr": make_metric(
+                    "diff (closing price vs nearest support)",
+                    "How far the close sits above the nearest support, "
+                    "in ATR units.",
+                    support_dist,
+                    interpretation=(
+                        "Small = the floor is affordably close (a stop "
+                        "under it is cheap); large = a stop under "
+                        "support risks more than a typical setup "
+                        "should."
+                    ),
+                ),
                 "resistance_1": make_metric(
                     "nearest resistance",
                     "Nearest pivot high above the close.",
@@ -1193,6 +1233,16 @@ class TechnicalsProvider(DimensionProvider):
                     interpretation=(
                         "The first target candidate — expect selling "
                         "there."
+                    ),
+                ),
+                "resistance_dist_atr": make_metric(
+                    "diff (nearest resistance vs closing price)",
+                    "How far the nearest resistance sits above the "
+                    "close, in ATR units.",
+                    resistance_dist,
+                    interpretation=(
+                        "The room to run before the first ceiling — "
+                        "small means the easy gain is nearly used up."
                     ),
                 ),
             },
@@ -1390,6 +1440,13 @@ class TechnicalsProvider(DimensionProvider):
             f" / {DAILY_SMA_LONG}",
         )
         add(
+            "daily.stretch_200d_atr",
+            "(close − sma_200) / atr_14",
+            {"close": close,
+             "sma_200": read_metric(payload, "daily", "sma_200"),
+             "atr_14": atr},
+        )
+        add(
             "daily.momentum",
             inputs={
                 "rsi_14": read_metric(payload, "daily", "rsi_14"),
@@ -1472,6 +1529,21 @@ class TechnicalsProvider(DimensionProvider):
             f"high tops the {PIVOT_FRINGE} days on each side)",
         )
         add(
+            "levels.support_dist_atr",
+            "(close − nearest_support) / atr_14",
+            {"close": close,
+             "nearest_support": read_metric(payload, "levels", "support_1"),
+             "atr_14": atr},
+        )
+        resistance_value = read_metric(payload, "levels", "resistance_1")
+        add(
+            "levels.resistance_dist_atr",
+            "(nearest_resistance − close) / atr_14",
+            {"nearest_resistance": resistance_value,
+             "close": close,
+             "atr_14": atr},
+        )
+        add(
             "volatility.typical_pullback_atr",
             "median depth of the completed pullbacks of the last "
             f"{DAILY_PIVOT_LOOKBACK} trading days "
@@ -1499,10 +1571,10 @@ class TechnicalsProvider(DimensionProvider):
         its fetch fails; the last element maps "rs_1m" / "rs_3m" /
         "rs_label" / "regime" to that receipt's plugged-in inputs (a key
         is absent when its ingredients are)."""
-        regime_name = "benchmark (market)"
+        regime_name = "market trend"
         rs_1m_name = "1m return diff (stock vs market)"
         rs_name = "3m return diff (stock vs market)"
-        rs_label_name = "relative strength (stock)"
+        rs_label_name = "stock performance relative to market"
         rs_1m_explanation = (
             "Stock return minus benchmark return over the last "
             f"{RS_WINDOW_1M} trading days (about 1 month), in percentage "

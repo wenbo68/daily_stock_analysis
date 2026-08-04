@@ -62,7 +62,7 @@ from .llm_support import (
     parse_llm_json,
 )
 from .providers.base import DimensionResult, Market
-from .providers.technicals import read_metric
+from .providers.technicals import read_label, read_metric
 from .schema import Direction, SizingSlots, SniperLevels
 from .settings import SizingSettings
 from .sizing import SizingInputs, SizingResult, size_position
@@ -240,6 +240,54 @@ def _flagged_checks(
     return checks
 
 
+#: The three scheduled market-wide events the macro report carries,
+#: (payload key in macro_econ.events, warning "event" tag).
+MACRO_EVENT_KEYS = (
+    ("next_rate_decision_date", "rate_decision"),
+    ("next_cpi_release_date", "inflation_data"),
+    ("next_jobs_release_date", "employment_data"),
+)
+
+
+def macro_event_from_dimensions(
+    dimensions: Sequence[DimensionResult],
+    today: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
+    """The soonest scheduled macro event inside the warning window.
+
+    A Fed decision / CPI print / jobs report inside the hold window is
+    market-wide gap risk the way earnings is single-stock gap risk; it
+    reuses EARNINGS_WARNING_DAYS (owner decision, TODO.md hold-window
+    note). Returns {"event", "next_date", "days_until"} or None.
+    """
+    import datetime as _dt
+
+    payload = next(
+        (dim.payload for dim in dimensions
+         if dim.dimension == "macro_econ" and dim.payload),
+        None,
+    )
+    if payload is None:
+        return None
+    if today is None:
+        today = _dt.date.today()
+    best: Optional[Dict[str, Any]] = None
+    for key, event in MACRO_EVENT_KEYS:
+        date_str = read_label(payload, "events", key)
+        if not date_str:
+            continue
+        try:
+            event_date = _dt.date.fromisoformat(date_str[:10])
+        except ValueError:
+            continue
+        days = (event_date - today).days
+        if 0 <= days <= EARNINGS_WARNING_DAYS and (
+            best is None or days < best["days_until"]
+        ):
+            best = {"event": event, "next_date": date_str, "days_until": days}
+    return best
+
+
 def build_plan_warnings(
     tech: Dict[str, Any],
     levels: SniperLevels,
@@ -247,6 +295,7 @@ def build_plan_warnings(
     risk_amount: Optional[float],
     reward_goal: float,
     earnings: Optional[EarningsInfo] = None,
+    macro_event: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """The structured per-column warnings (numbers only, no wording)."""
     warnings: Dict[str, List[Dict[str, Any]]] = {
@@ -276,6 +325,18 @@ def build_plan_warnings(
             "values": {
                 "days_until": earnings.days_until,
                 "next_date": earnings.next_date,
+                "warning_days": EARNINGS_WARNING_DAYS,
+            },
+        })
+
+    # Macro-event gate: the market-wide mirror of the earnings gate — a
+    # rate decision / CPI print / jobs report inside the hold window is
+    # gap risk for every stock, same warning-not-refusal contract.
+    if entry is not None and macro_event is not None:
+        warnings["entry"].append({
+            "id": "macro_event_soon",
+            "values": {
+                **macro_event,
                 "warning_days": EARNINGS_WARNING_DAYS,
             },
         })
@@ -1003,6 +1064,7 @@ def review_plan(
     plan_warnings = build_plan_warnings(
         tech, levels, final_shares, final_risk, settings.reward_risk,
         earnings=earnings,
+        macro_event=macro_event_from_dimensions(dimensions),
     )
 
     return PlanReview(

@@ -44,6 +44,24 @@ const METRIC_UNIT: Record<string, string> = {
   eps_yoy_pct: '%',
   net_margin_pct: '%',
   cash: 'USD',
+  // Technicals market-vs-sector-vs-stock + distance diffs (2026-08-04).
+  rs_sector_1m: '%',
+  rs_sector_3m: '%',
+  rs_stock_sector_1m: '%',
+  rs_stock_sector_3m: '%',
+  stretch_200d_atr: 'ATR',
+  support_dist_atr: 'ATR',
+  resistance_dist_atr: 'ATR',
+  // Macro econ v2 (2026-08-04). The yield/rate fields share the % unit;
+  // trends and event dates are words/dates so no entry.
+  official_rate_pct: '%',
+  diff_2y_vs_official_pp: '%',
+  gov10y_yield_pct: '%',
+  yield_diff_10y_2y_pp: '%',
+  yield_diff_hy_gov_pp: '%',
+  cpi_yoy_pct: '%',
+  unemployment_rate_pct: '%',
+  wti_oil_usd: 'USD',
   // Positioning v2 (2026-08-01).
   short_pct_of_float: '%',
   days_to_cover: 'days',
@@ -56,6 +74,7 @@ const METRIC_UNIT: Record<string, string> = {
   net_value_usd: 'USD',
   total_open_interest: 'contracts',
   implied_vol_pct: '%',
+  report_move_ratio_implied_4q: '×',
 };
 
 // A metric value with its unit appended when it has one.
@@ -68,9 +87,12 @@ export const formatMetricValue = (key: string, value: unknown): string => {
   ) {
     return `${Math.round(value)}/100`;
   }
-  // The implied report-day move is a magnitude, not a direction — the
-  // "±" tells the reader the jump can go either way.
-  if (key === 'implied_report_move_pct' && typeof value === 'number') {
+  // Report-day move magnitudes carry no direction — the "±" tells the
+  // reader the jump can go either way.
+  if (
+    (key === 'implied_report_move_pct' || key === 'reaction_avg_abs_pct') &&
+    typeof value === 'number'
+  ) {
     return `±${formatValue(value)} %`;
   }
   const text = formatValue(value);

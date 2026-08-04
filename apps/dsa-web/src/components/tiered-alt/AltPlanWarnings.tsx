@@ -24,6 +24,20 @@ const WARN_KEYWORD_KEYS: Record<string, UiTextKey> = {
   gap_worst: 'tiered.alt.warnKey.gap_worst',
   reward_below_goal: 'tiered.alt.warnKey.reward_below_goal',
   earnings_soon: 'tiered.alt.warnKey.earnings_soon',
+  macro_event_soon: 'tiered.alt.warnKey.macro_event_soon',
+};
+
+// The macro events group's payload row + display-name key per warning
+// event tag.
+const MACRO_EVENT_REFS: Record<string, string> = {
+  rate_decision: 'macro_econ.events.next_rate_decision_date',
+  inflation_data: 'macro_econ.events.next_cpi_release_date',
+  employment_data: 'macro_econ.events.next_jobs_release_date',
+};
+const MACRO_EVENT_NAME_KEYS: Record<string, UiTextKey> = {
+  rate_decision: 'tiered.alt.warnEvent.rate_decision',
+  inflation_data: 'tiered.alt.warnEvent.inflation_data',
+  employment_data: 'tiered.alt.warnEvent.employment_data',
 };
 
 // The technicals payload moved metrics into groups (v2, 2026-07-27);
@@ -266,6 +280,27 @@ const warningNodes = (
           ),
         },
       };
+    case 'macro_event_soon': {
+      // Market-wide mirror of earnings_soon: the chip jumps to the
+      // macro events row the warning came from.
+      const eventTag = typeof v.event === 'string' ? v.event : '';
+      const eventRef = MACRO_EVENT_REFS[eventTag];
+      const eventNameKey = MACRO_EVENT_NAME_KEYS[eventTag];
+      const eventName = eventNameKey ? t(eventNameKey) : eventTag;
+      return {
+        templateKey: 'tiered.alt.warn.macro_event_soon',
+        nodes: {
+          event: eventName,
+          days: reportJumpFirst(
+            eventRef ? [eventRef] : [], wNum(v.days_until),
+          ),
+          date: reportJumpFirst(
+            eventRef ? [eventRef] : [],
+            typeof v.next_date === 'string' ? v.next_date : '—',
+          ),
+        },
+      };
+    }
     case 'gap_atr':
       return {
         templateKey: 'tiered.alt.warn.gap_atr',

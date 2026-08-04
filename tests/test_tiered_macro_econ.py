@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Offline tests for the macro-economic provider (slice 4).
+"""Offline tests for the reformed macro-economic provider (TODO.md truth
+2026-08-04): envelope payload, trends, diffs, events, per-day cache.
 
 FRED responses are canned observation lists; caching uses temp dirs. The
 live check is the network-marked test at the bottom (needs FRED_API_KEY).
@@ -16,27 +17,48 @@ import pytest
 
 from src.tiered_analysis.providers.base import Coverage, Market, SourceKind
 from src.tiered_analysis.providers.macro_econ import (
+    CPI_RELEASE_ID,
+    JOBS_RELEASE_ID,
     MacroConfigError,
     MacroEconProvider,
-    SERIES_SPECS,
+    SERIES_IDS,
     cpi_yoy_pct,
+    next_date_after,
+    observations_as_of,
+    pct_trend_label,
+    trend_label,
 )
+from src.tiered_analysis.providers.technicals import is_envelope, metric_value
 
-# 13 monthly CPI observations: latest 320.0 vs year-ago 310.0 -> +3.2258%.
-CPI_OBS = [(f"2025-{m:02d}-01", 310.0 + m * 0.5) for m in range(7, 13)]
-CPI_OBS += [(f"2026-{m:02d}-01", 313.5 + m * 0.5) for m in range(1, 6)]
-CPI_OBS += [("2026-06-01", 320.0)]
-CPI_OBS[0] = ("2025-06-01", 310.0)
+TODAY = date(2026, 7, 7)
 
-DAILY_VALUES = {
-    "FEDFUNDS": 4.33,
-    "DGS10": 4.40,
-    "DGS2": 4.00,
-    "T10Y2Y": 0.40,
-    "UNRATE": 4.10,
-    "VIXCLS": 17.50,
-    "DCOILWTICO": 68.20,
-    "DTWEXBGS": 121.00,
+# Monthly CPI index, 2025-03 .. 2026-06. YoY now: 320/310 -> +3.23%.
+# YoY at the 3-month baseline (<= 2026-03-02 cutoff -> 2026-03 point):
+# 318/306 -> +3.92%, so the trend reads "down" (-0.69 beyond the 0.2 band).
+CPI_OBS = [
+    ("2025-03-01", 306.0), ("2025-04-01", 307.0), ("2025-05-01", 308.0),
+    ("2025-06-01", 310.0), ("2025-07-01", 311.0), ("2025-08-01", 312.0),
+    ("2025-09-01", 313.0), ("2025-10-01", 314.0), ("2025-11-01", 315.0),
+    ("2025-12-01", 316.0), ("2026-01-01", 317.0), ("2026-02-01", 317.5),
+    ("2026-03-01", 318.0), ("2026-04-01", 319.0), ("2026-05-01", 319.5),
+    ("2026-06-01", 320.0),
+]
+
+# (3-months-ago value, latest value) per daily/monthly series.
+SERIES_NOW_THEN = {
+    "DFF": (4.33, 4.33),          # official rate, unchanged
+    "DGS10": (4.00, 4.40),        # +0.40 -> trend up (band 0.25)
+    "DGS2": (4.20, 4.00),         # diff vs official: 4.00 - 4.33 = -0.33
+    "T10Y2Y": (0.60, 0.40),       # -0.20 -> trend down (band 0.15)
+    "BAMLH0A0HYM2": (3.00, 3.10),  # +0.10 -> flat (band 0.25)
+    "VIXCLS": (15.00, 17.50),
+    "DCOILWTICO": (60.00, 68.20),  # +13.7% -> up (band 5%)
+    "DTWEXBGS": (121.00, 120.00),  # -0.83% -> flat (band 2%)
+}
+
+RELEASE_DATES = {
+    CPI_RELEASE_ID: ["2026-06-10", "2026-07-15", "2026-08-12"],
+    JOBS_RELEASE_ID: ["2026-07-02", "2026-08-07"],
 }
 
 
@@ -46,14 +68,21 @@ def _fake_fetcher(calls=None):
             calls.append(series_id)
         if series_id == "CPIAUCSL":
             return list(CPI_OBS)
-        if series_id in DAILY_VALUES:
-            return [("2026-07-03", DAILY_VALUES[series_id])]
+        if series_id == "UNRATE":
+            return [("2026-03-01", 4.0), ("2026-06-01", 4.1)]  # +0.1 -> flat
+        if series_id in SERIES_NOW_THEN:
+            then, now = SERIES_NOW_THEN[series_id]
+            return [("2026-04-01", then), ("2026-07-03", now)]
         raise KeyError(series_id)
 
     return fetch
 
 
-class TestCpiYoy(unittest.TestCase):
+def _fake_release_dates(release_id):
+    return list(RELEASE_DATES[release_id])
+
+
+class TestPureHelpers(unittest.TestCase):
     def test_yoy_from_monthly_index(self):
         self.assertAlmostEqual(cpi_yoy_pct(CPI_OBS), (320.0 / 310.0 - 1) * 100.0)
 
@@ -62,6 +91,29 @@ class TestCpiYoy(unittest.TestCase):
 
     def test_empty_returns_none(self):
         self.assertIsNone(cpi_yoy_pct([]))
+
+    def test_observations_as_of_truncates_to_three_months_back(self):
+        truncated = observations_as_of(CPI_OBS)
+        self.assertEqual(truncated[-1][0], "2026-03-01")
+
+    def test_trend_label_dead_band(self):
+        self.assertEqual(trend_label(4.4, 4.0, 0.25), "up")
+        self.assertEqual(trend_label(4.0, 4.4, 0.25), "down")
+        self.assertEqual(trend_label(4.1, 4.0, 0.25), "flat")
+        self.assertIsNone(trend_label(None, 4.0, 0.25))
+
+    def test_pct_trend_label(self):
+        self.assertEqual(pct_trend_label(68.2, 60.0, 5.0), "up")
+        self.assertEqual(pct_trend_label(50.0, 60.0, 5.0), "down")
+        self.assertEqual(pct_trend_label(120.0, 121.0, 2.0), "flat")
+        self.assertIsNone(pct_trend_label(120.0, 0.0, 2.0))
+
+    def test_next_date_after_picks_first_future_date(self):
+        self.assertEqual(
+            next_date_after(["2026-06-10", "2026-08-12", "2026-07-15"], TODAY),
+            "2026-07-15",
+        )
+        self.assertIsNone(next_date_after(["2026-06-10"], TODAY))
 
 
 class TestMacroEconProvider(unittest.TestCase):
@@ -72,11 +124,12 @@ class TestMacroEconProvider(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _provider(self, fetcher=None, today=None):
+    def _provider(self, fetcher=None, today=None, release_dates=None):
         return MacroEconProvider(
             series_fetcher=fetcher or _fake_fetcher(),
             cache_dir=self.cache_dir,
-            today=today or (lambda: date(2026, 7, 7)),
+            today=today or (lambda: TODAY),
+            release_dates_fetcher=release_dates or _fake_release_dates,
         )
 
     def test_supports_every_market(self):
@@ -84,21 +137,70 @@ class TestMacroEconProvider(unittest.TestCase):
         for market in Market:
             self.assertTrue(provider.supports(market))
 
-    def test_full_payload(self):
+    def test_full_payload_values_and_trends(self):
         result = self._provider().collect("AAPL")
         self.assertEqual(result.kind, SourceKind.NUMERIC)
         self.assertEqual(result.coverage, Coverage.FULL)
         payload = result.payload
-        self.assertEqual(payload["region"], "us")
-        self.assertAlmostEqual(payload["rates"]["fed_funds_rate_pct"], 4.33)
-        self.assertAlmostEqual(payload["rates"]["curve_10y_2y_pct"], 0.40)
+
+        def value(group, key):
+            return metric_value(payload[group][key])
+
+        self.assertEqual(value("meta", "region"), "us")
+        self.assertEqual(value("meta", "inflation_data_up_to"), "2026-06-01")
+        self.assertEqual(value("meta", "employment_data_up_to"), "2026-06-01")
+        self.assertAlmostEqual(value("inflation", "cpi_yoy_pct"), 3.23)
+        self.assertEqual(value("inflation", "cpi_yoy_trend"), "down")
+        self.assertAlmostEqual(value("employment", "unemployment_rate_pct"), 4.1)
+        self.assertEqual(value("employment", "unemployment_trend"), "flat")
+        self.assertAlmostEqual(value("interest_rates", "official_rate_pct"), 4.33)
         self.assertAlmostEqual(
-            payload["inflation"]["cpi_yoy_pct"], (320.0 / 310.0 - 1) * 100.0
+            value("interest_rates", "diff_2y_vs_official_pp"), -0.33
         )
-        self.assertAlmostEqual(payload["labor"]["unemployment_rate_pct"], 4.10)
-        self.assertAlmostEqual(payload["markets"]["vix"], 17.50)
-        self.assertEqual(payload["observation_dates"]["vix"], "2026-07-03")
+        self.assertAlmostEqual(value("bonds", "gov10y_yield_pct"), 4.40)
+        self.assertEqual(value("bonds", "gov10y_trend"), "up")
+        self.assertAlmostEqual(value("bonds", "yield_diff_10y_2y_pp"), 0.40)
+        self.assertEqual(value("bonds", "yield_diff_10y_2y_trend"), "down")
+        self.assertAlmostEqual(value("bonds", "yield_diff_hy_gov_pp"), 3.10)
+        self.assertEqual(value("bonds", "yield_diff_hy_gov_trend"), "flat")
+        self.assertAlmostEqual(value("markets", "vix"), 17.50)
+        self.assertAlmostEqual(value("markets", "wti_oil_usd"), 68.20)
+        self.assertEqual(value("markets", "oil_trend"), "up")
+        self.assertEqual(value("markets", "dollar_trend"), "flat")
+        self.assertEqual(value("events", "next_cpi_release_date"), "2026-07-15")
+        self.assertEqual(value("events", "next_jobs_release_date"), "2026-08-07")
+        self.assertEqual(
+            value("events", "next_rate_decision_date"), "2026-07-29"
+        )
         self.assertTrue(result.citations)
+
+    def test_every_published_metric_is_an_envelope(self):
+        payload = self._provider().collect("AAPL").payload
+        for group, metrics in payload.items():
+            self.assertIsInstance(metrics, dict, group)
+            for key, node in metrics.items():
+                self.assertTrue(is_envelope(node), f"{group}.{key}")
+
+    def test_formula_receipts_cover_diffs_and_trends(self):
+        result = self._provider().collect("AAPL")
+        formulas = result.formulas or {}
+        diff = formulas["interest_rates.diff_2y_vs_official_pp"]
+        self.assertEqual(
+            diff["formula"], "gov_bond_yield_2y − official_interest_rate"
+        )
+        self.assertAlmostEqual(diff["inputs"]["gov_bond_yield_2y"], 4.00)
+        self.assertAlmostEqual(diff["inputs"]["official_interest_rate"], 4.33)
+        curve = formulas["bonds.yield_diff_10y_2y_pp"]
+        self.assertAlmostEqual(curve["inputs"]["gov_bond_yield_10y"], 4.40)
+        trend = formulas["bonds.gov10y_trend"]
+        self.assertAlmostEqual(trend["inputs"]["value_now"], 4.40)
+        self.assertAlmostEqual(trend["inputs"]["value_3m_ago"], 4.00)
+        self.assertEqual(
+            [branch["label"] for branch in trend["branches"]],
+            ["up", "down", "flat"],
+        )
+        oil = formulas["markets.oil_trend"]
+        self.assertAlmostEqual(oil["inputs"]["change_3m_pct"], 13.67)
 
     def test_one_series_failing_is_partial_with_warning(self):
         base = _fake_fetcher()
@@ -110,8 +212,31 @@ class TestMacroEconProvider(unittest.TestCase):
 
         result = self._provider(fetcher=flaky).collect("AAPL")
         self.assertEqual(result.coverage, Coverage.PARTIAL)
-        self.assertIsNone(result.payload["markets"]["vix"])
+        self.assertIsNone(metric_value(result.payload["markets"]["vix"]))
         self.assertTrue(any("VIXCLS" in w for w in result.warnings))
+
+    def test_calendar_outage_keeps_full_coverage_with_warning(self):
+        def broken_calendar(release_id):
+            raise RuntimeError("FRED release API down")
+
+        result = self._provider(release_dates=broken_calendar).collect("AAPL")
+        self.assertEqual(result.coverage, Coverage.FULL)
+        self.assertIsNone(
+            metric_value(result.payload["events"]["next_cpi_release_date"])
+        )
+        # The static FOMC table needs no network, so it still resolves.
+        self.assertEqual(
+            metric_value(result.payload["events"]["next_rate_decision_date"]),
+            "2026-07-29",
+        )
+        self.assertTrue(any("release calendar" in w for w in result.warnings))
+
+    def test_fomc_table_exhausted_warns_instead_of_guessing(self):
+        result = self._provider(today=lambda: date(2028, 1, 1)).collect("AAPL")
+        self.assertIsNone(
+            metric_value(result.payload["events"]["next_rate_decision_date"])
+        )
+        self.assertTrue(any("FOMC" in w for w in result.warnings))
 
     def test_all_series_failing_is_unavailable(self):
         def broken(series_id):
@@ -136,57 +261,64 @@ class TestMacroEconProvider(unittest.TestCase):
         provider = self._provider(fetcher=_fake_fetcher(calls))
         first = provider.collect("AAPL")
         second = provider.collect("600519")  # different ticker, same day
-        self.assertEqual(len(calls), len(SERIES_SPECS))  # one fetch round only
+        self.assertEqual(len(calls), len(SERIES_IDS))  # one fetch round only
         self.assertEqual(first.payload, second.payload)
         self.assertEqual(second.coverage, Coverage.FULL)
+
+    def test_cache_round_trips_formulas(self):
+        provider = self._provider()
+        provider.collect("AAPL")
+        cached = self._provider().collect("MSFT")
+        self.assertIn("interest_rates.diff_2y_vs_official_pp", cached.formulas)
 
     def test_cache_is_per_day(self):
         calls = []
         fetcher = _fake_fetcher(calls)
-        day = [date(2026, 7, 7)]
+        day = [TODAY]
         provider = self._provider(fetcher=fetcher, today=lambda: day[0])
         provider.collect("AAPL")
         day[0] = date(2026, 7, 8)
         provider.collect("AAPL")
-        self.assertEqual(len(calls), 2 * len(SERIES_SPECS))
+        self.assertEqual(len(calls), 2 * len(SERIES_IDS))
 
-    def test_cache_survives_new_provider_instance(self):
+    def test_old_format_same_day_cache_is_ignored(self):
+        # A cache file written by the pre-reform provider (no version tag)
+        # must not be misread as the new payload shape.
+        old = self.cache_dir / f"macro_econ_us_{TODAY.isoformat()}.json"
+        old.write_text('{"coverage": "full", "payload": {"region": "us"}}')
         calls = []
-        self._provider(fetcher=_fake_fetcher(calls)).collect("AAPL")
-        fresh = self._provider(fetcher=_fake_fetcher(calls))
-        result = fresh.collect("MSFT")
-        self.assertEqual(len(calls), len(SERIES_SPECS))
+        result = self._provider(fetcher=_fake_fetcher(calls)).collect("AAPL")
+        self.assertEqual(len(calls), len(SERIES_IDS))  # refetched
         self.assertEqual(result.coverage, Coverage.FULL)
+        self.assertIn("meta", result.payload)
 
     def test_corrupt_cache_file_triggers_refetch(self):
         calls = []
         provider = self._provider(fetcher=_fake_fetcher(calls))
         provider.collect("AAPL")
-        cache_file = next(self.cache_dir.iterdir())
+        cache_file = next(
+            p for p in self.cache_dir.iterdir() if "_v2_" in p.name
+        )
         cache_file.write_text("{not json", encoding="utf-8")
         fresh = self._provider(fetcher=_fake_fetcher(calls))
         result = fresh.collect("AAPL")
         self.assertEqual(result.coverage, Coverage.FULL)
-        self.assertEqual(len(calls), 2 * len(SERIES_SPECS))
+        self.assertEqual(len(calls), 2 * len(SERIES_IDS))
 
     def test_partial_results_are_cached_too(self):
         base = _fake_fetcher()
-
-        def flaky(series_id):
-            if series_id == "VIXCLS":
-                raise RuntimeError("FRED 500")
-            return base(series_id)
-
         calls = []
 
         def counting_flaky(series_id):
             calls.append(series_id)
-            return flaky(series_id)
+            if series_id == "VIXCLS":
+                raise RuntimeError("FRED 500")
+            return base(series_id)
 
         provider = self._provider(fetcher=counting_flaky)
         provider.collect("AAPL")
         second = provider.collect("AAPL")
-        self.assertEqual(len(calls), len(SERIES_SPECS))
+        self.assertEqual(len(calls), len(SERIES_IDS))
         self.assertEqual(second.coverage, Coverage.PARTIAL)
         self.assertTrue(any("VIXCLS" in w for w in second.warnings))
 
@@ -208,10 +340,10 @@ class TestLiveFredSanity(unittest.TestCase):
             provider = MacroEconProvider(cache_dir=Path(tmp))
             result = provider.collect("AAPL")
         self.assertIn(result.coverage, (Coverage.FULL, Coverage.PARTIAL))
-        rates = result.payload["rates"]
-        self.assertGreater(rates["treasury_10y_pct"] or 0, 0.5)
-        self.assertLess(rates["treasury_10y_pct"] or 99, 15.0)
-        inflation = result.payload["inflation"]["cpi_yoy_pct"]
+        gov10y = metric_value(result.payload["bonds"]["gov10y_yield_pct"])
+        self.assertGreater(gov10y or 0, 0.5)
+        self.assertLess(gov10y or 99, 15.0)
+        inflation = metric_value(result.payload["inflation"]["cpi_yoy_pct"])
         self.assertIsNotNone(inflation)
         self.assertGreater(inflation, -5.0)
         self.assertLess(inflation, 15.0)

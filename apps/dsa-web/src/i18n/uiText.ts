@@ -1252,6 +1252,11 @@ const zh = {
     '收盘价（{close}）不高于 50 日均线（{sma50}）——股票处于中期下行趋势，此时入场是逆势买入，进一步下跌的风险更高。',
   'tiered.alt.warn.earnings_soon':
     '距下次财报仅 {days} 天（{date}），在典型波段持仓期内。技术面判断扛不住财报：一次公告就可能让价格跳空越过任何止损。建议财报前离场，或按跳空风险缩小仓位。',
+  'tiered.alt.warn.macro_event_soon':
+    '距{event}仅 {days} 天（{date}），在典型波段持仓期内。这是市场层面的跳空风险：一个数字可能让所有股票同时跳动。建议届时缩小仓位，或按跳空风险规划止损。',
+  'tiered.alt.warnEvent.rate_decision': '下次官方利率决议',
+  'tiered.alt.warnEvent.inflation_data': '下次通胀数据发布',
+  'tiered.alt.warnEvent.employment_data': '下次就业数据发布',
   'tiered.alt.warn.gap_atr':
     '若隔夜消息导致跳空低开，开盘价比止损（{stop}）再低 1 个 ATR（{atr}），落在 {atrOpen}——止损单会在该价成交，亏损 {atrLoss}，比计划的 {planned} 多亏 {atrExtra}。',
   'tiered.alt.warn.gap_worst':
@@ -1268,6 +1273,7 @@ const zh = {
   // 每条风险文案开头的固定关键词（由代码根据检查项 id 决定，非 AI 生成）。
   'tiered.alt.warnKey.downtrend': '逆势',
   'tiered.alt.warnKey.earnings_soon': '财报临近',
+  'tiered.alt.warnKey.macro_event_soon': '宏观事件临近',
   'tiered.alt.warnKey.gap_atr': '隔夜跳空',
   'tiered.alt.warnKey.gap_worst': '最差单日',
   'tiered.alt.warnKey.reward_below_goal': '盈亏比',
@@ -2791,6 +2797,11 @@ const en: Record<UiTextKey, string> = {
     'The close ({close}) is at or below its 50-day average ({sma50}) — the stock is in a medium-term downtrend, so entering here is buying against the trend and carries extra risk of further downside.',
   'tiered.alt.warn.earnings_soon':
     'The next earnings report is {days} day(s) away ({date}) — inside a typical swing hold. Technicals do not survive earnings: one announcement can gap the price past any stop. Plan to exit before the report, or size for the gap.',
+  'tiered.alt.warn.macro_event_soon':
+    'The {event} is {days} day(s) away ({date}) — inside a typical swing hold. This is market-wide gap risk: one number can move every stock at once. Plan smaller size around it, or size the stop for the gap.',
+  'tiered.alt.warnEvent.rate_decision': 'next official interest rate decision',
+  'tiered.alt.warnEvent.inflation_data': 'next inflation data release',
+  'tiered.alt.warnEvent.employment_data': 'next employment data release',
   'tiered.alt.warn.gap_atr':
     'If overnight news gaps the open 1 ATR ({atr}) below your stop ({stop}), it opens at {atrOpen}; the stop order sells there — a {atrLoss} loss, {atrExtra} more than the {planned} you planned.',
   'tiered.alt.warn.gap_worst':
@@ -2809,6 +2820,7 @@ const en: Record<UiTextKey, string> = {
   // check id, never AI-written).
   'tiered.alt.warnKey.downtrend': 'Downtrend',
   'tiered.alt.warnKey.earnings_soon': 'Earnings',
+  'tiered.alt.warnKey.macro_event_soon': 'Macro event',
   'tiered.alt.warnKey.gap_atr': 'Overnight gap',
   'tiered.alt.warnKey.gap_worst': 'Worst-day gap',
   'tiered.alt.warnKey.reward_below_goal': 'Reward ratio',

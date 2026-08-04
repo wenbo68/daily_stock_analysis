@@ -28,6 +28,7 @@ import uuid
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from .cross_fields import enrich_cross_fields
 from .earnings import EarningsInfo, earnings_from_dimensions
 from .levels import (
     apply_adjustments,
@@ -284,8 +285,13 @@ def run_tiered_analysis(
         raise ValueError(f"depth must be one of {SUPPORTED_DEPTHS}, got {depth}")
     if market is None:
         market = detect_market(symbol)
+    # Cross-provider enrichment (sector comparison, implied/realized
+    # ratio) runs only with production wiring: injected providers mean
+    # a test harness whose canned payloads must pass through untouched.
+    cross_bars_loader: Optional[Callable[[str], List[Bar]]] = None
     if providers is None:
         providers = get_providers(market, bars_loader=dsa_bars_loader)
+        cross_bars_loader = dsa_bars_loader
     if analysis_runner is None:
         analysis_runner = dsa_analysis_runner
     if sizing_settings is None:
@@ -304,6 +310,7 @@ def run_tiered_analysis(
     tracker = LlmUsageTracker()
     with tracker.activate():
         dimensions = _collect_dimensions(providers, symbol)
+        dimensions = enrich_cross_fields(dimensions, cross_bars_loader)
 
         # Formula-only levels: deterministic bases from the technicals
         # payload; the adjustment machinery runs with zero proposals so

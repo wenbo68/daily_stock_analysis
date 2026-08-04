@@ -748,5 +748,87 @@ class TestEarningsGateWarning(unittest.TestCase):
         )
 
 
+class TestMacroEventGateWarning(unittest.TestCase):
+    """The macro-event gate (2026-08-04): a rate decision / CPI print /
+    jobs report inside the hold window is market-wide gap risk — the
+    macro mirror of the earnings gate, reusing the same warning window."""
+
+    TECH = _tech_payload()
+    LEVELS = SniperLevels(entry=96.0, stop_loss=90.0, take_profit=108.0)
+
+    @staticmethod
+    def _macro_dim(events):
+        from src.tiered_analysis.providers.technicals import make_metric
+
+        return DimensionResult(
+            dimension="macro_econ", kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL,
+            payload={"events": {
+                key: make_metric(key, "x", value)
+                for key, value in events.items()
+            }},
+        )
+
+    def test_soonest_event_in_window_is_picked(self):
+        from datetime import date
+
+        from src.tiered_analysis.plan_review import macro_event_from_dimensions
+
+        event = macro_event_from_dimensions(
+            [self._macro_dim({
+                "next_rate_decision_date": "2026-07-29",
+                "next_cpi_release_date": "2026-07-10",
+                "next_jobs_release_date": "2026-08-07",
+            })],
+            today=date(2026, 7, 7),
+        )
+        self.assertEqual(event, {
+            "event": "inflation_data",
+            "next_date": "2026-07-10",
+            "days_until": 3,
+        })
+
+    def test_all_events_outside_window_stay_quiet(self):
+        from datetime import date
+
+        from src.tiered_analysis.plan_review import macro_event_from_dimensions
+
+        event = macro_event_from_dimensions(
+            [self._macro_dim({
+                "next_rate_decision_date": "2026-07-29",
+                "next_cpi_release_date": "2026-08-12",
+            })],
+            today=date(2026, 7, 7),
+        )
+        self.assertIsNone(event)
+
+    def test_no_macro_dimension_stays_quiet(self):
+        from src.tiered_analysis.plan_review import macro_event_from_dimensions
+
+        self.assertIsNone(macro_event_from_dimensions([]))
+
+    def test_macro_event_lands_a_structured_entry_warning(self):
+        from src.tiered_analysis.plan_review import build_plan_warnings
+
+        warnings = build_plan_warnings(
+            self.TECH, self.LEVELS,
+            shares=None, risk_amount=None, reward_goal=2.0,
+            macro_event={
+                "event": "rate_decision",
+                "next_date": "2026-07-29",
+                "days_until": 2,
+            },
+        )
+        self.assertEqual(warnings["entry"], [{
+            "id": "macro_event_soon",
+            "values": {
+                "event": "rate_decision",
+                "next_date": "2026-07-29",
+                "days_until": 2,
+                "warning_days": 7,
+            },
+        }])
+
+
 if __name__ == "__main__":
     unittest.main()

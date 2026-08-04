@@ -377,9 +377,48 @@ class TestTechnicalsProvider(unittest.TestCase):
             "volatility.worst_day_pct_1y",
             "weekly.sma_10w", "weekly.stretch_10w_atr", "weekly.trend",
             "daily.sma_50", "daily.sma_200", "daily.stretch_50d_atr",
+            "daily.stretch_200d_atr",
             "daily.trend", "daily.rsi_14", "daily.momentum",
-            "levels.support_1", "levels.resistance_1",
+            "levels.support_1", "levels.support_dist_atr",
+            "levels.resistance_1", "levels.resistance_dist_atr",
         })
+
+    def test_stretch_200d_and_level_distances_do_the_arithmetic(self):
+        # The published values are computed from unrounded ingredients,
+        # so recomputing from the rounded payload numbers can differ by
+        # one rounding step — hence the small delta.
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
+        close = payload["price"]["close"]["value"]
+        atr = payload["volatility"]["atr_14"]["value"]
+        sma_200 = payload["daily"]["sma_200"]["value"]
+        self.assertAlmostEqual(
+            payload["daily"]["stretch_200d_atr"]["value"],
+            (close - sma_200) / atr,
+            delta=0.02,
+        )
+        support = payload["levels"]["support_1"]["value"]
+        if support is not None:
+            self.assertAlmostEqual(
+                payload["levels"]["support_dist_atr"]["value"],
+                (close - support) / atr,
+                delta=0.02,
+            )
+        resistance = payload["levels"]["resistance_1"]["value"]
+        if resistance is not None:
+            self.assertAlmostEqual(
+                payload["levels"]["resistance_dist_atr"]["value"],
+                (resistance - close) / atr,
+                delta=0.02,
+            )
+
+    def test_market_group_names_follow_the_truth_spec(self):
+        payload = _full_provider(_wave_bars(320)).collect("AAPL").payload
+        self.assertEqual(payload["market"]["regime"]["name"], "market trend")
+        self.assertEqual(
+            payload["market"]["rs_label"]["name"],
+            "stock performance relative to market",
+        )
+        self.assertEqual(payload["meta"]["as_of"]["name"], "bars up to")
 
     def test_every_metric_is_an_envelope(self):
         payload = _full_provider(_wave_bars(320)).collect("AAPL").payload

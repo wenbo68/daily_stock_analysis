@@ -341,24 +341,38 @@ def _monthly_dates(count: int) -> list:
 
 def fake_fred_series(series_id: str) -> list:
     yesterday = (TODAY - timedelta(days=1)).isoformat()
+    three_months_ago = (TODAY - timedelta(days=100)).isoformat()
     if series_id == "CPIAUCSL":
-        # 14 monthly index points, ~2.8% year-over-year.
-        dates = _monthly_dates(14)
+        # 17 monthly index points, ~2.8% year-over-year — enough history
+        # for the YoY reading at the 3-month trend baseline too.
+        dates = _monthly_dates(17)
         return [
             (day, round(314.0 * (1.0023 ** i), 3))
             for i, day in enumerate(dates)
         ]
-    latest = {
-        "FEDFUNDS": 4.33,
-        "DGS10": 4.38,
-        "DGS2": 3.88,
-        "T10Y2Y": 0.50,
-        "UNRATE": 4.1,
-        "VIXCLS": 16.52,
-        "DCOILWTICO": 68.34,
-        "DTWEXBGS": 121.16,
+    if series_id == "UNRATE":
+        return [(three_months_ago, 4.1), (yesterday, 4.1)]
+    # (value ~3 months ago, latest) so every trend field resolves:
+    # 10y up, curve flat, credit spread flat, oil flat, dollar up.
+    then_now = {
+        "DFF": (4.33, 4.33),
+        "DGS10": (4.05, 4.38),
+        "DGS2": (3.95, 3.88),
+        "T10Y2Y": (0.45, 0.50),
+        "BAMLH0A0HYM2": (3.10, 3.05),
+        "VIXCLS": (15.80, 16.52),
+        "DCOILWTICO": (67.10, 68.34),
+        "DTWEXBGS": (118.30, 121.16),
     }[series_id]
-    return [(yesterday, latest)]
+    return [(three_months_ago, then_now[0]), (yesterday, then_now[1])]
+
+
+def fake_fred_release_dates(release_id: int) -> list:
+    """Next scheduled CPI / jobs dates, safely inside the future."""
+    return [
+        (TODAY + timedelta(days=9 + release_id % 7)).isoformat(),
+        (TODAY + timedelta(days=40 + release_id % 7)).isoformat(),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -440,9 +454,10 @@ def build_debate_replies(payloads: dict) -> dict:
     short_d = dv(pos["short_interest"]["short_pct_of_float"]["value"])
     inst_d = dv(pos["ownership"]["institutional_pct"]["value"])
     buys_d = dv(pos["insider_activity_6m"]["buy_count"]["value"])
-    vix_d = dv(macro["markets"]["vix"])
-    fed_d = dv(macro["rates"]["fed_funds_rate_pct"])
-    dxy_d = dv(macro["markets"]["dollar_index_broad"])
+    # Macro is v2 envelopes now — cite the unwrapped values.
+    vix_d = dv(macro["markets"]["vix"]["value"])
+    fed_d = dv(macro["interest_rates"]["official_rate_pct"]["value"])
+    dxy_d = dv(macro["markets"]["dollar_trend"]["value"])
 
     # The scripted evidence, keyed by the graded field. The engine
     # injects each graded field's own citation, so links carry only the
@@ -513,9 +528,9 @@ def build_debate_replies(payloads: dict) -> dict:
             " swing entries.",
             [], 3,
             "Calm tape favors trend continuation."),
-        "macro_econ.rates.fed_funds_rate_pct": _grade(
+        "macro_econ.interest_rates.official_rate_pct": _grade(
             "bearish",
-            f"The federal funds rate at {fed_d}% is still restrictive"
+            f"The official interest rate at {fed_d}% is still restrictive"
             " for valuations.",
             [], 2,
             "Rates are a headwind, but a known one."),
@@ -527,12 +542,12 @@ def build_debate_replies(payloads: dict) -> dict:
     # vote on. Its bullet renumbers to E3 (after the two shared macro
     # bullets).
     extra = {
-        "macro_econ.markets.dollar_index_broad": _grade(
+        "macro_econ.markets.dollar_trend": _grade(
             "bearish",
-            f"The broad dollar index at {dxy_d} pressures overseas"
-            " earnings.",
+            f"The dollar strength trend reads {dxy_d} over the last three"
+            " months, pressuring overseas earnings.",
             [], 2,
-            "A strong dollar shaves reported growth."),
+            "A strengthening dollar shaves reported growth."),
     }
 
     # One grade per code-enumerated field: the scripted evidence above,
@@ -551,11 +566,10 @@ def build_debate_replies(payloads: dict) -> dict:
 
     check_votes = {
         "E3": {"verdict": "valid",
-               "reason": f"The dollar index reading ({dxy_d}) is genuinely"
-                         " elevated and the drag on overseas earnings is"
-                         " real, if modest.",
-               "links": [_link("macro_econ.markets.dollar_index_broad",
-                               dxy_d)],
+               "reason": f"The dollar trend ({dxy_d}) is genuinely"
+                         " strengthening and the drag on overseas earnings"
+                         " is real, if modest.",
+               "links": [_link("macro_econ.markets.dollar_trend", dxy_d)],
                "weight": 2,
                "weight_reason": "A real but second-order headwind."},
     }
@@ -722,6 +736,7 @@ def build_outcome():
         MacroEconProvider(
             series_fetcher=fake_fred_series,
             cache_dir=macro_cache,
+            release_dates_fetcher=fake_fred_release_dates,
         ),
     ]
 

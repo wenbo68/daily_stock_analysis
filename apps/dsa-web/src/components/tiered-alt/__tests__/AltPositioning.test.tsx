@@ -67,6 +67,11 @@ function makePositioning(): TieredDimension {
           'implied quarterly report day price change magnitude',
           8.4,
         ),
+        report_move_ratio_implied_4q: env(
+          'quarterly report day price change magnitude ratio '
+            + '(implied vs 4q avg)',
+          1.55,
+        ),
       },
     },
     formulas: {
@@ -89,6 +94,10 @@ function makePositioning(): TieredDimension {
       'options.implied_report_move_pct': {
         formula: '(atm_call_price + atm_put_price) / stock_price × 100',
         inputs: { atm_call_price: 4.3, atm_put_price: 4.1, stock_price: 100 },
+      },
+      'options.report_move_ratio_implied_4q': {
+        formula: 'implied_report_move_pct / reaction_avg_abs_pct',
+        inputs: { implied_report_move_pct: 8.4, reaction_avg_abs_pct: 5.4 },
       },
     },
   };
@@ -139,6 +148,18 @@ describe('AltDimensions — positioning v2', () => {
     expect(
       screen.getByTestId('alt-metric-formula-put_call_oi_ratio').textContent,
     ).toBe('0.92');
+    // The cross-report ratio carries the × unit and its receipt divides
+    // the implied move by the realized 4q average.
+    const ratio = screen.getByTestId(
+      'alt-metric-formula-report_move_ratio_implied_4q',
+    );
+    expect(ratio.textContent).toBe('1.55 ×');
+    fireEvent.click(ratio);
+    const modal = screen.getByTestId('alt-metric-formula-modal');
+    expect(
+      within(modal).getAllByText(/4q avg report day price change magnitude/i)
+        .length,
+    ).toBeGreaterThan(0);
   });
 
   it('explains the two unsourced truth fields in their n/a modals', () => {

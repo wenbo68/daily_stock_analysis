@@ -16,21 +16,24 @@
 
 ---
 use this as the final truth:
+
 - technicals
   - meta info
     - bars up to
     - daily bars
     - weekly bars
-  - overall market
-    - benchmark (market)
+  - market vs sector vs stock
+    - market trend
+    - 1m return diff (sector vs market)
+    - 3m return diff (sector vs market)
+    - sector performance relative to market
     - 1m return diff (stock vs market)
     - 3m return diff (stock vs market)
-    - relative strength (stock)
-    - sector relative strength (sector ETF vs market, ~1–3 months)
-      - meaning: whether the ticker's sector has been leading or lagging the overall market recently (computed from sector-ETF prices; needs the sector label from fundamentals)
-      - interpretation: swing moves in leading sectors run further and pull back shallower; fighting a lagging sector cuts the win rate even on a clean chart
-      - new: the standard middle layer between macro and the single name; lives here because this group already computes stock-vs-market relative strength the same way
-- price
+    - stock performance relative to market
+    - 1m return diff (stock vs sector)
+    - 3m return diff (stock vs sector)
+    - stock performance relative to sector
+  - price
     - closing price
     - 5d price change
     - 1y highest price
@@ -42,7 +45,7 @@ use this as the final truth:
     - volume ratio (5d/60d)
   - volatility
     - 14d ATR
-    - 14d ATR
+    - 14d ATR (% of closing price)
     - ATR trend
     - typical price drop (6m range)
     - worst price drop (1y range)
@@ -52,14 +55,17 @@ use this as the final truth:
     - trend (SMA + pivots)
   - daily timeframe
     - 50d SMA
-    - 200d SMA
     - diff (closing price vs 50d SMA)
+    - 200d SMA
+    - diff (closing price vs 200d SMA)
     - trend (SMA + pivots)
     - 14d RSI
     - momentum
   - levels
     - nearest support
+    - diff (closing price vs nearest support)
     - nearest resistance
+    - diff (nearest resistance vs closing price)
 - fundamentals
   - meta info
     - company
@@ -77,9 +83,9 @@ use this as the final truth:
     - free cash flow
     - free cash flow to earnings
   - growth
-    - quarterly sales (yoy)
+    - quarterly sales (YoY)
     - growth trend (sales)
-    - quarterly EPS (yoy)
+    - quarterly EPS (YoY)
     - growth trend (EPS)
   - valuation
     - market cap
@@ -113,168 +119,41 @@ use this as the final truth:
     - 6m total insider sells
     - 6m money diff (insider buys vs sells)
   - options
+    - total held options
     - puts to calls (held)
     - puts to calls (traded today)
-    - total held options
     - implied stock volatility: say at the money in tooltip and explain what it doesn't count
     - implied stock volatility ranking (1y range)
     - implied quarterly report day price change magnitude
----
-
-- positioning
-  - short interest
-    - short % of float
-      - meaning: percent of the tradable shares that have been sold short — borrowed and sold by people betting on a fall (fetched; recomputed from shares short ÷ float if Yahoo omits it)
-      - interpretation: under ~3% is normal; ~10%+ is a crowded bear trade; 20%+ is squeeze territory where good news can force shorts to buy back and spike the price
-      - good: crowdedness of the bear side — squeeze fuel and an informed bearish vote at once
-    - days to cover
-      - meaning: shorted shares divided by average daily volume — how many days of trading shorts would need to fully exit (fetched)
-      - interpretation: 1–2 days = easy exit; 5+ means covering itself moves the price, so squeezes run further
-      - good: how many days of volume shorts need to exit; measures squeeze severity
-    - shares short (raw count)
-      - meaning: the raw number of shares currently sold short (fetched)
-      - interpretation: only meaningful relative to the float — use the percentage instead
-      - bad: duplicates short % of float without the denominator; the percentage is the interpretable one
-    - change vs prior month
-      - meaning: percent change in shorted shares versus the previous twice-monthly report (computed)
-      - interpretation: rising = bears pressing the bet; falling = covering already underway
-      - good: whether shorts are building or covering — direction beats level
-    - as-of date
-      - meaning: the date the short-interest data was measured; it publishes about two weeks late (fetched)
-      - interpretation: after a big price move since that date, positioning may already look completely different
-      - good: short interest lags ~2 weeks; without the date a stale print reads as current
-  - ownership
-    - institutional %
-      - meaning: percent of the company held by funds — mutual funds, pensions, ETFs (fetched)
-      - interpretation: healthy sponsorship sits roughly 30–90%; a very low number means funds can't or won't own it
-      - good: institutional sponsorship confirms the name is investable; a very low number is a liquidity/quality red flag
-    - institutional % change vs prior quarter
-      - meaning: whether funds in aggregate added to or trimmed their holdings versus the previous quarterly filing
-      - interpretation: accumulation supports rallies, distribution caps them — but 13F filings lag up to 45 days after quarter-end, so read this as background context, not current flow
-      - new: whether funds were adding or cutting last quarter is the signal; the level alone is static trivia; must ship with the as-of date below
-    - ownership as-of date
-      - meaning: the quarter-end the 13F ownership data describes (filings arrive up to 45 days later)
-      - interpretation: institutional % and its quarterly change can describe positioning from 3–4.5 months ago
-      - new: same logic as the short-interest as-of date — without it, stale accumulation reads as current buying
-    - insider %
-      - meaning: percent held by the company's own executives and directors (fetched)
-      - interpretation: high = management has skin in the game, and fewer shares actually circulate
-      - good: management alignment, and large insider holdings shrink the effective float
-    - top-10 institutions %
-      - meaning: the combined stake of the ten largest fund holders (computed by summing the holders table)
-      - interpretation: very concentrated ownership means one fund's exit is your downside gap
-      - good: concentration risk — one big fund exiting moves the price
-    - float shares
-      - meaning: the number of shares actually available to trade — total shares minus locked-up insider stakes (fetched)
-      - interpretation: a small float moves and squeezes harder in both directions
-      - good: squeeze math and liquidity sizing both run off float
-    - shares outstanding
-      - meaning: the total number of shares the company has issued (fetched)
-      - interpretation: background number; the float is the tradable reality
-      - bad: redundant once float and market cap are shown
-  - insider activity (6m, open-market only)
-    - buy count
-      - meaning: how many open-market purchases insiders made in the last six months — awards, option exercises and gifts excluded (computed from SEC Form 4 rows)
-      - interpretation: even one or two real buys matter — insiders spend their own money for only one reason
-      - good: open-market insider buys are the strongest insider signal — they only happen for one reason
-    - sell count
-      - meaning: how many open-market sales insiders made in the same window (computed)
-      - interpretation: some selling is routine diversification; many sellers clustered together is the warning shape
-      - good: context for the netting — routine scheduled selling vs a cluster dump
-    - net shares
-      - meaning: shares bought minus shares sold across those trades (computed)
-      - interpretation: same direction as net value but not comparable across stocks with different prices
-      - bad: net dollar value says the same thing in units comparable across stocks
-    - net value (USD)
-      - meaning: dollars spent buying minus dollars received selling (computed)
-      - interpretation: positive = insiders are net buyers, a bullish tell; a large negative = insiders cashing out into strength
-      - good: the interpretable netting of insider conviction
-  - options
-    - put/call open-interest ratio
-      - meaning: outstanding put contracts (bets on a fall / protection) divided by outstanding call contracts (bets on a rise), summed over the nearest expirations (computed from per-contract CBOE data)
-      - interpretation: ~0.7–1.0 is typical; well above 1 = bearish or heavily hedged positioning; very low = one-sided bullish, complacency risk
-      - good: the standing balance of hedges and bets
-    - put/call volume ratio
-      - meaning: the same ratio but using only today's traded contracts (computed)
-      - interpretation: when it spikes away from the open-interest ratio, today's flow is turning — faster signal than standing positions
-      - good: today's flow — faster-moving than open interest
-    - total open interest
-      - meaning: total outstanding option contracts across the covered expirations (computed sum)
-      - interpretation: high = a liquid options market and lots of attention; also makes the ratios above trustworthy
-      - good: how much options attention the name has; validates the ratios' sample size
-    - expirations covered
-      - meaning: how many expiration dates were included in the sums — we take the nearest four (computed)
-      - interpretation: a small count means this is a near-dated read, not the whole option board
-      - good: says how much of the option board was summed, so a partial read can't masquerade as the whole board
-    - at-the-money implied volatility (+ where it sits in its own 1y range)
-      - meaning: the size of move the options market is pricing in, read from option prices near the current stock price
-      - interpretation: IV high in its own one-year range = a big move or event is priced in, gaps likely; low = calm expected
-      - new: option prices say how big a move the market expects — high IV means an event is priced in; the CBOE feed we already fetch carries per-contract IV, so it's nearly free
-    - implied earnings move
-      - meaning: the % move the options market prices in for the next report, computed from at-the-money option prices on the expiration just after the earnings date (from the CBOE per-contract data we already pull)
-      - interpretation: directly sizes the gap risk earnings_soon warns about — a 9% implied move against a 5% stop distance is an exit-before-report
-      - new: upgrades the earnings warning from a yes/no into a number the plan can act on; note it needs the earnings date, which today lives in the fundamentals provider — a small cross-report dependency to wire
-
+    - quarterly report day price change magnitude ratio (implied vs 4q avg)
 - macro econ
-  - rates
-    - fed funds rate
-      - meaning: the interest rate the Fed sets — the base price of money in the economy (fetched)
-      - interpretation: high or rising = tightening, pressure on stock valuations; cuts = fuel for risk assets
-      - good: the policy stance anchors everything else
-    - 10y treasury yield
-      - meaning: the yield the US government pays to borrow for ten years — the market's long-term rate (fetched)
-      - interpretation: the discount rate for stocks; fast rises hurt long-duration growth stocks the most
-      - good: the discount rate for equities; growth stocks hurt when it climbs
-    - 2y treasury yield
-      - meaning: the yield on two-year government notes — tracks where the market thinks the Fed goes next (fetched)
-      - interpretation: it moves before the Fed does; a falling 2y = the market betting on rate cuts
-      - good: the market's view of the near-term Fed path
-    - 10y−2y curve spread
-      - meaning: the 10-year yield minus the 2-year yield (fetched as FRED's own precomputed series)
-      - interpretation: negative ("inverted") is the classic recession warning; a steepening back toward positive often marks a regime change
-      - good: the classic recession/regime flag
+  - meta info
+    - region
+    - inflation data up to
+    - employment data up to
   - inflation
-    - CPI YoY
-      - meaning: consumer prices versus the same month last year — the inflation rate (computed from the raw index)
-      - interpretation: hot prints push the Fed hawkish, bad for stocks; cooling prints support rate cuts
-      - good: drives Fed policy expectations, which drive everything above
-  - labor
+    - consumer price index (YoY)
+    - consumer price index (YoY) trend
+  - employment
     - unemployment rate
-      - meaning: the percent of the workforce without a job (fetched)
-      - interpretation: low = strong economy but keeps the Fed tight; a fast rise is a recession signal
-      - good: the Fed's other mandate and a growth-health check
+    - unemployment rate trend
+  - interest rates
+    - official interest rate
+    - diff (2y gov bond yield vs official interest rate)
+  - bonds
+    - 10y gov bond yield
+    - 10y gov bond yield trend
+    - yield diff (10y gov bond vs 2y gov bond)
+    - yield diff (10y gov bond vs 2y gov bond) trend
+    - yield diff (high-yield company bond vs gov bond)
+    - yield diff (high-yield company bond vs gov bond) trend
   - markets
-    - VIX
-      - meaning: the market's expected size of S&P 500 swings over the next month, priced from options — the "fear index" (fetched)
-      - interpretation: under ~15 = calm; 20+ = nervous; 30+ = stress — in high-VIX regimes use smaller size and wider stops
-      - good: the risk-appetite regime — high VIX argues for wider stops and smaller size
-    - WTI oil
-      - meaning: the price of US crude oil per barrel (fetched)
-      - interpretation: a direct driver for energy and transport names; sustained spikes feed inflation and weigh on the whole market
-      - good: inflation input and a direct driver for energy/transport names
-    - broad dollar index
-      - meaning: the dollar's value against a basket of trading-partner currencies (fetched)
-      - interpretation: a strong dollar shrinks US multinationals' foreign earnings; a falling dollar supports risk appetite
-      - good: a strong dollar drags multinational earnings and risk appetite
-  - meta: as-of + per-series observation dates
-    - meaning: when the report was assembled and the date of each series' latest datapoint
-    - interpretation: daily series (yields, VIX, oil) are current; monthly ones (CPI, jobs) can be weeks old — don't read them as today's news
-    - good: daily and monthly series mix here; the dates guard against reading a month-old print as fresh
-  - macro event calendar (next FOMC decision, CPI print, jobs report + days until each)
-    - meaning: the dates of the next Fed rate decision, inflation release and jobs report
-    - interpretation: any of them inside the hold window = market-wide gap risk, the same way earnings is single-stock gap risk
-    - new: a Fed meeting or CPI print inside the hold window is the same event risk as earnings but market-wide; enables a macro_event_soon plan warning mirroring earnings_soon — the highest-value add of the three reports
-  - 3-month trend direction per series (up / down / flat)
-    - meaning: whether each series above has been rising, falling or flat over roughly the last three months
-    - interpretation: the direction is the tradable information — a level alone says nothing about pressure building or easing
-    - new: "10y at 4.4%" is uninterpretable on its own; "10y up 40bp in 3 months" is evidence the debate can actually use — we already fetch the full series, so this is nearly free
-  - high-yield credit spread (FRED HY OAS)
-    - meaning: the extra yield investors demand to hold risky ("junk") corporate bonds over safe government bonds
-    - interpretation: widening = credit stress building, often before stocks react; tight and stable = risk-on backdrop
-    - new: the credit market's risk appetite; tends to widen before equity stress shows up — same free FRED source as the rest
-
-- considered and not added (decided 2026-07-29)
-  - market trend (S&P vs its moving averages)
-    - skip: already exists — technicals' "benchmark: market" field is exactly this: bullish / mixed / bearish computed from the index close vs its 200d SMA plus its position in the 1y range
-  - news / headline sentiment
-    - skip: the field most likely to inject noise or let the LLM confabulate a narrative; the event calendar + implied-volatility fields capture "something is coming" more reliably than headlines do
+    - implied market volatility
+    - crude oil price
+    - crude oil price trend
+    - dollar strength trend
+  - events
+    - next inflation data date
+    - next employment data date
+    - next official interest rate date
+---

@@ -126,14 +126,50 @@ const en: Record<string, MetricEntry> = {
 
   // ---- technicals v2 groups + fields (2026-07-27; regrouped 2026-07-28) ----
   market: {
-    short: 'Overall market',
-    full: 'What the market as a whole is doing, and whether this stock is leading it or lagging behind it.',
+    short: 'Market vs sector vs stock',
+    full: "The three-layer read: what the market is doing, whether this stock's sector (industry family) is leading or lagging the market, and whether the stock is leading or lagging both.",
   },
   regime: {
-    short: 'Benchmark (market)',
+    short: 'Market trend',
     full: 'Is the overall market — not this stock — healthy? Judged on the benchmark index (S&P 500 for US stocks): is the index above its own 200-day average price, and is it in the upper or lower half of its one-year range?\nValues: bullish / bearish / mixed.',
     interp: "Most stocks follow the market. Buying in a bearish market usually fails even when this stock's own chart looks good — demand a stronger setup and use a smaller position.",
     blank: 'This market has no benchmark index set up, or the index data failed to load.',
+  },
+  rs_sector_1m: {
+    short: '1m return diff (sector vs market)',
+    full: "The return of the stock's sector (its industry family, measured via the sector's ETF — a fund holding the sector's big stocks) minus the market's return over the last month.\nUnit: percentage points.",
+    interp: 'Positive = the sector is leading the market. Swing moves in leading sectors run further and pull back shallower.',
+    blank: "The sector is unknown or has no sector ETF mapped (US sectors only for now), the market benchmark is unavailable, or the sector ETF's data failed to load.",
+  },
+  rs_sector_3m: {
+    short: '3m return diff (sector vs market)',
+    full: "The return of the stock's sector (via its sector ETF) minus the market's return over the last 3 months.\nUnit: percentage points.",
+    interp: 'Positive = the sector is leading the market. Fighting a lagging sector cuts the win rate even on a clean chart.',
+    blank: "The sector is unknown or has no sector ETF mapped (US sectors only for now), the market benchmark is unavailable, or the sector ETF's data failed to load.",
+  },
+  sector_vs_market_label: {
+    short: 'Sector performance relative to market',
+    full: "A one-word verdict from the two sector numbers above: leader = the sector beat the market over both the 1-month and 3-month windows; laggard = lost to it over both; neutral = mixed.",
+    interp: 'The middle layer between the market and the single stock — a leading sector is a tailwind for longs in it.',
+    blank: 'The two sector return-difference numbers above are blank, so there is nothing to conclude from.',
+  },
+  rs_stock_sector_1m: {
+    short: '1m return diff (stock vs sector)',
+    full: "The stock's return minus its own sector's return over the last month.\nUnit: percentage points.",
+    interp: 'Read together with the sector rows: positive in a leading sector = leading the family; positive in a falling sector = only falling slower than it.',
+    blank: 'The sector comparison is unavailable (see the sector rows above), so this diff cannot be computed.',
+  },
+  rs_stock_sector_3m: {
+    short: '3m return diff (stock vs sector)',
+    full: "The stock's return minus its own sector's return over the last 3 months.\nUnit: percentage points.",
+    interp: 'Read together with the sector rows: positive in a leading sector = leading the family; positive in a falling sector = only falling slower than it.',
+    blank: 'The sector comparison is unavailable (see the sector rows above), so this diff cannot be computed.',
+  },
+  stock_vs_sector_label: {
+    short: 'Stock performance relative to sector',
+    full: 'A one-word verdict: leader = the stock beat its own sector over both the 1-month and 3-month windows; laggard = lost to it over both; neutral = mixed.',
+    interp: 'Separates a genuinely strong stock from one carried by a hot sector — a laggard inside a leading sector is the weakest member of a strong club.',
+    blank: 'The stock-vs-sector diffs above are blank, so there is nothing to conclude from.',
   },
   relative_strength: {
     short: 'Relative strength',
@@ -190,8 +226,8 @@ const en: Record<string, MetricEntry> = {
     blank: 'This market has no benchmark index set up, the index data failed to load, or there is less than 3 months of history.',
   },
   rs_label: {
-    short: 'Relative strength (stock)',
-    full: 'A one-word verdict from the two numbers above: leader = beat the market over both the 1-month and 3-month windows; laggard = lost to it over both; neutral = mixed.',
+    short: 'Stock performance relative to market',
+    full: 'A one-word verdict from the two stock-vs-market numbers: leader = beat the market over both the 1-month and 3-month windows; laggard = lost to it over both; neutral = mixed.',
     interp: 'Prefer buying leaders — buying a laggard needs a clear reason from the other reports.',
     blank: 'The two return-difference numbers above are blank (no benchmark set up or the index data failed to load), so there is nothing to conclude from.',
   },
@@ -247,6 +283,12 @@ const en: Record<string, MetricEntry> = {
     interp: '-1 to +1 in an uptrend = a good entry zone; above +3 = chasing.',
     blank: 'The 50-day average or the normal-move gauge (ATR) is unavailable because the history is too short.',
   },
+  stretch_200d_atr: {
+    short: 'Diff (closing price vs 200d SMA)',
+    full: 'How far the price is above (+) or below (-) its 200-day average, in normal daily moves (ATR units).',
+    interp: 'Positive = the long-term uptrend is intact; negative = the price is below the long-term line, so buying is against the long-term trend.',
+    blank: 'The 200-day average or the normal-move gauge (ATR) is unavailable because the history is too short.',
+  },
   sma_200: {
     short: '200d SMA',
     full: "The average price of the last 200 trading days — the most-watched line in finance.\nUnit: the stock's currency.",
@@ -295,11 +337,23 @@ const en: Record<string, MetricEntry> = {
     interp: 'A protective stop-loss belongs just below a level like this, not at a random percent.',
     blank: 'The price is at its lowest point in about 6 months — there is no past floor beneath it.',
   },
+  support_dist_atr: {
+    short: 'Diff (closing price vs nearest support)',
+    full: 'How far the price sits above the nearest support, in normal daily moves (ATR units).',
+    interp: 'Small = the floor is affordably close, so a stop under it is cheap; large = a stop under support risks more than a typical setup should.',
+    blank: 'There is no support level below (price at its ~6-month low), or the normal-move gauge (ATR) is unavailable.',
+  },
   resistance_1: {
     short: 'Nearest resistance',
     full: "The nearest price ABOVE today's where sellers showed up before (a past peak).\nUnit: the stock's currency.",
     interp: 'The first realistic profit target — expect selling there.',
     blank: 'The price is at its highest point in about 6 months — there is no past ceiling above it.',
+  },
+  resistance_dist_atr: {
+    short: 'Diff (nearest resistance vs closing price)',
+    full: 'How far the nearest resistance sits above the price, in normal daily moves (ATR units).',
+    interp: 'The room to run before the first ceiling — small means the easy gain is nearly used up.',
+    blank: 'There is no resistance level above (price at its ~6-month high), or the normal-move gauge (ATR) is unavailable.',
   },
   typical_pullback_atr: {
     short: 'Typical price drop (6m range)',
@@ -595,31 +649,158 @@ const en: Record<string, MetricEntry> = {
   },
   inflation: {
     short: 'Inflation',
-    full: 'How fast consumer prices are rising.',
+    full: 'How fast consumer prices are rising — the number that drives what the central bank does with interest rates.',
   },
   cpi_yoy_pct: {
-    short: 'CPI YoY %',
-    full: 'Consumer Price Index — how much everyday prices rose vs. a year ago.',
+    short: 'Consumer price index (YoY)',
+    full: 'How much everyday prices rose versus the same month last year — the inflation rate.\nUnit: percent.',
+    interp: 'Central banks aim for about 2%. Hot readings push interest rates up (bad for stocks); cooling readings make rate cuts possible.',
+    blank: 'The inflation series failed to load, or there is no year-ago month to compare against.',
   },
-  labor: {
-    short: 'Labor',
-    full: 'Job-market health.',
+  cpi_yoy_trend: {
+    short: 'Consumer price index (YoY) trend',
+    full: 'The inflation rate now versus about 3 months ago: up, down or flat (small wiggles count as flat).',
+    interp: 'Down = price pressure easing, rate cuts closer; up = pressure building, rates stay high or rise.',
+    blank: 'Not enough inflation history to compare against 3 months ago.',
+  },
+  employment: {
+    short: 'Employment',
+    full: 'Job-market health — the other half of what the central bank watches.',
   },
   unemployment_rate_pct: {
-    short: 'Unemployment %',
-    full: 'Share of the workforce without a job.',
+    short: 'Unemployment rate',
+    full: 'Share of the workforce without a job.\nUnit: percent.',
+    interp: 'Low = strong economy but keeps rates high; a fast rise is the classic recession signal.',
+    blank: 'The unemployment series failed to load.',
+  },
+  unemployment_trend: {
+    short: 'Unemployment rate trend',
+    full: 'Unemployment now versus about 3 months ago: up, down or flat (small wiggles count as flat).',
+    interp: 'Up is the hard recession gauge moving the wrong way — the direction matters more than the level.',
+    blank: 'Not enough unemployment history to compare against 3 months ago.',
+  },
+  interest_rates: {
+    short: 'Interest rates',
+    full: 'The one rate the central bank sets directly, plus the change the market has already priced in.',
+  },
+  official_rate_pct: {
+    short: 'Official interest rate',
+    full: 'The one rate the central bank sets directly (in the US, the federal funds rate) — the base price of money. Everything else in this report is priced by markets, not set by anyone.',
+    interp: 'Changes only at scheduled decisions (~8 a year). High or rising = pressure on stock valuations; cuts = fuel for stocks.',
+    blank: 'The official-rate series failed to load.',
+  },
+  diff_2y_vs_official_pp: {
+    short: 'Diff (2y gov bond yield vs official interest rate)',
+    full: "The 2-year government bond yield minus the official rate.\nThe 2y is roughly the market's expected average official rate over the next two years, so this gap is the rate change the market has priced in.\nUnit: percentage points.",
+    interp: 'Negative = rate cuts priced in (the more negative, the bigger the expected easing); positive = hikes priced in; near zero = the central bank is expected to sit still.',
+    blank: 'The 2-year yield or the official-rate series failed to load.',
+  },
+  bonds: {
+    short: 'Bonds',
+    full: 'Market-priced government and company bond yields — a yield is the return locked in by buying at today’s traded price, so these move every trading day.',
+  },
+  gov10y_yield_pct: {
+    short: '10y gov bond yield',
+    full: "The return locked in by lending to the government for 10 years at today's traded bond price — the market's long-term interest rate. Payments on bonds already owned never change; this is the deal offered to a buyer today.\nUnit: percent.",
+    interp: 'The guaranteed alternative competing with stocks: the higher it sits, the less future profits are worth today — far-future (growth) profits get hit hardest.',
+    blank: 'The 10-year yield series failed to load.',
+  },
+  gov10y_trend: {
+    short: '10y gov bond yield trend',
+    full: 'The 10-year yield now versus about 3 months ago: up, down or flat (small wiggles count as flat).',
+    interp: 'Up = valuation pressure actively building while a trade is held — a headwind for growth-stock longs; down = support.',
+    blank: 'Not enough 10-year yield history to compare against 3 months ago.',
+  },
+  yield_diff_10y_2y_pp: {
+    short: 'Yield diff (10y gov bond vs 2y gov bond)',
+    full: '10-year yield minus 2-year yield.\nUnit: percentage points.',
+    interp: 'Negative (short rates above long) is the classic recession warning: the market expects cuts because trouble is coming.',
+    blank: 'The 10y-minus-2y series failed to load.',
+  },
+  yield_diff_10y_2y_trend: {
+    short: 'Yield diff (10y gov bond vs 2y gov bond) trend',
+    full: 'The 10y-vs-2y gap now versus about 3 months ago: up, down or flat (small wiggles count as flat).',
+    interp: 'The recession dial’s direction: down = sliding toward or deeper into warning; up = climbing back out, often a regime change.',
+    blank: 'Not enough 10y-vs-2y history to compare against 3 months ago.',
+  },
+  yield_diff_hy_gov_pp: {
+    short: 'Yield diff (high-yield company bond vs gov bond)',
+    full: "The extra yield investors demand for risky ('junk') company bonds over government bonds of the same maturity. Matching maturities cancels the rate environment out, leaving pure default fear — traders call this the high-yield credit spread.\nUnit: percentage points.",
+    interp: 'Tight and stable = lenders relaxed, a risk-on backdrop; widening = credit stress building, often before stocks react.',
+    blank: 'The high-yield spread series failed to load.',
+  },
+  yield_diff_hy_gov_trend: {
+    short: 'Yield diff (high-yield company bond vs gov bond) trend',
+    full: 'The credit spread now versus about 3 months ago: up, down or flat (small wiggles count as flat).',
+    interp: 'Up (widening) is the early credit-stress warning light; down = fear draining out.',
+    blank: 'Not enough high-yield spread history to compare against 3 months ago.',
   },
   markets: {
     short: 'Markets',
-    full: 'Broad market stress gauges.',
+    full: 'Market-wide gauges: expected turbulence, oil, and the dollar.',
   },
   vix: {
-    short: 'VIX',
-    full: 'The “fear index” — expected market turbulence implied by options prices.\nHigher = investors more nervous.',
+    short: 'Implied market volatility',
+    full: 'The expected size of overall market (S&P 500) swings over the next month, priced from index options — the “fear index” (VIX). The market-wide sibling of the per-stock implied volatility in positioning.',
+    interp: 'Under ~15 = calm; 20+ = nervous; 30+ = stress. In high-volatility regimes use smaller size and wider stops.',
+    blank: 'The volatility index series failed to load.',
   },
   wti_oil_usd: {
-    short: 'WTI oil $',
-    full: 'The US benchmark oil price, in USD per barrel.',
+    short: 'Crude oil price',
+    full: 'The US benchmark oil price (WTI), in USD per barrel.',
+    interp: 'A direct driver for energy and transport names — the level sets their world regardless of trend.',
+    blank: 'The oil price series failed to load.',
+  },
+  oil_trend: {
+    short: 'Crude oil price trend',
+    full: 'The oil price now versus about 3 months ago: up, down or flat (small percent moves count as flat).',
+    interp: 'Sustained rises feed future inflation readings (oil moves daily, inflation reports monthly) and weigh on the whole market.',
+    blank: 'Not enough oil price history to compare against 3 months ago.',
+  },
+  dollar_trend: {
+    short: 'Dollar strength trend',
+    full: "The dollar's value against a basket of trading-partner currencies, now versus about 3 months ago: up, down or flat. Only the direction is shown — the index level itself is an arbitrary-basket number nobody can read.",
+    interp: "A fast-rising dollar shrinks US multinationals' foreign earnings and often accompanies risk-off; a falling dollar supports risk appetite.",
+    blank: 'Not enough dollar index history to compare against 3 months ago.',
+  },
+  events: {
+    short: 'Events',
+    full: 'The scheduled announcements that can move the whole market on one morning — the market-wide version of an earnings date.',
+  },
+  next_cpi_release_date: {
+    short: 'Next inflation data date',
+    full: 'The scheduled date of the next consumer-price (CPI) release.',
+    interp: 'A market-wide gap risk: inside a holding window, every stock can jump on this number.',
+    blank: 'The release calendar failed to load or has no upcoming date.',
+  },
+  next_jobs_release_date: {
+    short: 'Next employment data date',
+    full: 'The scheduled date of the next jobs report (unemployment release).',
+    interp: 'A market-wide gap risk: inside a holding window, every stock can jump on this number.',
+    blank: 'The release calendar failed to load or has no upcoming date.',
+  },
+  next_rate_decision_date: {
+    short: 'Next official interest rate date',
+    full: 'The scheduled date of the next central-bank rate decision (in the US, the FOMC statement day).',
+    interp: 'The biggest scheduled market-wide event — inside a holding window it is gap risk for every stock.',
+    blank: 'The published decision calendar has run out — it needs extending with the next year’s schedule.',
+  },
+  inflation_data_up_to: {
+    short: 'Inflation data up to',
+    full: 'The month the latest consumer-price reading describes. Inflation data is published monthly with a delay.',
+    interp: 'Can be four to six weeks old — it describes that month, not today.',
+    blank: 'The inflation series failed to load.',
+  },
+  employment_data_up_to: {
+    short: 'Employment data up to',
+    full: 'The month the latest unemployment reading describes. Jobs data is published monthly with a delay.',
+    interp: 'Can be four to six weeks old — it describes that month, not today.',
+    blank: 'The unemployment series failed to load.',
+  },
+  // Retired macro keys (old stored runs only).
+  labor: {
+    short: 'Labor',
+    full: 'Job-market health.',
   },
   dollar_index_broad: {
     short: 'Dollar index',
@@ -783,6 +964,12 @@ const en: Record<string, MetricEntry> = {
     interp: 'Compare it to the stop distance: an implied ±9% move against a 5% stop means the gap jumps the stop — exit before the report or size so the full move is survivable.',
     blank: 'Shown only when the next report is within ~3 weeks (further out, option prices mostly reflect ordinary drift, not the report jump) — and it needs the report date plus usable at-the-money quotes on the first expiration after it. See the notes button for the exact reason.',
   },
+  report_move_ratio_implied_4q: {
+    short: 'Quarterly report day price change magnitude ratio (implied vs 4q avg)',
+    full: "The options-implied move for the next report day divided by the realized average move of the last 4 report days (from the fundamentals report). 1.0 = options price exactly the usual jump.\nUnit: a multiple (×).",
+    interp: 'Well above 1 = the market is braced for a bigger-than-usual report reaction; well below 1 = unusually calm expectations.',
+    blank: 'Needs both the implied report-day move (shown only when the report is within ~3 weeks) and the realized 4-quarter average from fundamentals.',
+  },
 };
 
 const zh: Record<string, MetricEntry> = {
@@ -867,7 +1054,43 @@ const zh: Record<string, MetricEntry> = {
   },
 
   // ---- technicals v2 分组与字段（2026-07-27；2026-07-28 重新分组）----
-  market: { short: '大盘环境', full: '整体市场处于什么状态，这只股票是领先大盘还是落后于大盘。' },
+  market: { short: '大盘 vs 板块 vs 个股', full: '三层视角：大盘处于什么状态、这只股票所在的板块（行业家族）是领先还是落后大盘、个股又相对两者表现如何。' },
+  rs_sector_1m: {
+    short: '对比大盘的板块表现（1月）',
+    full: '这只股票所在板块（用板块ETF——持有该板块大型股票的基金——来衡量）最近一个月的收益减去大盘同期收益。\n单位：百分点。',
+    interp: '为正 = 板块领先大盘。领先板块中的波段行情走得更远、回调更浅。',
+    blank: '板块未知或没有对应的板块ETF（目前仅支持美股板块）、大盘基准不可用，或板块ETF数据加载失败。',
+  },
+  rs_sector_3m: {
+    short: '对比大盘的板块表现（3月）',
+    full: '这只股票所在板块（用板块ETF衡量）最近3个月的收益减去大盘同期收益。\n单位：百分点。',
+    interp: '为正 = 板块领先大盘。逆着落后板块做多，即使图形干净，胜率也会下降。',
+    blank: '板块未知或没有对应的板块ETF（目前仅支持美股板块）、大盘基准不可用，或板块ETF数据加载失败。',
+  },
+  sector_vs_market_label: {
+    short: '板块相对大盘表现',
+    full: '由上面两个板块数字得出的一词结论：leader（领先）= 1个月和3个月都跑赢大盘；laggard（落后）= 都跑输；neutral = 混合。',
+    interp: '大盘与个股之间的中间层——领先的板块是板块内多头的顺风。',
+    blank: '上面两个板块对比数字为空，无从得出结论。',
+  },
+  rs_stock_sector_1m: {
+    short: '对比板块的个股表现（1月）',
+    full: '这只股票最近一个月的收益减去它自己板块的同期收益。\n单位：百分点。',
+    interp: '要和板块自身的表现一起读：在领先板块中为正 = 家族里的领跑者；在下跌板块中为正 = 只是跌得比家族慢。',
+    blank: '板块对比不可用（见上方板块行），无法计算该差值。',
+  },
+  rs_stock_sector_3m: {
+    short: '对比板块的个股表现（3月）',
+    full: '这只股票最近3个月的收益减去它自己板块的同期收益。\n单位：百分点。',
+    interp: '要和板块自身的表现一起读：在领先板块中为正 = 家族里的领跑者；在下跌板块中为正 = 只是跌得比家族慢。',
+    blank: '板块对比不可用（见上方板块行），无法计算该差值。',
+  },
+  stock_vs_sector_label: {
+    short: '个股相对板块表现',
+    full: '一词结论：leader（领先）= 1个月和3个月都跑赢自己的板块；laggard（落后）= 都跑输；neutral = 混合。',
+    interp: '区分真正强势的个股和被火热板块抬起来的个股——领先板块里的落后者，是强队里最弱的队员。',
+    blank: '上面的个股对比板块数字为空，无从得出结论。',
+  },
   rs_1m: {
     short: '对比大盘（1月）',
     full: '这只股票最近一个月的收益减去大盘同期收益：+5 表示跑赢大盘5个百分点。\n单位：百分点；通常在 -20 到 +20 之间。',
@@ -892,7 +1115,7 @@ const zh: Record<string, MetricEntry> = {
     blank: '载入的价格历史不足10周。',
   },
   regime: {
-    short: '大盘状态',
+    short: '大盘趋势',
     full: '整体市场（不是这只股票）健康吗？用基准指数（美股为标普500）判断：指数是否在自己200日均价上方、处于一年区间的上半段还是下半段。\n取值：bullish（多头）/ bearish（空头）/ mixed（混合）。',
     interp: '多数个股跟着大盘走。大盘转空时，就算这只股票自己的图形再好，买入也多半失败——要求更强的形态、用更小的仓位。',
     blank: '该市场未接入基准指数，或指数数据加载失败。',
@@ -922,8 +1145,8 @@ const zh: Record<string, MetricEntry> = {
     blank: '该市场未接入基准指数、指数数据加载失败，或历史数据不足3个月。',
   },
   rs_label: {
-    short: '个股相对强弱',
-    full: '由上面两个数字得出的一词结论：leader（领先者）= 1个月和3个月都跑赢大盘；laggard（落后者）= 都跑输；neutral = 混合。',
+    short: '个股相对大盘表现',
+    full: '由个股对比大盘的两个数字得出的一词结论：leader（领先者）= 1个月和3个月都跑赢大盘；laggard（落后者）= 都跑输；neutral = 混合。',
     interp: '优先买领先者——买落后者需要其他报告给出明确的理由。',
     blank: '上面两个对比大盘的数字为空（未接入基准指数或指数数据加载失败），无从得出结论。',
   },
@@ -968,6 +1191,12 @@ const zh: Record<string, MetricEntry> = {
     interp: '上升趋势中 -1 到 +1 = 不错的买入区；+3 以上 = 追高。',
     blank: '历史太短，50日均线或正常波动尺（ATR）不可用。',
   },
+  stretch_200d_atr: {
+    short: '收盘价与200日均线的距离',
+    full: '价格在200日均线上方（+）或下方（−）多远，用正常单日波动（ATR）作单位。',
+    interp: '为正 = 长期上升趋势成立；为负 = 价格在长期趋势线下方，做多是逆长期趋势。',
+    blank: '历史太短，200日均线或正常波动尺（ATR）不可用。',
+  },
   sma_200: {
     short: '200日均线',
     full: '最近200个交易日价格的平均值——金融市场最受关注的一条线。\n单位：股票的货币。',
@@ -1010,11 +1239,23 @@ const zh: Record<string, MetricEntry> = {
     interp: '保护性止损应放在这类价位的下方一点，而不是随便选个百分比。',
     blank: '价格正处于约6个月来的最低点——下方已没有过去的地板。',
   },
+  support_dist_atr: {
+    short: '收盘价与最近支撑位的距离',
+    full: '价格在最近支撑位上方多远，用正常单日波动（ATR）作单位。',
+    interp: '小 = 地板离得近、把止损放在它下方成本低；大 = 止损放在支撑下方的风险超出常规。',
+    blank: '下方没有支撑位（价格处于约6个月低点），或正常波动尺（ATR）不可用。',
+  },
   resistance_1: {
     short: '最近阻力位',
     full: '今天价格上方最近的、卖方曾经出现的价位（过去的一个高点）。\n单位：股票的货币。',
     interp: '第一个现实的止盈目标——预计那里会出现卖压。',
     blank: '价格正处于约6个月来的最高点——上方已没有过去的天花板。',
+  },
+  resistance_dist_atr: {
+    short: '最近阻力位与收盘价的距离',
+    full: '最近阻力位在价格上方多远，用正常单日波动（ATR）作单位。',
+    interp: '碰到第一个天花板之前还有多少空间——数值小说明容易赚的部分已经不多。',
+    blank: '上方没有阻力位（价格处于约6个月高点），或正常波动尺（ATR）不可用。',
   },
   typical_pullback_atr: {
     short: '典型回调深度（6个月区间）',
@@ -1252,16 +1493,140 @@ const zh: Record<string, MetricEntry> = {
     short: '10Y−2Y 利差',
     full: '10年期减2年期收益率。\n低于零（“倒挂”）是经典的衰退预警信号。',
   },
-  inflation: { short: '通胀', full: '消费者物价上涨的速度。' },
-  cpi_yoy_pct: { short: 'CPI 同比 %', full: '消费者物价指数——日常物价相比一年前上涨了多少。' },
-  labor: { short: '就业', full: '就业市场的健康状况。' },
-  unemployment_rate_pct: { short: '失业率 %', full: '劳动人口中没有工作的比例。' },
-  markets: { short: '市场情绪', full: '衡量市场整体紧张程度的指标。' },
-  vix: {
-    short: 'VIX',
-    full: '“恐慌指数”——期权价格隐含的预期市场波动。\n越高说明投资者越紧张。',
+  inflation: { short: '通胀', full: '消费者物价上涨的速度——央行调整利率的核心依据。' },
+  cpi_yoy_pct: {
+    short: '消费者物价指数（同比）',
+    full: '日常物价相比去年同月上涨了多少——即通胀率。\n单位：百分比。',
+    interp: '央行的目标约为 2%。数据偏热会推高利率（对股票不利）；降温则让降息成为可能。',
+    blank: '通胀序列加载失败，或没有去年同月的数据可比。',
   },
-  wti_oil_usd: { short: 'WTI 油价 $', full: '美国基准原油价格（美元/桶）。' },
+  cpi_yoy_trend: {
+    short: '消费者物价指数（同比）趋势',
+    full: '通胀率与约3个月前相比：up（上行）/ down（下行）/ flat（持平，小幅波动算持平）。',
+    interp: '下行 = 物价压力缓解、降息更近；上行 = 压力累积、利率维持高位或继续上调。',
+    blank: '通胀历史不足，无法与3个月前比较。',
+  },
+  employment: { short: '就业', full: '就业市场的健康状况——央行关注的另一半。' },
+  unemployment_rate_pct: {
+    short: '失业率',
+    full: '劳动人口中没有工作的比例。\n单位：百分比。',
+    interp: '低 = 经济强劲但利率难降；快速上升是经典的衰退信号。',
+    blank: '失业率序列加载失败。',
+  },
+  unemployment_trend: {
+    short: '失业率趋势',
+    full: '失业率与约3个月前相比：up（上行）/ down（下行）/ flat（持平，小幅波动算持平）。',
+    interp: '上行 = 硬性衰退指标正朝坏的方向走——方向比水平更重要。',
+    blank: '失业率历史不足，无法与3个月前比较。',
+  },
+  interest_rates: { short: '利率', full: '央行直接设定的那一个利率，以及市场已经提前定价的变化。' },
+  official_rate_pct: {
+    short: '官方利率',
+    full: '央行直接设定的利率（美国为联邦基金利率）——资金的基础价格。本报告的其他字段都由市场定价，不由任何人设定。',
+    interp: '只在计划中的议息会议（每年约8次）变动。偏高或上行 = 压制股票估值；降息 = 股市的燃料。',
+    blank: '官方利率序列加载失败。',
+  },
+  diff_2y_vs_official_pp: {
+    short: '2年期国债收益率与官方利率之差',
+    full: '2年期政府债券收益率减官方利率。\n2年期收益率约等于市场对未来两年官方利率平均值的预期，因此这个差值就是市场已经定价的利率变化。\n单位：百分点。',
+    interp: '为负 = 已定价降息（越负预期降幅越大）；为正 = 已定价加息；接近零 = 预期央行按兵不动。',
+    blank: '2年期收益率或官方利率序列加载失败。',
+  },
+  bonds: { short: '债券', full: '由市场定价的政府与公司债券收益率——收益率是按今天成交价买入并持有到期锁定的回报，因此每个交易日都在变。' },
+  gov10y_yield_pct: {
+    short: '10年期国债收益率',
+    full: '按今天的债券成交价把钱借给政府10年所锁定的回报——市场的长期利率。已持有债券的票息不会变；这是今天买入者拿到的条件。\n单位：百分比。',
+    interp: '与股票竞争的保底选择：它越高，未来利润在今天越不值钱——越远期的（成长股）利润受伤越重。',
+    blank: '10年期收益率序列加载失败。',
+  },
+  gov10y_trend: {
+    short: '10年期国债收益率趋势',
+    full: '10年期收益率与约3个月前相比：up（上行）/ down（下行）/ flat（持平，小幅波动算持平）。',
+    interp: '上行 = 持仓期间估值压力正在累积——对成长股多头是逆风；下行 = 支撑。',
+    blank: '10年期收益率历史不足，无法与3个月前比较。',
+  },
+  yield_diff_10y_2y_pp: {
+    short: '收益率差（10年期 vs 2年期国债）',
+    full: '10年期收益率减2年期收益率。\n单位：百分点。',
+    interp: '为负（短端高于长端，即“倒挂”）是经典的衰退预警：市场预期因经济出问题而降息。',
+    blank: '10年-2年利差序列加载失败。',
+  },
+  yield_diff_10y_2y_trend: {
+    short: '收益率差（10年期 vs 2年期国债）趋势',
+    full: '10年-2年利差与约3个月前相比：up（上行）/ down（下行）/ flat（持平）。',
+    interp: '衰退表盘的走向：下行 = 滑向或加深预警；上行 = 走出倒挂，常意味着大环境转换。',
+    blank: '10年-2年利差历史不足，无法与3个月前比较。',
+  },
+  yield_diff_hy_gov_pp: {
+    short: '收益率差（高收益公司债 vs 国债）',
+    full: '投资者持有高风险（“垃圾级”）公司债相对同期限政府债券额外要求的收益率。期限配对抵消了利率环境的影响，剩下的就是纯粹的违约恐惧——交易员称之为高收益信用利差。\n单位：百分点。',
+    interp: '窄且稳定 = 放贷者放松、市场偏好风险；走阔 = 信用压力累积，常常先于股市反应。',
+    blank: '高收益利差序列加载失败。',
+  },
+  yield_diff_hy_gov_trend: {
+    short: '收益率差（高收益公司债 vs 国债）趋势',
+    full: '信用利差与约3个月前相比：up（上行）/ down（下行）/ flat（持平）。',
+    interp: '上行（走阔）是信用压力的早期警示灯；下行 = 恐惧消退。',
+    blank: '高收益利差历史不足，无法与3个月前比较。',
+  },
+  markets: { short: '市场情绪', full: '市场层面的仪表：预期波动、油价与美元。' },
+  vix: {
+    short: '隐含市场波动',
+    full: '由指数期权定价的、未来一个月大盘（标普500）波动幅度的预期——即“恐慌指数”（VIX）。与持仓报告里的个股隐含波动是同类指标的市场版。',
+    interp: '约15以下 = 平静；20以上 = 紧张；30以上 = 危机模式。高波动环境下应缩小仓位、放宽止损。',
+    blank: '波动指数序列加载失败。',
+  },
+  wti_oil_usd: {
+    short: '原油价格',
+    full: '美国基准原油价格（WTI），美元/桶。',
+    interp: '能源和运输类股票的直接驱动因素——无论趋势如何，价位本身决定它们的处境。',
+    blank: '油价序列加载失败。',
+  },
+  oil_trend: {
+    short: '原油价格趋势',
+    full: '油价与约3个月前相比：up（上行）/ down（下行）/ flat（持平，小幅百分比波动算持平）。',
+    interp: '持续上行会传导进未来的通胀数据（油价每天变，通胀每月报），并拖累整个市场。',
+    blank: '油价历史不足，无法与3个月前比较。',
+  },
+  dollar_trend: {
+    short: '美元强弱趋势',
+    full: '美元相对一篮子贸易伙伴货币的价值，与约3个月前相比：up（走强）/ down（走弱）/ flat（持平）。只展示方向——指数本身的数值是任意篮子单位，无法直接解读。',
+    interp: '美元快速走强会压缩美国跨国公司的海外收益，且常伴随避险情绪；走弱则支撑风险偏好。',
+    blank: '美元指数历史不足，无法与3个月前比较。',
+  },
+  events: { short: '事件', full: '可能在同一个早晨撼动整个市场的排期公告——相当于市场层面的财报日。' },
+  next_cpi_release_date: {
+    short: '下次通胀数据日期',
+    full: '下一次消费者物价（CPI）数据的排期发布日。',
+    interp: '市场层面的跳空风险：在持仓窗口内，所有股票都可能因这个数字跳动。',
+    blank: '发布日历加载失败，或没有已排期的日期。',
+  },
+  next_jobs_release_date: {
+    short: '下次就业数据日期',
+    full: '下一次就业报告（失业率数据）的排期发布日。',
+    interp: '市场层面的跳空风险：在持仓窗口内，所有股票都可能因这个数字跳动。',
+    blank: '发布日历加载失败，或没有已排期的日期。',
+  },
+  next_rate_decision_date: {
+    short: '下次官方利率日期',
+    full: '下一次央行利率决议的排期日（美国为 FOMC 声明日）。',
+    interp: '最大的排期市场事件——落在持仓窗口内时，对所有股票都是跳空风险。',
+    blank: '已发布的决议日程表已用尽——需要补充下一年的日程。',
+  },
+  inflation_data_up_to: {
+    short: '通胀数据截至',
+    full: '最新消费者物价读数所描述的月份。通胀数据按月发布且有延迟。',
+    interp: '可能是四到六周前的情况——它描述那个月，不是今天。',
+    blank: '通胀序列加载失败。',
+  },
+  employment_data_up_to: {
+    short: '就业数据截至',
+    full: '最新失业率读数所描述的月份。就业数据按月发布且有延迟。',
+    interp: '可能是四到六周前的情况——它描述那个月，不是今天。',
+    blank: '失业率序列加载失败。',
+  },
+  // 已退役的宏观键（仅旧运行）。
+  labor: { short: '就业', full: '就业市场的健康状况。' },
   dollar_index_broad: { short: '美元指数', full: '美元相对一篮子其他货币的强弱。' },
   observation_dates: {
     short: '数据日期',
@@ -1420,6 +1785,12 @@ const zh: Record<string, MetricEntry> = {
     full: '期权市场为下次季度财报定价的跳空幅度（%）——取财报日后第一个到期日的平值认购+认沽价格。无方向：期权价格只说明跳多大，不说明往哪跳（读作 ±）。\n仅在财报距今约 3 周以内才显示——更远时期权价格主要反映日常波动，而非财报跳空。',
     interp: '与止损距离对比：隐含 ±9% 的跳空对上 5% 的止损，意味着跳空会直接越过止损——要么财报前离场，要么把仓位缩到能承受全幅波动。',
     blank: '仅在下次财报距今约 3 周以内才显示（更远时期权价格主要反映日常波动，而非财报跳空），且需要财报日期和财报后第一个到期日的可用平值报价。具体原因见提示按钮。',
+  },
+  report_move_ratio_implied_4q: {
+    short: '财报日波动幅度比（隐含 vs 近4季均值）',
+    full: '期权为下次财报日定价的隐含波动，除以最近4次财报日的实际平均波动（来自基本面报告）。1.0 = 期权定价的跳空幅度与往常一致。\n单位：倍数（×）。',
+    interp: '明显大于 1 = 市场在为超出寻常的财报反应做准备；明显小于 1 = 预期异常平静。',
+    blank: '需要同时具备隐含财报日波动（仅财报距今约3周内显示）和基本面报告中的近4季实际平均波动。',
   },
 };
 

@@ -49,6 +49,18 @@ const INPUT_ROW_PATH: Record<string, string> = {
   // Positioning receipts: the float is the one ingredient that is
   // also a published row.
   float_shares: 'positioning.ownership.float_shares',
+  // Technicals 2026-08-04: level-distance receipts cite the level rows;
+  // sma_200 gained its own diff receipt.
+  sma_200: 'technicals.daily.sma_200',
+  nearest_support: 'technicals.levels.support_1',
+  nearest_resistance: 'technicals.levels.resistance_1',
+  // Cross-report ratio (implied vs realized report-day move): both
+  // ingredients are published rows, one per report.
+  implied_report_move_pct: 'positioning.options.implied_report_move_pct',
+  reaction_avg_abs_pct: 'fundamentals.quarterly_report.reaction_avg_abs_pct',
+  // Macro econ v2 receipts: the diffs cite the published rate rows.
+  official_interest_rate: 'macro_econ.interest_rates.official_rate_pct',
+  gov_bond_yield_10y: 'macro_econ.bonds.gov10y_yield_pct',
 };
 
 // On-screen names for receipt-only ingredients (values the formula needs
@@ -109,6 +121,23 @@ const HELPER_VAR_LABEL: Record<string, string> = {
   atm_call_price: 'at-the-money call price',
   atm_put_price: 'at-the-money put price',
   stock_price: 'stock price',
+  // Sector comparison receipt ingredients (2026-08-04): the sector
+  // ETF's returns are receipt-only; diff_1m/3m feed the verdict rules.
+  sector_return_1m: 'sector return (1m)',
+  sector_return_3m: 'sector return (3m)',
+  diff_1m: 'return diff (1m)',
+  diff_3m: 'return diff (3m)',
+  // Macro econ v2 receipt ingredients: the 2y yield is not a published
+  // row (only its diff vs the official rate is), and the trend
+  // receipts cite the two endpoint values.
+  gov_bond_yield_2y: '2y gov bond yield',
+  value_now: 'value now',
+  value_3m_ago: 'value 3 months ago',
+  price_now: 'price now',
+  price_3m_ago: 'price 3 months ago',
+  index_now: 'index now',
+  index_3m_ago: 'index 3 months ago',
+  change_3m_pct: '3-month change (%)',
   // Old stored runs' receipts used the pre-canon variable names.
   revenue_q: 'quarterly sales',
   revenue_q_year_ago: 'sales same quarter last year',
