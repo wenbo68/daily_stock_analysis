@@ -94,17 +94,34 @@ def demo_bars(count: int = 320) -> list:
     cap the target), and above a recent pivot low (a support exists
     under the stop). The final 5 bars carry a volume bump so the volume
     ratio reads > 1.
+
+    The three OLDER past report days each get a one-bar close jump so
+    the realized report-day average move (fundamentals) — and the new
+    implied-vs-4q-average ratio (positioning) — read like a real stock
+    instead of a smooth wave. Only the close/open spike; highs and lows
+    stay on the smooth path so the pivot structure is untouched. The
+    most recent report day is left alone: it sits inside the ATR / RSI
+    windows and a spike there would disturb the tuned technicals.
     """
     days = _business_days(count)
+    report_jumps = {}
+    for quarters_back, factor in ((1, 1.045), (2, 0.952), (3, 1.061)):
+        report = (TODAY - timedelta(days=32 + 91 * quarters_back)
+                  + timedelta(days=21))
+        for i, day in enumerate(days):
+            if day > report:
+                report_jumps[i] = factor
+                break
     bars = []
     price = 100.0
     for i in range(count):
         price *= 1.0012
-        close = price * (1 + 0.025 * math.sin(i / 9.0))
+        smooth = price * (1 + 0.025 * math.sin(i / 9.0))
+        close = smooth * report_jumps.get(i, 1.0)
         volume = 52e6 if i >= count - 5 else 40e6
         bars.append(Bar(
-            high=close * 1.012,
-            low=close * 0.988,
+            high=smooth * 1.012,
+            low=smooth * 0.988,
             close=close,
             open=close * 0.996,
             volume=volume,
@@ -120,6 +137,19 @@ def demo_index_bars(count: int = 320) -> list:
     for i in range(count):
         price *= 1.0005
         bars.append(Bar(high=price * 1.004, low=price * 0.996, close=price))
+    return bars
+
+
+def demo_sector_bars(count: int = 320) -> list:
+    """The sector ETF (XLK, from the demo's Technology label): rising
+    faster than the benchmark but slower than the stock, so the new
+    sector-comparison rows read "sector leads the market, stock still
+    ahead of its own sector"."""
+    bars = []
+    price = 210.0
+    for i in range(count):
+        price *= 1.0008
+        bars.append(Bar(high=price * 1.005, low=price * 0.995, close=price))
     return bars
 
 
@@ -368,9 +398,11 @@ def fake_fred_series(series_id: str) -> list:
 
 
 def fake_fred_release_dates(release_id: int) -> list:
-    """Next scheduled CPI / jobs dates, safely inside the future."""
+    """Next scheduled CPI / jobs dates. The jobs date lands inside the
+    7-day warning window on purpose, so the demo run shows the
+    macro_event_soon plan warning; CPI stays just outside it."""
     return [
-        (TODAY + timedelta(days=9 + release_id % 7)).isoformat(),
+        (TODAY + timedelta(days=5 + release_id % 7)).isoformat(),
         (TODAY + timedelta(days=40 + release_id % 7)).isoformat(),
     ]
 
@@ -707,6 +739,11 @@ def build_outcome():
     macro_cache = Path(tempfile.mkdtemp(prefix="demo-macro-cache-"))
     bars = demo_bars()
     index_bars = demo_index_bars()
+    sector_bars = demo_sector_bars()
+
+    def sector_bars_loader(_ticker: str) -> list:
+        return sector_bars
+
     providers = [
         TechnicalsProvider(
             bars_loader=lambda s: bars,
@@ -742,9 +779,16 @@ def build_outcome():
 
     # Pre-collect once to build the scripted replies from live values;
     # collect() is deterministic, so the pipeline's own collection sees
-    # identical payloads (macro reads its own fresh cache).
-    payloads = {p.dimension: p.collect(SYMBOL).payload for p in providers}
-    dimensions = [p.collect(SYMBOL) for p in providers]
+    # identical payloads (macro reads its own fresh cache). The same
+    # cross-provider enrichment the pipeline will apply must run here
+    # too — the scripted graded sheet grades exactly the fields the
+    # engine enumerates, sector-comparison and ratio rows included.
+    from src.tiered_analysis.cross_fields import enrich_cross_fields
+
+    dimensions = enrich_cross_fields(
+        [p.collect(SYMBOL) for p in providers], sector_bars_loader
+    )
+    payloads = {d.dimension: d.payload for d in dimensions}
 
     settings = SizingSettings(
         capital=CAPITAL, risk_fraction=RISK_FRACTION, reward_risk=REWARD_RISK,
@@ -774,6 +818,7 @@ def build_outcome():
         tier2_stage=Tier2Stage(engine=DebateEngine(summarizer=llm)),
         plan_summarizer=llm,
         log_signal=False,
+        cross_bars_loader=sector_bars_loader,
     )
 
 
@@ -810,11 +855,25 @@ def main() -> None:
     print(f"13F up to:     {pos.payload['meta']['ownership_as_of']['value']}")
     print(f"implied move:  ±{pos.payload['options']['implied_report_move_pct']['value']}%")
 
+    market = tech.payload["market"]
+    print(f"sector vs mkt: 1m={market['rs_sector_1m']['value']} "
+          f"3m={market['rs_sector_3m']['value']} "
+          f"-> {market['sector_vs_market_label']['value']}")
+    print(f"stock vs sect: 1m={market['rs_stock_sector_1m']['value']} "
+          f"3m={market['rs_stock_sector_3m']['value']} "
+          f"-> {market['stock_vs_sector_label']['value']}")
+    ratio = pos.payload["options"]["report_move_ratio_implied_4q"]["value"]
+    print(f"move ratio:    {ratio} (implied vs 4q avg)")
+
     assert final.direction is Direction.BUY, "demo run must be bullish"
     assert (final.debate_detail or {}).get("verdict"), "debate verdict missing"
     assert pos.payload["options"]["implied_report_move_pct"]["value"] is not None, (
         "demo implied report-day move must be populated"
     )
+    assert market["sector_vs_market_label"]["value"] is not None, (
+        "demo sector comparison must be populated"
+    )
+    assert ratio is not None, "demo implied-vs-realized ratio must be populated"
 
     if args.dry_run:
         print("\ndry run — nothing stored")

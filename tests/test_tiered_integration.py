@@ -217,6 +217,32 @@ class TestRunTieredAnalysis(unittest.TestCase):
         self.assertIsNone(outcome.signal)
         self.assertEqual(logged, [])
 
+    def test_injected_providers_with_explicit_cross_loader_enrich(self):
+        """The cross_bars_loader seam: a harness that injects providers
+        (which normally skips cross-provider enrichment) can opt in by
+        passing its own loader — the demo seeder relies on this."""
+        tech = DimensionResult(
+            dimension="technicals",
+            kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL,
+            payload={"market": {"regime": {"value": "bullish"}}},
+        )
+        outcome = run_tiered_analysis(
+            "AAPL",
+            market=Market.US,
+            providers=[_StubProvider("technicals", tech)],
+            analysis_runner=lambda symbol: _fake_analysis_result(),
+            signal_logger=lambda report, trace_id=None: None,
+            log_signal=False,
+            earnings_lookup=_no_earnings,
+            cross_bars_loader=lambda ticker: [],
+        )
+        enriched = outcome.report.dimensions[0]
+        self.assertIn("rs_sector_1m", enriched.payload["market"])
+        self.assertTrue(
+            any("sector unknown" in w for w in enriched.warnings)
+        )
+
     def test_failed_tier1_still_returns_report_with_dimensions(self):
         def broken_runner(symbol):
             raise RuntimeError("LLM down")
