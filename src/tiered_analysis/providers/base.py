@@ -11,7 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 
 class Market(str, Enum):
@@ -73,6 +73,12 @@ class DimensionResult:
     #: ({name, explanation, value}) is a contract; receipts are for the
     #: report page only.
     formulas: Optional[Dict[str, Any]] = None
+    #: The same data notes as ``warnings``, keyed by the payload field
+    #: ("group.key") each note is about — one note may sit on several
+    #: fields. The report page shows a note next to its own field; a
+    #: warning absent from this map has no field to live on and stays a
+    #: card-level note. Same out-of-payload rationale as ``formulas``.
+    field_notes: Optional[Dict[str, List[str]]] = None
 
     @property
     def is_actionable(self) -> bool:
@@ -86,6 +92,20 @@ class DimensionResult:
             and self.coverage != Coverage.UNAVAILABLE
             and bool(self.payload)
         )
+
+
+def note_fields(
+    warnings: List[str],
+    field_notes: Dict[str, List[str]],
+    message: str,
+    paths: Sequence[str],
+) -> None:
+    """Record one data note: on the card-level warnings list AND on each
+    payload field ("group.key") it affects, so the report page can show
+    the note beside the field itself."""
+    warnings.append(message)
+    for path in paths:
+        field_notes.setdefault(path, []).append(message)
 
 
 class DimensionProvider(ABC):

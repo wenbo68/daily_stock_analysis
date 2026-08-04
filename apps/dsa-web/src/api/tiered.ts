@@ -42,6 +42,11 @@ export type TieredDimension = {
   formulas?: Record<string, TieredMetricFormula> | null;
   narrative: string | null;
   warnings: string[];
+  /** The same notes as `warnings`, keyed by the payload field
+      ("group.key") each is about (2026-08-05). A warning absent from
+      this map has no field to live on and stays a card-level note.
+      Absent on old stored runs. */
+  field_notes?: Record<string, string[]> | null;
   citations: TieredCitation[];
 };
 

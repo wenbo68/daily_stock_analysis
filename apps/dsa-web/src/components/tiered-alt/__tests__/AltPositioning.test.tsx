@@ -162,21 +162,64 @@ describe('AltDimensions — positioning v2', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('explains the two unsourced truth fields in their n/a modals', () => {
+  it('explains the two unsourced truth fields behind their field marks', () => {
     renderPositioning();
+    // "n/a" itself is plain text now — the reason lives behind the
+    // exclamation mark beside it (owner request 2026-08-05).
     const diff = screen.getByTestId('alt-metric-blank-institutional_diff_q_pp');
     expect(diff.textContent).toBe('n/a');
-    fireEvent.click(diff);
+    expect(diff.tagName).toBe('SPAN');
+    fireEvent.click(
+      screen.getByTestId('alt-field-notes-institutional_diff_q_pp'),
+    );
     expect(screen.getByTestId('alt-metric-blank-modal').textContent).toMatch(
       /No reliable free source publishes the prior-quarter aggregate/,
     );
     // No ✕ button by design — Escape closes the modal.
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    fireEvent.click(screen.getByTestId('alt-metric-blank-implied_vol_rank_1y'));
+    fireEvent.click(screen.getByTestId('alt-field-notes-implied_vol_rank_1y'));
     expect(screen.getByTestId('alt-metric-blank-modal').textContent).toMatch(
       /a year of implied-volatility history/,
     );
+  });
+
+  it('shows run notes beside their own field and drops the card button', () => {
+    const dimension = makePositioning();
+    const farReport =
+      'next report is more than 21 days away — option prices there mostly '
+      + 'reflect ordinary drift, not the report jump; implied report-day '
+      + 'move omitted';
+    dimension.warnings = [farReport];
+    dimension.field_notes = {
+      'options.implied_report_move_pct': [farReport],
+    };
+    const options = dimension.payload!.options as Record<string, unknown>;
+    options.implied_report_move_pct = env(
+      'implied quarterly report day price change magnitude',
+      null,
+    );
+    renderPositioning(dimension);
+
+    // Every note sits beside a field → no card-level notes button.
+    expect(screen.queryByTestId('alt-notes-button')).toBeNull();
+
+    // The field's own mark opens a modal with exactly this run's reason.
+    fireEvent.click(
+      screen.getByTestId('alt-field-notes-implied_report_move_pct'),
+    );
+    const modal = screen.getByTestId('alt-field-notes-modal');
+    expect(modal.textContent).toContain('more than 21 days away');
+
+    // Fields without notes get no mark.
+    expect(screen.queryByTestId('alt-field-notes-put_call_oi_ratio')).toBeNull();
+  });
+
+  it('keeps the card-level button for old stored runs without field notes', () => {
+    const dimension = makePositioning();
+    dimension.warnings = ['no listed options found for AAPL'];
+    renderPositioning(dimension);
+    expect(screen.getByTestId('alt-notes-button')).toBeInTheDocument();
   });
 
   it('opens the money-diff receipt with named ingredients and a unit result', () => {

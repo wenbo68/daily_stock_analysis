@@ -37,6 +37,7 @@ from .base import (
     DimensionResult,
     Market,
     SourceKind,
+    note_fields,
 )
 
 RSI_PERIOD = 14
@@ -122,6 +123,19 @@ OPTIONAL_METRICS = frozenset({
     "levels.resistance_dist_atr",
     "volatility.typical_pullback_atr",
 })
+
+#: Payload paths ("group.key") each history/benchmark shortfall note is
+#: about, so the report page can show the note beside the field itself.
+YEAR_WINDOW_FIELDS = (
+    "price.high_1y",
+    "price.low_1y",
+    "price.range_pct_1y",
+    "volatility.worst_day_pct_1y",
+)
+WEEKLY_FIELDS = ("weekly.sma_10w", "weekly.stretch_10w_atr", "weekly.trend")
+BENCHMARK_FIELDS = (
+    "market.regime", "market.rs_1m", "market.rs_3m", "market.rs_label",
+)
 
 
 @dataclass(frozen=True)
@@ -765,7 +779,8 @@ class TechnicalsProvider(DimensionProvider):
             )
 
         warnings: List[str] = []
-        payload, formulas = self._build_payload(bars, warnings)
+        field_notes: Dict[str, List[str]] = {}
+        payload, formulas = self._build_payload(bars, warnings, field_notes)
 
         missing = [
             f"{group}.{key}"
@@ -776,8 +791,10 @@ class TechnicalsProvider(DimensionProvider):
         ]
         coverage = Coverage.FULL if not missing else Coverage.PARTIAL
         if missing:
-            warnings.append(
-                f"indicators lacking history: {', '.join(sorted(missing))}"
+            note_fields(
+                warnings, field_notes,
+                f"indicators lacking history: {', '.join(sorted(missing))}",
+                sorted(missing),
             )
         return DimensionResult(
             dimension=self.dimension,
@@ -787,12 +804,16 @@ class TechnicalsProvider(DimensionProvider):
             citations=[Citation(source_name=self._source_name)],
             warnings=warnings,
             formulas=formulas or None,
+            field_notes=field_notes or None,
         )
 
     # -- payload assembly ---------------------------------------------------
 
     def _build_payload(
-        self, bars: List[Bar], warnings: List[str]
+        self,
+        bars: List[Bar],
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
         closes = [bar.close for bar in bars]
         close = closes[-1]
@@ -800,15 +821,19 @@ class TechnicalsProvider(DimensionProvider):
         weekly_closes = [bar.close for bar in weekly_bars]
 
         if len(bars) < YEAR_BARS:
-            warnings.append(
+            note_fields(
+                warnings, field_notes,
                 f"only {len(bars)} daily bars (<{YEAR_BARS}): the one-year "
-                "fields cover the history that exists"
+                "fields cover the history that exists",
+                YEAR_WINDOW_FIELDS,
             )
         if len(weekly_bars) < WEEKLY_BARS_TARGET:
-            warnings.append(
+            note_fields(
+                warnings, field_notes,
                 f"only {len(weekly_bars)} weekly bars "
                 f"(<{WEEKLY_BARS_TARGET}): the weekly structure read is "
-                "unreliable"
+                "unreliable",
+                WEEKLY_FIELDS,
             )
 
         atr = compute_atr(bars)
@@ -885,7 +910,7 @@ class TechnicalsProvider(DimensionProvider):
         pullback = typical_pullback_atr(daily_highs, daily_lows, atr)
 
         regime, rs_1m, rs_3m, rs_label, bench_receipts = (
-            self._benchmark_fields(closes, warnings)
+            self._benchmark_fields(closes, warnings, field_notes)
         )
 
         # Receipt ingredients (UI formulas): values the formulas divide
@@ -1561,7 +1586,10 @@ class TechnicalsProvider(DimensionProvider):
         return formulas
 
     def _benchmark_fields(
-        self, closes: List[float], warnings: List[str]
+        self,
+        closes: List[float],
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Tuple[
         Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any],
         Dict[str, Dict[str, Any]],
@@ -1600,7 +1628,7 @@ class TechnicalsProvider(DimensionProvider):
         )
 
         def _absent(reason: str) -> Tuple[Any, ...]:
-            warnings.append(reason)
+            note_fields(warnings, field_notes, reason, BENCHMARK_FIELDS)
             return (
                 make_metric(
                     regime_name,
@@ -1651,8 +1679,10 @@ class TechnicalsProvider(DimensionProvider):
                 interpretation=regime_interpretation,
             )
         else:
-            warnings.append(
-                "benchmark index history too short for the regime read"
+            note_fields(
+                warnings, field_notes,
+                "benchmark index history too short for the regime read",
+                ("market.regime",),
             )
             regime_env = make_metric(
                 regime_name,

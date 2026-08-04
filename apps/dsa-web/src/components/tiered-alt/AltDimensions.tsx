@@ -10,7 +10,7 @@ import {
 } from '../tiered/termHelpers';
 import { MetricTerm } from '../tiered/terms';
 import { formatMetricValue } from './altFormat';
-import { AltBlankValue, AltMetricValue } from './AltMetricFormula';
+import { AltFieldNotes, AltMetricValue } from './AltMetricFormula';
 import { ALT_LINK } from './altStyles';
 import { AltCard, AltNarrative, AltNotesButton } from './AltUi';
 
@@ -136,6 +136,9 @@ interface MetricRowProps {
   /** How this number was computed (technicals v2 runs) — when present,
       the value is a button opening the formula receipt. */
   formula?: TieredMetricFormula | null;
+  /** This run's backend notes about this field (from field_notes) —
+      rendered as a small exclamation mark after the value. */
+  notes?: string[] | null;
   /** The value's observation date, shown dimmed after it (macro rows). */
   date?: unknown;
   /** The date's own payload path — it stays a citable evidence target
@@ -147,7 +150,9 @@ interface MetricRowProps {
 // Every row stays a single line (owner request 2026-08-01): the value
 // never wraps, and the label ellipsizes when the remaining space runs
 // out — the tooltip's bold header always carries the full name.
-const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: MetricRowProps) => (
+const MetricRow = ({
+  anchorPath, term, value, formula, notes, date, dateAnchorPath,
+}: MetricRowProps) => (
   <div
     id={metricAnchorId(anchorPath)}
     className="flex scroll-mt-24 items-baseline justify-between gap-3 py-1"
@@ -157,8 +162,9 @@ const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: M
     </dt>
     <dd className="shrink-0 whitespace-nowrap text-xs tabular-nums text-gray-300">
       {value == null ? (
-        // Blank field: "n/a" opens the why-is-this-blank modal.
-        <AltBlankValue term={term} />
+        // Blank field: plain "n/a" — the reason lives behind the
+        // exclamation mark beside it (owner request 2026-08-05).
+        <span data-testid={`alt-metric-blank-${term}`}>n/a</span>
       ) : formula ? (
         <AltMetricValue term={term} value={value} formula={formula} />
       ) : (
@@ -177,6 +183,7 @@ const MetricRow = ({ anchorPath, term, value, formula, date, dateAnchorPath }: M
           </span>
         </>
       ) : null}
+      <AltFieldNotes term={term} notes={notes ?? null} isBlank={value == null} />
     </dd>
   </div>
 );
@@ -186,6 +193,8 @@ interface AltPayloadTableProps {
   payload: Record<string, unknown>;
   /** "group.key" → receipt (technicals v2 runs); null elsewhere. */
   formulas: Record<string, TieredMetricFormula> | null;
+  /** "group.key" → this run's notes about that field; null on old runs. */
+  fieldNotes: Record<string, string[]> | null;
 }
 
 // The macro payload's per-series observation dates: not a display group
@@ -196,7 +205,9 @@ const OBSERVATION_DATES_KEY = 'observation_dates';
 // Every metric sits in a titled section; a hairline separates sections.
 // Rows keep the same anchor ids as the main page so evidence links and
 // formula inputs can scroll straight to their source here too.
-const AltPayloadTable = ({ dimension, payload, formulas }: AltPayloadTableProps) => {
+const AltPayloadTable = ({
+  dimension, payload, formulas, fieldNotes,
+}: AltPayloadTableProps) => {
   const { t } = useUiLanguage();
   const rawDates = payload[OBSERVATION_DATES_KEY];
   const dates = isGroup(rawDates) ? rawDates : null;
@@ -226,6 +237,7 @@ const AltPayloadTable = ({ dimension, payload, formulas }: AltPayloadTableProps)
                     term={subKey}
                     value={metricValue(value)}
                     formula={formulas?.[`${key}.${subKey}`] ?? null}
+                    notes={fieldNotes?.[`${key}.${subKey}`] ?? null}
                     date={dates?.[subKey]}
                     dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${subKey}`}
                   />
@@ -237,6 +249,7 @@ const AltPayloadTable = ({ dimension, payload, formulas }: AltPayloadTableProps)
                   term={key}
                   value={metricValue(values)}
                   formula={formulas?.[key] ?? null}
+                  notes={fieldNotes?.[key] ?? null}
                   date={dates?.[key]}
                   dateAnchorPath={`${dimension}.${OBSERVATION_DATES_KEY}.${key}`}
                 />
@@ -256,6 +269,17 @@ interface AltDimensionCardProps {
 const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
   const { t } = useUiLanguage();
   const labelKey = DIMENSION_LABEL_KEYS[dimension.dimension];
+  const fieldNotes = dimension.field_notes ?? null;
+  // Notes that sit beside their own field (field_notes) no longer show
+  // at the card level (owner request 2026-08-05). What remains — notes
+  // the backend attached to no field, and every note on old stored runs
+  // without field_notes — keeps the card-level button so nothing is
+  // silently lost. Unavailable dimensions have no rows for per-field
+  // marks, so the red X also stays.
+  const coveredNotes = new Set(Object.values(fieldNotes ?? {}).flat());
+  const cardNotes = dimension.warnings.filter((note) => !coveredNotes.has(note));
+  const showCardNotes =
+    cardNotes.length > 0 || dimension.coverage === 'unavailable';
   const uniqueCitations = dedupeCitations(dimension.citations);
   // Listed non-links first, links after; each keeps the [n] number of its
   // position in uniqueCitations, because that is what the narrative's
@@ -270,10 +294,12 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
         <h3 className="font-semibold text-gray-300">
           {labelKey ? t(labelKey) : dimension.dimension}
         </h3>
-        <AltNotesButton
-          notes={dimension.warnings}
-          coverage={dimension.coverage as TieredCoverage}
-        />
+        {showCardNotes ? (
+          <AltNotesButton
+            notes={cardNotes}
+            coverage={dimension.coverage as TieredCoverage}
+          />
+        ) : null}
       </div>
 
       {dimension.narrative ? (
@@ -287,6 +313,7 @@ const AltDimensionCard = ({ dimension }: AltDimensionCardProps) => {
           dimension={dimension.dimension}
           payload={dimension.payload}
           formulas={dimension.formulas ?? null}
+          fieldNotes={fieldNotes}
         />
       ) : null}
 

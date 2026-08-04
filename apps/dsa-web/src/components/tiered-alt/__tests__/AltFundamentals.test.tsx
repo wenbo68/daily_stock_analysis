@@ -139,11 +139,14 @@ describe('AltDimensions — fundamentals v3', () => {
     expect(screen.getByText('28.50')).toBeInTheDocument();
   });
 
-  it('renders a blank field as n/a with a why-blank modal', () => {
+  it('renders a blank field as plain n/a with a why-blank field mark', () => {
     renderFundamentals();
+    // "n/a" is plain text; the reason lives behind the exclamation mark
+    // beside it (owner request 2026-08-05).
     const blank = screen.getByTestId('alt-metric-blank-eps_rev_90d_pct');
     expect(blank.textContent).toBe('n/a');
-    fireEvent.click(blank);
+    expect(blank.tagName).toBe('SPAN');
+    fireEvent.click(screen.getByTestId('alt-field-notes-eps_rev_90d_pct'));
     const modal = screen.getByTestId('alt-metric-blank-modal');
     // The per-field reason from metricLabels, not the generic fallback.
     expect(modal.textContent).toMatch(/No analyst estimates were available/);

@@ -874,6 +874,8 @@ const zh = {
   'tiered.note.fundamentalsUnavailable': '美国证监会（SEC）官方财报数据未能加载，部分基本面数字可能缺失。',
   'tiered.note.valuationUnavailable': '来自 Yahoo Finance 的估值指标未能加载。',
   'tiered.note.macroUnavailable': '一项经济指标（{series}）未能从 FRED 数据库加载。',
+  'tiered.note.indicatorNoHistory': '价格历史不足，无法计算该数值。',
+  'tiered.note.macroFieldMissing': '数据源返回的数据不足，无法计算该数值。',
   'tiered.note.sentimentUnreadable': '读新闻的 AI 给出的回复无法解析，因此没有新闻综述。',
   'tiered.note.citationsDiscarded': '新闻综述被丢弃，因为其中没有一条论断能核实到真实来源。',
   'tiered.note.citationQuoteMissing':
@@ -960,6 +962,7 @@ const zh = {
   'tiered.levelModal.formulaTitle': '{level}：公式',
   'tiered.alt.blankTitle': '{label}：为何为空',
   'tiered.alt.blankFallback': '本次运行中该字段没有数值——计算它所需的数据不可用。',
+  'tiered.alt.fieldNotesTitle': '{label}：数据说明',
   'tiered.levelModal.formula': '公式',
   'tiered.levelModal.withNumbers': '代入本次数据',
   'tiered.levelModal.inputs': '输入项',
@@ -2344,6 +2347,10 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.valuationUnavailable': 'Valuation ratios from Yahoo Finance couldn’t be loaded.',
   'tiered.note.macroUnavailable':
     'One economic indicator ({series}) couldn’t be loaded from the FRED database.',
+  'tiered.note.indicatorNoHistory':
+    'There was not enough price history to compute this value.',
+  'tiered.note.macroFieldMissing':
+    'The data source did not return enough data to compute this value.',
   'tiered.note.sentimentUnreadable':
     'The news-reading AI’s reply couldn’t be understood, so there is no news summary.',
   'tiered.note.citationsDiscarded':
@@ -2456,6 +2463,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.alt.blankTitle': '{label}: why blank',
   'tiered.alt.blankFallback':
     'This field has no value in this run — the data needed to compute it was unavailable.',
+  'tiered.alt.fieldNotesTitle': '{label}: data notes',
   'tiered.levelModal.formula': 'Formula',
   'tiered.levelModal.withNumbers': 'With this run’s numbers',
   'tiered.levelModal.inputs': 'Inputs',

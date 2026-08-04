@@ -62,6 +62,7 @@ from .base import (
     DimensionResult,
     Market,
     SourceKind,
+    note_fields,
 )
 from .technicals import make_metric, metric_value
 
@@ -86,6 +87,38 @@ INSIDER_WINDOW_DAYS = 183
 REPORT_MOVE_MAX_DAYS = 21
 
 _TOP_HOLDERS_COUNT = 10
+
+#: Payload paths ("group.key") each data source feeds — the fields a
+#: source failure blanks, so its note can sit beside them on the report
+#: page. Design-blank fields (institutional_diff_q_pp,
+#: implied_vol_rank_1y) are absent: no fetch outcome changes them.
+SHORT_INTEREST_FIELDS = (
+    "short_interest.short_pct_of_float",
+    "short_interest.days_to_cover",
+    "short_interest.change_vs_prior_month_pct",
+    "meta.short_interest_as_of",
+)
+OWNERSHIP_FIELDS = (
+    "ownership.institutional_pct",
+    "ownership.top10_institutions_pct",
+    "ownership.insider_pct",
+    "ownership.float_shares",
+    "meta.ownership_as_of",
+)
+INSIDER_FIELDS = (
+    "insider_activity_6m.buy_count",
+    "insider_activity_6m.sell_count",
+    "insider_activity_6m.net_value_usd",
+)
+OPTIONS_FIELDS = (
+    "options.put_call_oi_ratio",
+    "options.put_call_volume_ratio",
+    "options.total_open_interest",
+    "options.implied_vol_pct",
+    "options.implied_report_move_pct",
+    "meta.options_bets_through",
+)
+REPORT_MOVE_FIELD = "options.implied_report_move_pct"
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -266,11 +299,11 @@ def _sum_side(chains: Sequence[Mapping[str, Any]], key: str) -> Optional[float]:
 
 def options_metrics(
     board: Mapping[str, Any],
-) -> Tuple[Dict[str, Any], List[str]]:
-    """(metrics, warnings) from the CBOE board: put/call ratios summed
+) -> Tuple[Dict[str, Any], List[Tuple[str, Tuple[str, ...]]]]:
+    """(metrics, notes) from the CBOE board: put/call ratios summed
     over the nearest ``MAX_OPTION_EXPIRATIONS`` expirations, the last
     expiration those sums cover, and the exchange's 30-day at-the-money
-    implied volatility.
+    implied volatility. Each note is (message, affected payload paths).
 
     A zero side is indistinguishable from a source that failed to
     publish the field, so a ratio is computed only when BOTH sides are
@@ -285,30 +318,33 @@ def options_metrics(
     call_volume = _sum_side(chains, "call_volume")
     put_volume = _sum_side(chains, "put_volume")
 
-    warnings: List[str] = []
+    notes: List[Tuple[str, Tuple[str, ...]]] = []
     oi_usable = bool(call_oi and put_oi and call_oi > 0 and put_oi > 0)
     if not oi_usable:
-        warnings.append(
+        notes.append((
             "options open interest missing or zero at the source — "
-            "puts-to-calls (held) and the held total omitted"
-        )
+            "puts-to-calls (held) and the held total omitted",
+            ("options.put_call_oi_ratio", "options.total_open_interest"),
+        ))
     volume_usable = bool(
         call_volume and put_volume and call_volume > 0 and put_volume > 0
     )
     if not volume_usable:
-        warnings.append(
+        notes.append((
             "options volume missing or zero at the source — "
-            "puts-to-calls (traded today) omitted"
-        )
+            "puts-to-calls (traded today) omitted",
+            ("options.put_call_volume_ratio",),
+        ))
 
     iv30 = _to_float(board.get("iv30"))
     if iv30 is not None and iv30 <= 0:
         iv30 = None
     if iv30 is None:
-        warnings.append(
+        notes.append((
             "CBOE published no 30-day implied volatility — "
-            "implied stock volatility omitted"
-        )
+            "implied stock volatility omitted",
+            ("options.implied_vol_pct",),
+        ))
 
     expirations = [
         str(chain.get("expiration")) for chain in chains if chain.get("expiration")
@@ -327,7 +363,7 @@ def options_metrics(
         "call_volume": call_volume,
         "put_volume": put_volume,
     }
-    return metrics, warnings
+    return metrics, notes
 
 
 def implied_report_move(
@@ -605,16 +641,19 @@ class PositioningUSProvider(DimensionProvider):
     def collect(self, symbol: str) -> DimensionResult:
         citations: List[Citation] = []
         warnings: List[str] = []
+        field_notes: Dict[str, List[str]] = {}
         formulas: Dict[str, Any] = {}
 
-        info = self._load_info(symbol, warnings)
+        info = self._load_info(symbol, warnings, field_notes)
         short = short_interest_metrics(info or {})
         ownership = ownership_metrics(
-            info or {}, self._load_holders(symbol, info, warnings)
+            info or {}, self._load_holders(symbol, info, warnings, field_notes)
         )
-        insiders = self._load_insiders(symbol, warnings)
-        board = self._load_board(symbol, warnings)
-        options, report_move = self._options_blocks(symbol, board, warnings)
+        insiders = self._load_insiders(symbol, warnings, field_notes)
+        board = self._load_board(symbol, warnings, field_notes)
+        options, report_move = self._options_blocks(
+            symbol, board, warnings, field_notes
+        )
 
         # Group order = display order (TODO.md final-truth list).
         payload: Dict[str, Any] = {
@@ -625,8 +664,12 @@ class PositioningUSProvider(DimensionProvider):
             "options": self._options_group(options, report_move, formulas),
         }
 
-        short_ok = self._short_ok(symbol, info, short, citations, warnings)
-        ownership_ok = self._ownership_ok(symbol, info, ownership, citations, warnings)
+        short_ok = self._short_ok(
+            symbol, info, short, citations, warnings, field_notes
+        )
+        ownership_ok = self._ownership_ok(
+            symbol, info, ownership, citations, warnings, field_notes
+        )
         insider_ok = insiders is not None
         options_ok = bool(board and board.get("chains"))
         if options_ok:
@@ -653,17 +696,25 @@ class PositioningUSProvider(DimensionProvider):
             citations=citations,
             warnings=warnings,
             formulas=formulas or None,
+            field_notes=field_notes or None,
         )
 
     # ---- source fetches -------------------------------------------------
 
     def _load_info(
-        self, symbol: str, warnings: List[str]
+        self,
+        symbol: str,
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Optional[Mapping[str, Any]]:
         try:
             return self._info_loader(symbol) or {}
         except Exception as exc:
-            warnings.append(f"Yahoo summary failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"Yahoo summary failed for {symbol}: {exc}",
+                SHORT_INTEREST_FIELDS + OWNERSHIP_FIELDS,
+            )
             return None
 
     def _load_holders(
@@ -671,6 +722,7 @@ class PositioningUSProvider(DimensionProvider):
         symbol: str,
         info: Optional[Mapping[str, Any]],
         warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Optional[Sequence[Mapping[str, Any]]]:
         if info is None:
             return None  # the shared fetch failure is already on the warnings
@@ -678,38 +730,62 @@ class PositioningUSProvider(DimensionProvider):
             return self._holders_loader(symbol)
         except Exception as exc:
             # Concentration + as-of alone degrade; the summary fields count.
-            warnings.append(f"institutional holders failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"institutional holders failed for {symbol}: {exc}",
+                ("ownership.top10_institutions_pct", "meta.ownership_as_of"),
+            )
             return None
 
     def _load_insiders(
-        self, symbol: str, warnings: List[str]
+        self,
+        symbol: str,
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Optional[Dict[str, Any]]:
         try:
             rows = self._insider_loader(symbol)
         except Exception as exc:
-            warnings.append(f"insider transactions failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"insider transactions failed for {symbol}: {exc}",
+                INSIDER_FIELDS,
+            )
             return None
         if not rows:
             # An empty table is indistinguishable from a source outage —
             # zero counts are only real when computed from actual rows
             # (no defaults on missing data, owner rule 2026-07-24).
-            warnings.append(
+            note_fields(
+                warnings, field_notes,
                 f"Yahoo returned no insider transaction rows for {symbol} — "
-                "insider trades omitted"
+                "insider trades omitted",
+                INSIDER_FIELDS,
             )
             return None
         return insider_metrics(rows, self._today())
 
     def _load_board(
-        self, symbol: str, warnings: List[str]
+        self,
+        symbol: str,
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Optional[Mapping[str, Any]]:
         try:
             board = self._options_loader(symbol)
         except Exception as exc:
-            warnings.append(f"options chain failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"options chain failed for {symbol}: {exc}",
+                OPTIONS_FIELDS,
+            )
             return None
         if not board or not board.get("chains"):
-            warnings.append(f"no listed options found for {symbol}")
+            note_fields(
+                warnings, field_notes,
+                f"no listed options found for {symbol}",
+                OPTIONS_FIELDS,
+            )
             return None
         return board
 
@@ -718,20 +794,28 @@ class PositioningUSProvider(DimensionProvider):
         symbol: str,
         board: Optional[Mapping[str, Any]],
         warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         if board is None:
             return {}, None
-        metrics, option_warnings = options_metrics(board)
-        warnings.extend(option_warnings)
+        metrics, option_notes = options_metrics(board)
+        for message, paths in option_notes:
+            note_fields(warnings, field_notes, message, paths)
 
         earnings_date: Optional[str] = None
         try:
             earnings_date = self._earnings_lookup(symbol)
         except Exception as exc:
-            warnings.append(f"earnings date lookup failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"earnings date lookup failed for {symbol}: {exc}",
+                (REPORT_MOVE_FIELD,),
+            )
         move, move_warning = implied_report_move(board, earnings_date, self._today())
         if move_warning:
-            warnings.append(move_warning)
+            note_fields(
+                warnings, field_notes, move_warning, (REPORT_MOVE_FIELD,)
+            )
         return metrics, move
 
     def _short_ok(
@@ -741,6 +825,7 @@ class PositioningUSProvider(DimensionProvider):
         short: Mapping[str, Any],
         citations: List[Citation],
         warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> bool:
         if info is None:
             return False  # the fetch failure is already on the warnings
@@ -751,7 +836,11 @@ class PositioningUSProvider(DimensionProvider):
         }
         if not any(value is not None for value in published.values()):
             # ok-but-empty is the silent-blank trap: surface it explicitly.
-            warnings.append(f"Yahoo returned no short-interest fields for {symbol}")
+            note_fields(
+                warnings, field_notes,
+                f"Yahoo returned no short-interest fields for {symbol}",
+                SHORT_INTEREST_FIELDS,
+            )
             return False
         citations.append(
             Citation(
@@ -768,11 +857,16 @@ class PositioningUSProvider(DimensionProvider):
         ownership: Mapping[str, Any],
         citations: List[Citation],
         warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> bool:
         if info is None:
             return False
         if not any(value is not None for value in ownership.values()):
-            warnings.append(f"Yahoo returned no ownership fields for {symbol}")
+            note_fields(
+                warnings, field_notes,
+                f"Yahoo returned no ownership fields for {symbol}",
+                OWNERSHIP_FIELDS,
+            )
             return False
         citations.append(
             Citation(

@@ -196,6 +196,12 @@ Macro is really two different things:
     expirations (≤4 fetched); the freshest block, daily.
 - **Degradation**: each block fails independently into `warnings` (partial coverage);
   everything failing → `unavailable`. An ok-but-empty summary is surfaced, never blanked.
+- **Per-field notes (2026-08-05, all NUMERIC providers)**: alongside `warnings`, every
+  `DimensionResult` may carry `field_notes` — the same note strings keyed by the payload
+  field (`"group.key"`) each is about. The alt report page shows each note behind a small
+  exclamation mark beside its own field (blank fields render a plain `n/a` next to it);
+  only notes attached to no field — and all notes on old stored runs — fall back to the
+  card-level notes button. Unavailable dimensions keep the card-level red X.
 - **Regional conclusion**: **per-disclosure-regime**. US ships first. A-shares have a
   *better* local staple (per-stock margin-trading balances 融资融券, daily via AkShare, plus
   quarterly shareholder counts 股东户数); HK has SFC weekly short positions and HKEX daily

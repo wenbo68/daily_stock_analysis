@@ -1,3 +1,4 @@
+import { CircleAlert } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { TieredMetricFormula } from '../../api/tiered';
 import { useUiLanguage } from '../../contexts/UiLanguageContext';
@@ -7,6 +8,7 @@ import { cn } from '../../utils/cn';
 import { formatValue, jumpToMetric } from '../tiered/termHelpers';
 import { formatMetricValue } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
+import { friendlyWarning } from './altWarningText';
 import { AltModal, FVar, MODAL_STRONG } from './AltUi';
 
 // A technicals metric value with its computation receipt: clicking the
@@ -241,40 +243,81 @@ const TokenText = ({
   );
 };
 
-interface AltBlankValueProps {
-  /** The payload key of the blank metric — names the modal and selects
-      its per-field blank reason from metricLabels. */
+interface AltFieldNotesProps {
+  /** The payload key of the metric — names the modal and selects its
+      per-field static blank reason from metricLabels. */
   term: string;
+  /** This run's backend notes about this field (from field_notes). */
+  notes: string[] | null;
+  /** Whether the field's value is blank (rendered as "n/a"). */
+  isBlank: boolean;
 }
 
-// A blank metric value: renders as a clickable "n/a" that opens a modal
-// explaining why this field can be empty (owner request 2026-07-31).
-// The reason is the field's static `blank` text from metricLabels; a
-// field without one gets the generic fallback.
-export const AltBlankValue = ({ term }: AltBlankValueProps) => {
+// The small exclamation mark after a field's value (owner request
+// 2026-08-05, replacing the card-level notes button and the clickable
+// "n/a"): clicking it opens a modal about this field and this field
+// only. With run notes it lists them in the plain-English wording of
+// altWarningText; a blank field without run notes falls back to the
+// static "why this can be blank" text from metricLabels. A published
+// value with no notes gets no mark at all.
+export const AltFieldNotes = ({ term, notes, isBlank }: AltFieldNotesProps) => {
   const { t, language } = useUiLanguage();
   const [isOpen, setIsOpen] = useState(false);
+  const hasNotes = Boolean(notes && notes.length > 0);
+  if (!hasNotes && !isBlank) {
+    return null;
+  }
   const entry = metricEntry(term, language);
   const label = entry?.short ?? term;
   return (
     <>
       <button
         type="button"
-        data-testid={`alt-metric-blank-${term}`}
+        data-testid={`alt-field-notes-${term}`}
+        aria-label={t('tiered.dataNotes')}
         onClick={() => setIsOpen(true)}
-        className={cn('cursor-pointer', ALT_LINK)}
+        className={cn(
+          'ml-1 inline-flex cursor-pointer items-center rounded align-middle',
+          'text-amber-300 hover:text-amber-200',
+        )}
       >
-        n/a
+        <CircleAlert className="h-3.5 w-3.5" />
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.alt.blankTitle', { label })}
+        title={t(
+          hasNotes ? 'tiered.alt.fieldNotesTitle' : 'tiered.alt.blankTitle',
+          { label },
+        )}
         onClose={() => setIsOpen(false)}
         panelClassName="w-fit min-w-72 max-w-md"
       >
-        <p className="whitespace-pre-line text-sm" data-testid="alt-metric-blank-modal">
-          {entry?.blank ?? t('tiered.alt.blankFallback')}
-        </p>
+        {hasNotes ? (
+          <ul
+            className="flex list-disc flex-col gap-2 pl-4 text-sm"
+            data-testid="alt-field-notes-modal"
+          >
+            {(notes as string[]).map((raw, index) => {
+              const friendly = friendlyWarning(raw, t);
+              return (
+                <li key={index}>
+                  {friendly ? (
+                    <>
+                      <span className={MODAL_STRONG}>{friendly.keyword}: </span>
+                      {friendly.text}
+                    </>
+                  ) : (
+                    raw
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="whitespace-pre-line text-sm" data-testid="alt-metric-blank-modal">
+            {entry?.blank ?? t('tiered.alt.blankFallback')}
+          </p>
+        )}
       </AltModal>
     </>
   );

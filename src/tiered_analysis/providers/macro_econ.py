@@ -39,6 +39,7 @@ from .base import (
     DimensionResult,
     Market,
     SourceKind,
+    note_fields,
 )
 from .technicals import make_metric, metric_value
 
@@ -102,6 +103,35 @@ SERIES_IDS: Dict[str, str] = {
     "vix": "VIXCLS",
     "oil_wti": "DCOILWTICO",
     "dollar_broad": "DTWEXBGS",
+}
+
+#: Payload paths ("group.key") each FRED series feeds — the fields a
+#: series outage blanks, so its note can sit beside them on the report
+#: page.
+SERIES_FIELDS: Dict[str, Tuple[str, ...]] = {
+    "official": (
+        "interest_rates.official_rate_pct",
+        "interest_rates.diff_2y_vs_official_pp",
+    ),
+    "gov10y": ("bonds.gov10y_yield_pct", "bonds.gov10y_trend"),
+    "gov2y": ("interest_rates.diff_2y_vs_official_pp",),
+    "curve_10y_2y": (
+        "bonds.yield_diff_10y_2y_pp", "bonds.yield_diff_10y_2y_trend",
+    ),
+    "hy_oas": (
+        "bonds.yield_diff_hy_gov_pp", "bonds.yield_diff_hy_gov_trend",
+    ),
+    "cpi_index": (
+        "inflation.cpi_yoy_pct", "inflation.cpi_yoy_trend",
+        "meta.inflation_data_up_to",
+    ),
+    "unemployment": (
+        "employment.unemployment_rate_pct", "employment.unemployment_trend",
+        "meta.employment_data_up_to",
+    ),
+    "vix": ("markets.vix",),
+    "oil_wti": ("markets.wti_oil_usd", "markets.oil_trend"),
+    "dollar_broad": ("markets.dollar_trend",),
 }
 
 #: Ingredients whose latest value must exist for FULL coverage. Trends
@@ -298,7 +328,7 @@ class MacroEconProvider(DimensionProvider):
         if cached is not None:
             return cached
 
-        series, warnings = self._fetch_series()
+        series, warnings, field_notes = self._fetch_series()
         if series is None:
             return DimensionResult(
                 dimension=self.dimension,
@@ -307,16 +337,23 @@ class MacroEconProvider(DimensionProvider):
                 warnings=warnings,
             )
 
-        payload, formulas = self._build_payload(series, warnings)
+        payload, formulas = self._build_payload(series, warnings, field_notes)
         missing = [
             f"{group}.{key}"
             for group, key in _REQUIRED_FIELDS
             if metric_value(payload.get(group, {}).get(key)) is None
         ]
         if missing:
-            warnings.append(
+            message = (
                 f"macro fields lacking data: {', '.join(sorted(missing))}"
             )
+            warnings.append(message)
+            for path in sorted(missing):
+                # A missing field whose series note already explains it
+                # keeps that specific note; the aggregate covers the rest
+                # (e.g. a YoY needing more history than the series has).
+                if path not in field_notes:
+                    field_notes[path] = [message]
         coverage = Coverage.FULL if not missing else Coverage.PARTIAL
         result = DimensionResult(
             dimension=self.dimension,
@@ -326,6 +363,7 @@ class MacroEconProvider(DimensionProvider):
             citations=[self._citation()],
             warnings=warnings,
             formulas=formulas or None,
+            field_notes=field_notes or None,
         )
         self._write_cache(result)
         return result
@@ -340,47 +378,75 @@ class MacroEconProvider(DimensionProvider):
 
     def _fetch_series(
         self,
-    ) -> Tuple[Optional[Dict[str, List[Observation]]], List[str]]:
+    ) -> Tuple[
+        Optional[Dict[str, List[Observation]]], List[str],
+        Dict[str, List[str]],
+    ]:
         series: Dict[str, List[Observation]] = {}
         warnings: List[str] = []
+        field_notes: Dict[str, List[str]] = {}
         got_any = False
         for name, series_id in SERIES_IDS.items():
             try:
                 observations = self._series_fetcher(series_id)
             except MacroConfigError as exc:
                 # Not configured at all: one clear warning, no partial noise.
-                return None, [str(exc)]
+                return None, [str(exc)], {}
             except Exception as exc:
-                warnings.append(f"FRED series {series_id} failed: {exc}")
+                note_fields(
+                    warnings, field_notes,
+                    f"FRED series {series_id} failed: {exc}",
+                    SERIES_FIELDS.get(name, ()),
+                )
                 observations = []
             if not observations:
                 if not any(series_id in w for w in warnings):
-                    warnings.append(f"FRED series {series_id} returned no data")
+                    note_fields(
+                        warnings, field_notes,
+                        f"FRED series {series_id} returned no data",
+                        SERIES_FIELDS.get(name, ()),
+                    )
             series[name] = observations
             got_any = got_any or bool(observations)
         if not got_any:
-            return None, warnings
-        return series, warnings
+            return None, warnings, {}
+        return series, warnings, field_notes
 
     def _next_release_date(
-        self, release_id: int, label: str, warnings: List[str]
+        self,
+        release_id: int,
+        label: str,
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
+        field_path: str,
     ) -> Optional[str]:
         try:
             dates = self._release_dates_fetcher(release_id)
         except MacroConfigError:
             return None
         except Exception as exc:
-            warnings.append(f"FRED release calendar for {label} failed: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"FRED release calendar for {label} failed: {exc}",
+                (field_path,),
+            )
             return None
         upcoming = next_date_after(dates, self._today())
         if upcoming is None:
-            warnings.append(f"no upcoming {label} release date found")
+            note_fields(
+                warnings, field_notes,
+                f"no upcoming {label} release date found",
+                (field_path,),
+            )
         return upcoming
 
     # -- payload assembly ---------------------------------------------------
 
     def _build_payload(
-        self, series: Dict[str, List[Observation]], warnings: List[str]
+        self,
+        series: Dict[str, List[Observation]],
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         def obs(name: str) -> List[Observation]:
             return series.get(name, [])
@@ -428,18 +494,22 @@ class MacroEconProvider(DimensionProvider):
 
         # Events.
         next_cpi = self._next_release_date(
-            CPI_RELEASE_ID, "inflation data (CPI)", warnings
+            CPI_RELEASE_ID, "inflation data (CPI)", warnings, field_notes,
+            "events.next_cpi_release_date",
         )
         next_jobs = self._next_release_date(
-            JOBS_RELEASE_ID, "employment data (jobs report)", warnings
+            JOBS_RELEASE_ID, "employment data (jobs report)", warnings,
+            field_notes, "events.next_jobs_release_date",
         )
         next_decision = next_date_after(
             list(FOMC_DECISION_DATES), self._today()
         )
         if next_decision is None:
-            warnings.append(
+            note_fields(
+                warnings, field_notes,
                 "FOMC decision-date table exhausted; extend "
-                "FOMC_DECISION_DATES from the Fed's published calendar"
+                "FOMC_DECISION_DATES from the Fed's published calendar",
+                ("events.next_rate_decision_date",),
             )
 
         payload: Dict[str, Any] = {
@@ -877,6 +947,7 @@ class MacroEconProvider(DimensionProvider):
                 citations=[self._citation()],
                 warnings=list(raw.get("warnings", [])),
                 formulas=raw.get("formulas"),
+                field_notes=raw.get("field_notes"),
             )
         except FileNotFoundError:
             return None
@@ -893,6 +964,7 @@ class MacroEconProvider(DimensionProvider):
                         "payload": result.payload,
                         "warnings": result.warnings,
                         "formulas": result.formulas,
+                        "field_notes": result.field_notes,
                     },
                     ensure_ascii=False,
                 ),

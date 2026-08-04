@@ -156,13 +156,13 @@ class InsiderMetricsTest(unittest.TestCase):
 
 class OptionsMetricsTest(unittest.TestCase):
     def test_ratios_are_summed_over_the_nearest_expirations(self):
-        metrics, warnings = options_metrics(_BOARD)
+        metrics, notes = options_metrics(_BOARD)
         self.assertAlmostEqual(metrics["put_call_oi_ratio"], 1380.0 / 1500.0)
         self.assertAlmostEqual(metrics["put_call_volume_ratio"], 1.2)
         self.assertEqual(metrics["total_open_interest"], 2880.0)
         self.assertEqual(metrics["implied_vol_pct"], 26.08)
         self.assertEqual(metrics["bets_through"], "2026-09-18")
-        self.assertEqual(warnings, [])
+        self.assertEqual(notes, [])
 
     def test_only_the_nearest_expirations_feed_the_sums(self):
         chains = [
@@ -178,11 +178,11 @@ class OptionsMetricsTest(unittest.TestCase):
             {"expiration": "2026-08-21", "call_oi": 0, "put_oi": 10,
              "call_volume": 0, "put_volume": 5},
         ]}
-        metrics, warnings = options_metrics(board)
+        metrics, notes = options_metrics(board)
         self.assertIsNone(metrics["put_call_oi_ratio"])
         self.assertIsNone(metrics["put_call_volume_ratio"])
         self.assertIsNone(metrics["total_open_interest"])
-        self.assertEqual(len(warnings), 3)  # OI + volume + missing iv30
+        self.assertEqual(len(notes), 3)  # OI + volume + missing iv30
 
     def test_zero_put_side_is_blank_not_a_misleading_zero(self):
         # Yahoo intraday chains often carry no open interest; a zero put
@@ -192,19 +192,26 @@ class OptionsMetricsTest(unittest.TestCase):
             {"expiration": "2026-08-21", "call_oi": 25, "put_oi": 0,
              "call_volume": 1000, "put_volume": 550},
         ]}
-        metrics, warnings = options_metrics(board)
+        metrics, notes = options_metrics(board)
         self.assertIsNone(metrics["put_call_oi_ratio"])
         self.assertIsNone(metrics["total_open_interest"])
         self.assertAlmostEqual(metrics["put_call_volume_ratio"], 0.55)
-        self.assertTrue(any("open interest" in w for w in warnings))
-        self.assertFalse(any("volume missing" in w for w in warnings))
+        self.assertTrue(any("open interest" in message for message, _ in notes))
+        self.assertFalse(any("volume missing" in message for message, _ in notes))
+        # Each note names the payload fields it blanks.
+        oi_note = next(paths for message, paths in notes
+                       if "open interest" in message)
+        self.assertIn("options.put_call_oi_ratio", oi_note)
+        self.assertIn("options.total_open_interest", oi_note)
 
     def test_missing_or_zero_iv30_is_blank_with_a_warning(self):
         for iv30 in (None, 0.0):
             board = {"iv30": iv30, "chains": _BOARD["chains"]}
-            metrics, warnings = options_metrics(board)
+            metrics, notes = options_metrics(board)
             self.assertIsNone(metrics["implied_vol_pct"])
-            self.assertTrue(any("implied volatility" in w for w in warnings))
+            self.assertTrue(
+                any("implied volatility" in message for message, _ in notes)
+            )
 
 
 class ImpliedReportMoveTest(unittest.TestCase):
@@ -387,6 +394,39 @@ class ProviderTest(unittest.TestCase):
         self.assertTrue(
             any("earnings date lookup failed" in w for w in result.warnings)
         )
+
+    def test_every_warning_lands_on_the_fields_it_blanks(self):
+        # The report page shows each note beside its own field — a note
+        # the map misses falls back to the card-level list.
+        result = _provider(
+            info_loader=_boom,
+            insider_loader=lambda symbol: [],
+            earnings_lookup=lambda symbol: "2026-12-01",  # >21 days out
+        ).collect("AAPL")
+        notes = result.field_notes
+        self.assertIsNotNone(notes)
+        # The far-away report note sits on the implied-move field only.
+        self.assertTrue(
+            any("more than" in note
+                for note in notes["options.implied_report_move_pct"])
+        )
+        # The shared Yahoo fetch failure sits on both summary blocks.
+        for path in ("short_interest.short_pct_of_float",
+                     "ownership.institutional_pct",
+                     "meta.short_interest_as_of"):
+            self.assertTrue(
+                any("Yahoo summary failed" in note for note in notes[path])
+            )
+        # The empty insider table note sits on all three insider fields.
+        for key in ("buy_count", "sell_count", "net_value_usd"):
+            self.assertTrue(
+                any("no insider transaction rows" in note
+                    for note in notes[f"insider_activity_6m.{key}"])
+            )
+        # Every card warning is covered by at least one field note — the
+        # card-level fallback list should be empty on this run.
+        covered = {note for field in notes.values() for note in field}
+        self.assertEqual([w for w in result.warnings if w not in covered], [])
 
     def test_everything_failing_is_unavailable_not_a_raise(self):
         result = _provider(

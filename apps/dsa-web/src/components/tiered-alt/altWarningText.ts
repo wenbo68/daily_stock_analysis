@@ -115,6 +115,16 @@ const NOTE_RULES: NoteRule[] = [
     toText: (m, t) => t('tiered.note.macroUnavailable', { series: m[1] }),
   },
   {
+    pattern: /^indicators lacking history/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.indicatorNoHistory'),
+  },
+  {
+    pattern: /^macro fields lacking data/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.macroFieldMissing'),
+  },
+  {
     // Both the retired "from Yahoo" wording and the source-neutral one.
     pattern: /^options open interest (?:from Yahoo is )?missing or zero/,
     keywordKey: KEY.missingData,

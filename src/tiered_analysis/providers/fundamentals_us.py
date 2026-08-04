@@ -48,6 +48,7 @@ from .base import (
     DimensionResult,
     Market,
     SourceKind,
+    note_fields,
 )
 from .edgar_series import (
     EPS_CONCEPTS,
@@ -505,6 +506,31 @@ def _default_today() -> date:
 # The provider
 # ---------------------------------------------------------------------------
 
+#: Payload paths ("group.key") each data source feeds — the fields a
+#: source failure blanks, so its note can sit beside them on the report
+#: page.
+VALUATION_FIELDS = (
+    "valuation.market_cap", "valuation.ps_ttm",
+    "valuation.pe_ttm", "valuation.pe_forward",
+)
+PROFILE_FIELDS = ("meta.sector", "meta.industry")
+EDGAR_FIELDS = (
+    "balance.current_ratio", "balance.debt_to_equity",
+    "profitability.gross_margin_pct", "profitability.operating_margin_pct",
+    "profitability.roe_pct", "profitability.fcf",
+    "profitability.fcf_to_earnings_pct",
+    "growth.revenue_yoy_q", "growth.revenue_growth_trend",
+    "growth.eps_yoy_q", "growth.eps_growth_trend",
+    "meta.entity_name", "meta.period_end", "meta.period_end_q",
+)
+SURPRISE_FIELDS = (
+    "quarterly_report.beats_4q", "quarterly_report.avg_surprise_pct_4q",
+)
+REACTION_FIELDS = (
+    "quarterly_report.reaction_avg_abs_pct",
+    "quarterly_report.reaction_worst_pct",
+)
+
 
 class FundamentalsUSProvider(DimensionProvider):
     """NUMERIC US fundamentals: EDGAR statements + Yahoo market data."""
@@ -538,10 +564,11 @@ class FundamentalsUSProvider(DimensionProvider):
     def collect(self, symbol: str) -> DimensionResult:
         citations: List[Citation] = []
         warnings: List[str] = []
+        field_notes: Dict[str, List[str]] = {}
         formulas: Dict[str, Any] = {}
 
-        info = self._load_info(symbol, warnings)
-        facts = self._load_facts(symbol, warnings)
+        info = self._load_info(symbol, warnings, field_notes)
+        facts = self._load_facts(symbol, warnings, field_notes)
 
         # Group order = display order (TODO.md final-truth list).
         payload: Dict[str, Any] = {
@@ -549,9 +576,11 @@ class FundamentalsUSProvider(DimensionProvider):
             "balance": self._balance_group(facts, formulas),
             "profitability": self._profitability_group(facts, formulas),
             "growth": self._growth_group(facts, formulas),
-            "valuation": self._valuation_group(symbol, info, citations, warnings),
+            "valuation": self._valuation_group(
+                symbol, info, citations, warnings, field_notes
+            ),
             "quarterly_report": self._quarterly_report_group(
-                symbol, citations, warnings, formulas
+                symbol, citations, warnings, field_notes, formulas
             ),
         }
 
@@ -560,7 +589,11 @@ class FundamentalsUSProvider(DimensionProvider):
             for group in ("growth", "profitability", "balance")
         )
         if facts is not None and not edgar_ok:
-            warnings.append(f"EDGAR returned no usable statement facts for {symbol}")
+            note_fields(
+                warnings, field_notes,
+                f"EDGAR returned no usable statement facts for {symbol}",
+                EDGAR_FIELDS,
+            )
         if edgar_ok:
             cik = facts.get("cik")
             citations.append(
@@ -590,26 +623,41 @@ class FundamentalsUSProvider(DimensionProvider):
             citations=citations,
             warnings=warnings,
             formulas=formulas or None,
+            field_notes=field_notes or None,
         )
 
     # ---- source fetches -------------------------------------------------
 
     def _load_info(
-        self, symbol: str, warnings: List[str]
+        self,
+        symbol: str,
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Optional[Mapping[str, Any]]:
         try:
             return self._info_loader(symbol) or {}
         except Exception as exc:
-            warnings.append(f"Yahoo summary failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"Yahoo summary failed for {symbol}: {exc}",
+                VALUATION_FIELDS + PROFILE_FIELDS,
+            )
             return None
 
     def _load_facts(
-        self, symbol: str, warnings: List[str]
+        self,
+        symbol: str,
+        warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Optional[Mapping[str, Any]]:
         try:
             return self._facts_loader(symbol)
         except Exception as exc:
-            warnings.append(f"EDGAR fundamentals failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"EDGAR fundamentals failed for {symbol}: {exc}",
+                EDGAR_FIELDS,
+            )
             return None
 
     # ---- payload groups --------------------------------------------------
@@ -619,6 +667,7 @@ class FundamentalsUSProvider(DimensionProvider):
         symbol: str,
         citations: List[Citation],
         warnings: List[str],
+        field_notes: Dict[str, List[str]],
         formulas: Dict[str, Any],
     ) -> Dict[str, Any]:
         today = self._today()
@@ -629,7 +678,11 @@ class FundamentalsUSProvider(DimensionProvider):
             raw_date = fields.get("next_earnings_date")
             next_date = raw_date if isinstance(raw_date, str) else None
         except Exception as exc:
-            warnings.append(f"earnings date lookup failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"earnings date lookup failed for {symbol}: {exc}",
+                ("quarterly_report.next_earnings_date",),
+            )
 
         surprises: Dict[str, Any] = {
             "beats": None, "avg_surprise_pct": None, "report_dates": []
@@ -638,7 +691,11 @@ class FundamentalsUSProvider(DimensionProvider):
             rows = self._earnings_history_loader(symbol)
         except Exception as exc:
             rows = []
-            warnings.append(f"earnings history failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"earnings history failed for {symbol}: {exc}",
+                SURPRISE_FIELDS + REACTION_FIELDS,
+            )
         if rows:
             surprises = surprise_metrics(rows, today)
             citations.append(
@@ -648,9 +705,11 @@ class FundamentalsUSProvider(DimensionProvider):
                 )
             )
         else:
-            warnings.append(
+            note_fields(
+                warnings, field_notes,
                 f"no earnings history rows for {symbol} — the beat and "
-                "report-day-move fields are blank"
+                "report-day-move fields are blank",
+                SURPRISE_FIELDS + REACTION_FIELDS,
             )
 
         reaction: Dict[str, Any] = {"avg_abs_pct": None, "worst_pct": None, "count": 0}
@@ -659,13 +718,19 @@ class FundamentalsUSProvider(DimensionProvider):
                 bars = self._bars_loader(symbol)
             except Exception as exc:
                 bars = []
-                warnings.append(f"bars for earnings reaction failed: {exc}")
+                note_fields(
+                    warnings, field_notes,
+                    f"bars for earnings reaction failed: {exc}",
+                    REACTION_FIELDS,
+                )
             if bars:
                 reaction = reaction_metrics(bars, surprises["report_dates"])
                 if reaction["avg_abs_pct"] is None and reaction["count"]:
-                    warnings.append(
+                    note_fields(
+                        warnings, field_notes,
                         "too few earnings reports inside the bar history "
-                        f"({reaction['count']}) for the earnings-day move"
+                        f"({reaction['count']}) for the earnings-day move",
+                        REACTION_FIELDS,
                     )
 
         revision: Optional[float] = None
@@ -673,7 +738,11 @@ class FundamentalsUSProvider(DimensionProvider):
             trend = self._eps_trend_loader(symbol) or {}
         except Exception as exc:
             trend = {}
-            warnings.append(f"EPS estimate trend failed for {symbol}: {exc}")
+            note_fields(
+                warnings, field_notes,
+                f"EPS estimate trend failed for {symbol}: {exc}",
+                ("quarterly_report.eps_rev_90d_pct",),
+            )
         if trend:
             revision = revision_pct(trend)
 
@@ -1048,6 +1117,7 @@ class FundamentalsUSProvider(DimensionProvider):
         info: Optional[Mapping[str, Any]],
         citations: List[Citation],
         warnings: List[str],
+        field_notes: Dict[str, List[str]],
     ) -> Dict[str, Any]:
         values = {
             target: _to_float(info.get(source)) if info else None
@@ -1055,7 +1125,11 @@ class FundamentalsUSProvider(DimensionProvider):
         }
         if info is not None and not any(v is not None for v in values.values()):
             # ok-but-empty is the silent-blank trap: surface it explicitly.
-            warnings.append(f"Yahoo returned no valuation ratios for {symbol}")
+            note_fields(
+                warnings, field_notes,
+                f"Yahoo returned no valuation ratios for {symbol}",
+                VALUATION_FIELDS,
+            )
         elif any(v is not None for v in values.values()):
             citations.append(
                 Citation(

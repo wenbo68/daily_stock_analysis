@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
-from .providers.base import DimensionResult
+from .providers.base import DimensionResult, note_fields
 from .providers.sector_map import sector_etf_for
 from .providers.technicals import (
     RS_WINDOW_1M,
@@ -194,6 +194,11 @@ def _with_sector_fields(
 
     formulas = dict(technicals.formulas or {})
     warnings = list(technicals.warnings)
+    field_notes = {
+        path: list(notes)
+        for path, notes in (technicals.field_notes or {}).items()
+    }
+    sector_paths = tuple(f"market.{key}" for key in _SECTOR_KEYS)
 
     sector = (
         read_label(fundamentals.payload, "meta", "sector")
@@ -212,26 +217,36 @@ def _with_sector_fields(
     values: Dict[str, Any] = {}
     sector_text = sector or "unknown"
     if sector is None:
-        warnings.append(
+        note_fields(
+            warnings, field_notes,
             "sector unknown (fundamentals carries no sector label); "
-            "sector comparison fields absent"
+            "sector comparison fields absent",
+            sector_paths,
         )
     elif mapped is None:
-        warnings.append(
+        note_fields(
+            warnings, field_notes,
             f"sector '{sector}' has no sector-ETF mapping (US sectors "
-            "only for now); sector comparison fields absent"
+            "only for now); sector comparison fields absent",
+            sector_paths,
         )
     elif index_1m is None and index_3m is None:
-        warnings.append(
+        note_fields(
+            warnings, field_notes,
             "sector comparison needs the market benchmark returns, "
-            "which are absent; sector comparison fields absent"
+            "which are absent; sector comparison fields absent",
+            sector_paths,
         )
     else:
         etf_ticker, etf_name = mapped
         sector_text = f"{sector}, via the {etf_name} ETF ({etf_ticker})"
         etf_1m, etf_3m, error = _sector_returns(bars_loader, etf_ticker)
         if error is not None:
-            warnings.append(f"{error}; sector comparison fields absent")
+            note_fields(
+                warnings, field_notes,
+                f"{error}; sector comparison fields absent",
+                sector_paths,
+            )
         else:
             def diff(a: Optional[float], b: Optional[float]) -> Optional[float]:
                 if a is None or b is None:
@@ -307,6 +322,7 @@ def _with_sector_fields(
         payload={**payload, "market": new_market},
         formulas=formulas or None,
         warnings=warnings,
+        field_notes=field_notes or None,
     )
 
 

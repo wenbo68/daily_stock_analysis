@@ -108,6 +108,9 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
             "formulas": dim.formulas,
             "narrative": dim.narrative,
             "warnings": list(dim.warnings),
+            # The same notes keyed by the payload field ("group.key")
+            # each is about; None on old stored runs.
+            "field_notes": dim.field_notes,
             "citations": [
                 {
                     "source_name": c.source_name,
