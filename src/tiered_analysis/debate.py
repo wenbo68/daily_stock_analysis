@@ -56,7 +56,9 @@ voter median — the displayed score). Verdict on the 2-decimal final:
 code merge → check round → deciding round only when there are ties →
 summary), all temperature 0. Every stage fills a strict Pydantic form;
 an invalid reply gets ONE retry with the errors shown, then: both
-sheets failing voids the tier-2 verdict (tier-1 direction stands); one
+sheets failing voids the tier-2 verdict — the run has no outlook and
+says re-run (no fallback: depth 2 never runs the tier-1 one-blob
+verdict, so there is nothing to fall back to); one
 sheet failing proceeds with the other; a failed check round counts
 bullets on their author's vote alone; a failed deciding round excludes
 the tied bullets as unresolved; the summary's failure never voids

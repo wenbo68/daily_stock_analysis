@@ -18,8 +18,8 @@ display string; the claim must contain it), the vote citation contract
 (reasons stating numbers must cite them; unfixable votes are
 discarded), struck bullets from either analyst, the Pydantic
 retry-once contract, and every failure rule — both sheets failing voids
-the verdict (tier 2 falls back to tier 1), one sheet failing proceeds
-with the other, a failed check round counts bullets on the author's
+the verdict (the run has no outlook; no tier-1 fallback), one sheet
+failing proceeds with the other, a failed check round counts bullets on the author's
 vote alone, a failed deciding round excludes ties as unresolved, and a
 broken summary never voids a computed verdict.
 

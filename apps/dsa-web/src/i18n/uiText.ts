@@ -981,7 +981,7 @@ const zh = {
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
   'tiered.debate.reasonsAgainst': '看空理由',
-  'tiered.debate.noVerdict': '辩论未产生可用结论——方向沿用第 1 层（详见数据说明）。',
+  'tiered.debate.noVerdict': '辩论未产生可用结论——本次运行没有展望，请重新运行（详见数据说明）。',
   'tiered.debate.wouldChangeMind': '什么会改变结论',
   'tiered.help.wouldChangeMind': '裁判自述：出现什么新证据会推翻这次结论。',
   'tiered.debate.transcript': '辩论记录',
@@ -1091,7 +1091,7 @@ const zh = {
   'tiered.note.linkDropped': '某条证据的引用无法通过代码校验——该引用已剔除。',
   'tiered.note.restoredEvidence': '守方让步的一个质疑被裁判判定不成立——该证据已恢复计入最终得分。',
   'tiered.note.includedAddition': '守方驳回的一条新增证据被裁判判定成立——该证据已计入最终得分。',
-  'tiered.note.stageInvalid': '辩论中的某个 AI 连续两次给出不合规的回复，本层结论作废——方向沿用第 1 层。',
+  'tiered.note.stageInvalid': '辩论中的某个 AI 连续两次给出不合规的回复，本层结论作废。',
   'tiered.note.attackerDegraded': '攻方连续给出不合规的回复，本次没有质疑和补充证据——裁判仍独立复核了每条理由。',
   'tiered.note.stageRetriedRole': '{role}——第一次回复不合规，重试一次后通过。',
   'tiered.note.stageInvalidRole': '{role}——重试后回复仍不合规。',
@@ -2493,7 +2493,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.debate.reasonsFor': 'Reasons for',
   'tiered.debate.reasonsAgainst': 'Reasons against',
   'tiered.debate.noVerdict':
-    'The debate produced no usable verdict — the direction falls back to tier 1 (see Data notes).',
+    'The debate produced no usable verdict — this run has no outlook; re-run the stock (see Data notes).',
   'tiered.debate.wouldChangeMind': 'What would change the verdict',
   'tiered.help.wouldChangeMind':
     'The judge’s own answer: what new evidence would overturn this verdict.',
@@ -2625,7 +2625,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.includedAddition':
     'The defender rejected added evidence the judge ruled valid — it was counted in the final score anyway.',
   'tiered.note.stageInvalid':
-    'One of the debate AIs kept returning an invalid reply, so the tier-2 verdict was voided — the direction falls back to tier 1.',
+    'One of the debate AIs kept returning an invalid reply, so the tier-2 verdict was voided.',
   'tiered.note.attackerDegraded':
     'The attacker kept returning an invalid reply, so this run has no attacks or added evidence — the judge still reviewed every reason on its own.',
   'tiered.note.stageRetriedRole':
