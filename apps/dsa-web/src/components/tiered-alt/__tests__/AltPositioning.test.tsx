@@ -13,9 +13,10 @@ const env = (name: string, value: unknown) => ({
 
 // Positioning v2 dimension slice (TODO.md truth 2026-08-01): the five
 // groups — meta / ownership structure / short interest / insider
-// trades / options. institutional_diff_q_pp and implied_vol_rank_1y are
-// blank BY DESIGN (no reliable free source) to exercise their "n/a"
-// reason modals.
+// trades / options. institutional_diff_q_pp and implied_vol_rank_1y
+// were dropped from NEW runs (owner decision 2026-08-05, no reliable
+// free source) — this fixture keeps them to stand in for an old stored
+// run, whose "n/a" reason modals must keep working.
 function makePositioning(): TieredDimension {
   return {
     dimension: 'positioning',
@@ -162,7 +163,7 @@ describe('AltDimensions — positioning v2', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('explains the two unsourced truth fields behind their field marks', () => {
+  it('explains the two retired unsourced fields behind their field marks (old stored runs)', () => {
     renderPositioning();
     // "n/a" itself is plain text now — the reason lives behind the
     // exclamation mark beside it (owner request 2026-08-05).
@@ -173,7 +174,7 @@ describe('AltDimensions — positioning v2', () => {
       screen.getByTestId('alt-field-notes-institutional_diff_q_pp'),
     );
     expect(screen.getByTestId('alt-metric-blank-modal').textContent).toMatch(
-      /No reliable free source publishes the prior-quarter aggregate/,
+      /no reliable free source publishes the prior-quarter aggregate/i,
     );
     // No ✕ button by design — Escape closes the modal.
     fireEvent.keyDown(window, { key: 'Escape' });

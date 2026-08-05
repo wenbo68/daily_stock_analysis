@@ -846,9 +846,9 @@ const en: Record<string, MetricEntry> = {
   },
   institutional_diff_q_pp: {
     short: 'Institutional ownership diff (current vs prev quarter)',
-    full: 'How much the fund-ownership percentage rose or fell versus the previous quarterly filing, in percentage points.',
+    full: 'Old stored runs only (retired field): how much the fund-ownership percentage rose or fell versus the previous quarterly filing, in percentage points.',
     interp: 'Funds adding supports rallies; funds trimming caps them — but filings lag up to 45 days, so background context, not current flow.',
-    blank: "No reliable free source publishes the prior-quarter aggregate (Yahoo's per-holder change figures proved unreliable), so this field ships empty rather than fabricated.",
+    blank: "Retired field — no reliable free source publishes the prior-quarter aggregate (Yahoo's per-holder change figures proved unreliable). New runs no longer carry it.",
   },
   top10_institutions_pct: {
     short: 'Top-10 institutional ownership',
@@ -954,9 +954,9 @@ const en: Record<string, MetricEntry> = {
   },
   implied_vol_rank_1y: {
     short: 'Implied stock volatility ranking (1y range)',
-    full: "Where today's implied volatility sits inside its own one-year range: 0 = the calmest the options market has been on this stock all year, 100 = the most braced-for-impact.",
+    full: "Old stored runs only (retired field): where today's implied volatility sits inside its own one-year range: 0 = the calmest the options market has been on this stock all year, 100 = the most braced-for-impact.",
     interp: 'Near the top = an event or storm is priced in, gaps likely — shrink size or wait; near the bottom = calm expected, orderly moves.',
-    blank: 'Needs a year of implied-volatility history, which no free source publishes and the system has not stored yet — ships empty rather than fabricated.',
+    blank: 'Retired field — it needs a year of implied-volatility history, which no free source publishes. New runs no longer carry it.',
   },
   implied_report_move_pct: {
     short: 'Implied quarterly report day price change magnitude',
@@ -1668,9 +1668,9 @@ const zh: Record<string, MetricEntry> = {
   },
   institutional_diff_q_pp: {
     short: '机构持股变化（本季 vs 上季）',
-    full: '基金持股比例相对上一季度申报升降了多少个百分点。',
+    full: '仅旧的存档运行（已下线字段）：基金持股比例相对上一季度申报升降了多少个百分点。',
     interp: '基金加仓支撑上涨，减仓压制上涨——但申报最多滞后 45 天，只能当背景，不代表当前资金流向。',
-    blank: '没有可靠的免费数据源公布上季度的机构持股总比例（Yahoo 的单一持有人变化数据被证实不可靠），所以此字段宁可留空也不编造。',
+    blank: '已下线字段——没有可靠的免费数据源公布上季度的机构持股总比例（Yahoo 的单一持有人变化数据被证实不可靠）。新的运行不再包含此字段。',
   },
   top10_institutions_pct: {
     short: '前十大机构持股',
@@ -1776,9 +1776,9 @@ const zh: Record<string, MetricEntry> = {
   },
   implied_vol_rank_1y: {
     short: '隐含波动率位置（1年区间）',
-    full: '当前隐含波动率在其自身一年区间中的位置：0 = 期权市场对该股全年最平静，100 = 全年最紧绷。',
+    full: '仅旧的存档运行（已下线字段）：当前隐含波动率在其自身一年区间中的位置：0 = 期权市场对该股全年最平静，100 = 全年最紧绷。',
     interp: '接近顶部 = 已定价某个事件或风暴，容易跳空——缩小仓位或等待；接近底部 = 预期平静，走势有序。',
-    blank: '需要一年的隐含波动率历史，没有免费数据源发布，系统也尚未自行存储——宁可留空也不编造。',
+    blank: '已下线字段——需要一年的隐含波动率历史，没有免费数据源发布。新的运行不再包含此字段。',
   },
   implied_report_move_pct: {
     short: '财报日隐含波动幅度',

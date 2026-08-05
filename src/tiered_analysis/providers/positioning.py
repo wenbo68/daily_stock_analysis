@@ -35,14 +35,15 @@ Sources:
   earnings date), all from CBOE's delayed-quotes feed (Yahoo's intraday
   chains proved to carry no OI).
 
-Two truth fields have no reliable free source yet and ship blank by
-design (their envelopes and the UI blank modal say why):
+Two truth fields were DROPPED entirely (owner decision 2026-08-05 —
+permanently blank rows carry no information; old stored runs still
+render theirs from their saved payloads):
 
 - ``institutional_diff_q_pp`` — Yahoo's per-holder ``pctChange`` proved
   unreliable (placeholder values like exactly +100% for top holders),
   and no free source publishes the prior-quarter aggregate.
 - ``implied_vol_rank_1y`` — needs a year of implied-volatility history;
-  no free source publishes it and the system stores none yet.
+  no free source publishes it and the system stores none.
 
 Each block failing degrades coverage explicitly (partial/unavailable
 with warnings) — an ok-but-empty response is treated as missing, never
@@ -90,8 +91,7 @@ _TOP_HOLDERS_COUNT = 10
 
 #: Payload paths ("group.key") each data source feeds — the fields a
 #: source failure blanks, so its note can sit beside them on the report
-#: page. Design-blank fields (institutional_diff_q_pp,
-#: implied_vol_rank_1y) are absent: no fetch outcome changes them.
+#: page.
 SHORT_INTEREST_FIELDS = (
     "short_interest.short_pct_of_float",
     "short_interest.days_to_cover",
@@ -960,21 +960,6 @@ class PositioningUSProvider(DimensionProvider):
                     "to buy?"
                 ),
             ),
-            "institutional_diff_q_pp": make_metric(
-                "institutional ownership diff (current vs prev quarter)",
-                "How much the fund-ownership percentage rose or fell "
-                "versus the previous quarterly filing, in percentage "
-                "points. Blank: no reliable free source publishes the "
-                "prior-quarter aggregate (Yahoo's per-holder change "
-                "figures proved unreliable), so this ships empty rather "
-                "than fabricated.",
-                None,
-                interpretation=(
-                    "Funds adding supports rallies; funds trimming caps "
-                    "them — but filings lag up to 45 days, so this is "
-                    "background context, not current flow."
-                ),
-            ),
             "top10_institutions_pct": make_metric(
                 "top-10 institutional ownership",
                 "The combined stake of the ten largest fund holders "
@@ -1234,20 +1219,6 @@ class PositioningUSProvider(DimensionProvider):
                     "insurance is expensive, turbulence expected — "
                     "wider stops, smaller size. The raw level means "
                     "little alone; every stock has its own normal."
-                ),
-            ),
-            "implied_vol_rank_1y": make_metric(
-                "implied stock volatility ranking (1y range)",
-                "Where today's implied volatility sits inside its own "
-                "one-year range (0 = calmest all year, 100 = most "
-                "braced-for-impact). Blank: this needs a year of "
-                "implied-volatility history, which no free source "
-                "publishes and the system has not stored yet.",
-                None,
-                interpretation=(
-                    "Near the top = an event or storm is priced in, "
-                    "gaps likely — shrink size or wait; near the bottom "
-                    "= calm expected, orderly moves."
                 ),
             ),
             "implied_report_move_pct": make_metric(

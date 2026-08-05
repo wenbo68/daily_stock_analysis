@@ -318,14 +318,13 @@ class ProviderTest(unittest.TestCase):
         self.assertIn("insider_activity_6m.net_value_usd", result.formulas)
         self.assertIn("options.put_call_oi_ratio", result.formulas)
 
-    def test_unsourced_truth_fields_ship_blank_never_fabricated(self):
+    def test_unsourced_truth_fields_are_dropped(self):
+        # Dropped entirely (owner decision 2026-08-05): permanently blank
+        # rows carry no information. Old stored runs still render theirs
+        # from their saved payloads.
         payload = _provider().collect("AAPL").payload
-        self.assertIsNone(
-            metric_value(payload["ownership"]["institutional_diff_q_pp"])
-        )
-        self.assertIsNone(
-            metric_value(payload["options"]["implied_vol_rank_1y"])
-        )
+        self.assertNotIn("institutional_diff_q_pp", payload["ownership"])
+        self.assertNotIn("implied_vol_rank_1y", payload["options"])
 
     def test_one_failing_block_degrades_to_partial_with_blank_envelopes(self):
         result = _provider(options_loader=_boom).collect("AAPL")

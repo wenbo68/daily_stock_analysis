@@ -1306,12 +1306,12 @@ const zh = {
   'tiered.outlook.bullish': '看多',
   'tiered.outlook.neutral': '中性',
   'tiered.outlook.bearish': '看空',
-  'tiered.outlook.unknown': '未知',
+  'tiered.outlook.unknown': '失败',
   'tiered.action.enter': '买入（见「交易计划」部分）',
   'tiered.action.keep_holding': '继续持有',
   'tiered.action.no_trade': '不交易',
   'tiered.action.sell_all': '清仓卖出',
-  'tiered.action.unknown': '未知——本次运行未产生可用结论，请重跑',
+  'tiered.action.unknown': '重跑——本次运行未产生可用结论',
   'tiered.help.outlook':
     '「展望」是对这只股票本身的判断（看多 / 中性 / 看空），与你是否持有无关。\n「操作」由代码根据展望和你的持仓推出：看多且未持有→买入；看多或中性且已持有→继续持有；中性且未持有→不交易；看空且已持有→清仓卖出；看空且未持有→不交易。',
   'tiered.help.action':
@@ -2870,12 +2870,12 @@ const en: Record<UiTextKey, string> = {
   'tiered.outlook.bullish': 'Bullish',
   'tiered.outlook.neutral': 'Neutral',
   'tiered.outlook.bearish': 'Bearish',
-  'tiered.outlook.unknown': 'Unknown',
+  'tiered.outlook.unknown': 'Failed',
   'tiered.action.enter': 'Buy (see Trade Plan section)',
   'tiered.action.keep_holding': 'Keep holding',
   'tiered.action.no_trade': 'No trade',
   'tiered.action.sell_all': 'Sell all shares',
-  'tiered.action.unknown': 'Unknown — this run produced no usable outlook; re-run it',
+  'tiered.action.unknown': 'Re-run — this run produced no usable outlook',
   'tiered.help.outlook':
     'The outlook is the judgment on the stock itself (bullish / neutral / bearish), regardless of whether you hold it.\nThe action is derived by code from the outlook and your holding: bullish + not holding → buy; bullish or neutral + holding → keep holding; neutral + not holding → no trade; bearish + holding → sell all; bearish + not holding → no trade.',
   'tiered.help.action':
