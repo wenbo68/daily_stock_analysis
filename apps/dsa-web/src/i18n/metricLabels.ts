@@ -962,7 +962,7 @@ const en: Record<string, MetricEntry> = {
     short: 'Implied quarterly report day price change magnitude',
     full: 'The size of price jump the options market prices in for the next quarterly report, in % — from the at-the-money call + put prices on the first expiration after the report date. Unsigned: option prices say how BIG the jump should be, not which way (read it as ±).\nPublished only when the report is within ~3 weeks — further out, option prices mostly reflect ordinary drift, not the report jump.',
     interp: 'Compare it to the stop distance: an implied ±9% move against a 5% stop means the gap jumps the stop — exit before the report or size so the full move is survivable.',
-    blank: 'Shown only when the next report is within ~3 weeks (further out, option prices mostly reflect ordinary drift, not the report jump) — and it needs the report date plus usable at-the-money quotes on the first expiration after it. When a run records which condition failed, that reason is shown here in place of this general note.',
+    blank: 'Shown only when the next report is within ~3 weeks (further out, option prices mostly reflect ordinary drift, not the report jump) — and it needs the report date plus usable at-the-money quotes on the first expiration after it.',
   },
   report_move_ratio_implied_4q: {
     short: 'Quarterly report day price change magnitude ratio (implied vs 4q avg)',
@@ -1784,7 +1784,7 @@ const zh: Record<string, MetricEntry> = {
     short: '财报日隐含波动幅度',
     full: '期权市场为下次季度财报定价的跳空幅度（%）——取财报日后第一个到期日的平值认购+认沽价格。无方向：期权价格只说明跳多大，不说明往哪跳（读作 ±）。\n仅在财报距今约 3 周以内才显示——更远时期权价格主要反映日常波动，而非财报跳空。',
     interp: '与止损距离对比：隐含 ±9% 的跳空对上 5% 的止损，意味着跳空会直接越过止损——要么财报前离场，要么把仓位缩到能承受全幅波动。',
-    blank: '仅在下次财报距今约 3 周以内才显示（更远时期权价格主要反映日常波动，而非财报跳空），且需要财报日期和财报后第一个到期日的可用平值报价。当某次运行记录了具体原因时，此处会直接显示该原因，而不是这段通用说明。',
+    blank: '仅在下次财报距今约 3 周以内才显示（更远时期权价格主要反映日常波动，而非财报跳空），且需要财报日期和财报后第一个到期日的可用平值报价。',
   },
   report_move_ratio_implied_4q: {
     short: '财报日波动幅度比（隐含 vs 近4季均值）',
