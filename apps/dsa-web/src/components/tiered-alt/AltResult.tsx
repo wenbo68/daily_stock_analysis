@@ -305,12 +305,16 @@ const planCardNotes = (result: TieredResult): string[] => {
 
 // The trade plan in its own card, under the analysis (owner order,
 // 2026-07-22). The data-notes mark floats in the card's top-right corner
-// so it never occupies a line of its own.
+// so it never occupies a line of its own. An empty plan (no_trade /
+// sell_all shows no levels) gets no mark either — its notes describe a
+// plan the card is not showing (owner request 2026-08-05).
 const AltPlanCard = ({ result, citations, action, taskId }: AltTierOneProps) => (
   <AltCard testId="alt-plan" className="relative">
-    <span className="absolute right-5 top-5">
-      <AltNotesButton notes={planCardNotes(result)} coverage={result.coverage} />
-    </span>
+    {action === 'no_trade' || action === 'sell_all' ? null : (
+      <span className="absolute right-5 top-5">
+        <AltNotesButton notes={planCardNotes(result)} coverage={result.coverage} />
+      </span>
+    )}
     <PlanBody result={result} citations={citations} action={action} taskId={taskId} />
   </AltCard>
 );

@@ -270,11 +270,25 @@ describe('AltResult outlook conclusion', () => {
     expect(stop).toHaveTextContent('90');
   });
 
-  it('no_trade shows no plan levels at all', () => {
-    renderResult(makeOutlookResult({ outlook: 'neutral', action: 'no_trade' }));
+  it('no_trade shows no plan levels at all, and no notes mark either', () => {
+    renderResult(
+      makeOutlookResult({
+        outlook: 'neutral',
+        action: 'no_trade',
+        warnings: [
+          'trend warning: close 303.42 is at or below the 50-day average ' +
+            '309.52 (downtrend) — a pullback buy against the trend carries ' +
+            'extra downside risk',
+        ],
+      }),
+    );
     expect(screen.queryByTestId('alt-levels-table')).not.toBeInTheDocument();
     expect(screen.queryByTestId('alt-structural-stop')).not.toBeInTheDocument();
-    expect(screen.getByTestId('alt-no-plan')).toBeInTheDocument();
+    const planCard = screen.getByTestId('alt-plan');
+    expect(within(planCard).getByTestId('alt-no-plan')).toBeInTheDocument();
+    // The empty plan card carries no exclamation mark: its notes describe
+    // a plan the card is not showing.
+    expect(within(planCard).queryByTestId('alt-notes-button')).not.toBeInTheDocument();
   });
 
   it('sell_all hides the plan and prints the exit size from the sizing block', () => {
