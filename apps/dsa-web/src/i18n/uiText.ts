@@ -1070,7 +1070,9 @@ const zh = {
   'tiered.tree.riskExplain6': '带有两个 ✗ 的风险被否决并划线；未划线的风险全部计入确认数。',
   'tiered.tree.riskExplain7':
     '代码按确认风险数定仓位倍数：0 项 = 全仓（×1），1–3 项 = 半仓（×0.5），4 项及以上 = 不开仓（×0）。方向沿用第 2 层结论；倍数由程序应用到买入股数或卖出的持仓上。',
-  'tiered.note.listerDegraded': '一位分析师的证据清单连续不合规——本次只使用另一份清单。',
+  'tiered.note.listerDegradedRole': '{role}——评分表连续不合规，本次只使用另一位分析师的评分表。',
+  'tiered.note.sheetsVoided': '两位分析师的评分表连续不合规——深度分析作废。',
+  'tiered.note.noOutlook': '深度分析未能得出结论，本次运行没有展望——请重新运行该股票。',
   'tiered.note.mergeDegraded': '清单合并连续不合规——第二份清单被放弃。',
   'tiered.note.checkDegraded': '复核投票连续不合规——各条证据仅按作者一票计入。',
   'tiered.note.tiebreakDegraded': '决胜投票连续不合规——平票的证据按未决处理，不计入得分。',
@@ -1091,7 +1093,11 @@ const zh = {
   'tiered.note.includedAddition': '守方驳回的一条新增证据被裁判判定成立——该证据已计入最终得分。',
   'tiered.note.stageInvalid': '辩论中的某个 AI 连续两次给出不合规的回复，本层结论作废——方向沿用第 1 层。',
   'tiered.note.attackerDegraded': '攻方连续给出不合规的回复，本次没有质疑和补充证据——裁判仍独立复核了每条理由。',
-  'tiered.note.stageRetried': '某个辩论回复第一次不合规，重试一次后通过。',
+  'tiered.note.stageRetriedRole': '{role}——第一次回复不合规，重试一次后通过。',
+  'tiered.note.stageInvalidRole': '{role}——重试后回复仍不合规。',
+  'tiered.role.checkRound': '复核投票',
+  'tiered.role.decidingRound': '决胜投票',
+  'tiered.role.reportOutline': '报告撰写',
   'tiered.note.concededFlawedAttack': '守方接受了一个后来被裁判判定不成立的质疑——该条计为守方失误并已标记。',
   'tiered.note.noChallenges': '攻方没有提出任何质疑，守方回应环节跳过，初始立场分保持不变。',
   'tiered.note.emptyLedger': '没有可计入的证据，最终得分默认取中性 5。',
@@ -2584,8 +2590,12 @@ const en: Record<UiTextKey, string> = {
     'A risk with two ✗ loses the vote and is crossed out; everything not crossed out counts as confirmed.',
   'tiered.tree.riskExplain7':
     'Code maps the confirmed count to the size multiplier: 0 = full size (×1), 1–3 = half (×0.5), 4 or more = no position (×0). The direction stays tier 2’s verdict; code applies the multiplier to the computed buy size or to the held shares a sell exits.',
-  'tiered.note.listerDegraded':
-    'One analyst’s evidence list kept coming back invalid — this run used the other list only.',
+  'tiered.note.listerDegradedRole':
+    '{role} — the grade sheet kept coming back invalid; this run used the other analyst’s sheet only.',
+  'tiered.note.sheetsVoided':
+    'Both analysts kept returning invalid grade sheets — the deep analysis was voided.',
+  'tiered.note.noOutlook':
+    'The deep analysis produced no verdict, so this run has no outlook — re-run the stock.',
   'tiered.note.mergeDegraded':
     'The list merge kept coming back invalid — the second list was dropped.',
   'tiered.note.checkDegraded':
@@ -2618,7 +2628,13 @@ const en: Record<UiTextKey, string> = {
     'One of the debate AIs kept returning an invalid reply, so the tier-2 verdict was voided — the direction falls back to tier 1.',
   'tiered.note.attackerDegraded':
     'The attacker kept returning an invalid reply, so this run has no attacks or added evidence — the judge still reviewed every reason on its own.',
-  'tiered.note.stageRetried': 'A debate reply was invalid on the first try and was retried once, successfully.',
+  'tiered.note.stageRetriedRole':
+    '{role} — the first reply was invalid; the retry succeeded.',
+  'tiered.note.stageInvalidRole':
+    '{role} — the reply was still invalid after a retry.',
+  'tiered.role.checkRound': 'Check vote',
+  'tiered.role.decidingRound': 'Deciding vote',
+  'tiered.role.reportOutline': 'Report writer',
   'tiered.note.concededFlawedAttack':
     'The defender accepted an attack the judge later ruled wrong — that item was counted against the defender and flagged.',
   'tiered.note.noChallenges':

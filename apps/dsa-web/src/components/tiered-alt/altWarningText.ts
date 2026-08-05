@@ -52,6 +52,23 @@ function hostOf(url: string): string {
   }
 }
 
+// Backend stage names → the role labels the debate tree already uses
+// (owner request 2026-08-05: retry/invalid notes lead with the AI's
+// role). Unknown stages (old stored formats) fall back to the raw stage
+// text — never invent a label.
+const STAGE_ROLES: Record<string, (t: Translate) => string> = {
+  'first analyst grade sheet': (t) => t('tiered.tree.lister', { n: 1 }),
+  'second analyst grade sheet': (t) => t('tiered.tree.lister', { n: 2 }),
+  'first analyst list': (t) => t('tiered.tree.lister', { n: 1 }),
+  'second analyst list': (t) => t('tiered.tree.lister', { n: 2 }),
+  'check round': (t) => t('tiered.role.checkRound'),
+  'deciding round': (t) => t('tiered.role.decidingRound'),
+  'report outline': (t) => t('tiered.role.reportOutline'),
+};
+
+const stageRole = (stage: string, t: Translate): string =>
+  STAGE_ROLES[stage] ? STAGE_ROLES[stage](t) : stage;
+
 interface NoteRule {
   pattern: RegExp;
   keywordKey: UiTextKey;
@@ -202,14 +219,23 @@ const NOTE_RULES: NoteRule[] = [
   // (tier 3): the two engines share their phrasing, differing only in
   // bullet/risk wording ---
   {
-    pattern: /^(?:first|second) analyst list invalid after retry — proceeding with/,
+    // v8 wording ("list") and v12 wording ("grade sheet").
+    pattern: /^(first|second) analyst (?:list|grade sheet) invalid after retry — proceeding with/,
     keywordKey: KEY.vote,
-    toText: (_m, t) => t('tiered.note.listerDegraded'),
+    toText: (m, t) =>
+      t('tiered.note.listerDegradedRole', {
+        role: stageRole(`${m[1]} analyst grade sheet`, t),
+      }),
   },
   {
-    pattern: /^both analyst lists invalid after retry — tier-2 verdict voided$/,
+    pattern: /^both analyst (?:lists|grade sheets) invalid after retry — tier-2 verdict voided$/,
     keywordKey: KEY.verdict,
-    toText: (_m, t) => t('tiered.note.stageInvalid'),
+    toText: (_m, t) => t('tiered.note.sheetsVoided'),
+  },
+  {
+    pattern: /^debate produced no verdict — no outlook \(re-run\)$/,
+    keywordKey: KEY.verdict,
+    toText: (_m, t) => t('tiered.note.noOutlook'),
   },
   {
     pattern: /^both analyst lists invalid after retry — tier-3 risk verdict voided$/,
@@ -315,14 +341,16 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.attackerDegraded'),
   },
   {
-    pattern: / needed a retry — first reply was invalid$/,
+    pattern: /^(.+) needed a retry — first reply was invalid$/,
     keywordKey: KEY.aiReply,
-    toText: (_m, t) => t('tiered.note.stageRetried'),
+    toText: (m, t) =>
+      t('tiered.note.stageRetriedRole', { role: stageRole(m[1], t) }),
   },
   {
-    pattern: /(?: was not JSON even after a retry| invalid after retry: )/,
+    pattern: /^(.+?)(?: was not JSON even after a retry$| invalid after retry: )/,
     keywordKey: KEY.aiReply,
-    toText: (_m, t) => t('tiered.note.stageInvalid'),
+    toText: (m, t) =>
+      t('tiered.note.stageInvalidRole', { role: stageRole(m[1], t) }),
   },
   {
     pattern: /^defender accepted an attack the judge ruled wrong/,

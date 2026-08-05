@@ -270,7 +270,7 @@ describe('AltResult outlook conclusion', () => {
     expect(stop).toHaveTextContent('90');
   });
 
-  it('no_trade shows no plan levels at all, and no notes mark either', () => {
+  it('no_trade shows no trade-plan section at all', () => {
     renderResult(
       makeOutlookResult({
         outlook: 'neutral',
@@ -282,13 +282,17 @@ describe('AltResult outlook conclusion', () => {
         ],
       }),
     );
+    // A non-bullish outlook removes the whole plan section (owner
+    // decision 2026-08-05) — no card, no levels, no notes mark.
+    expect(screen.queryByTestId('alt-plan')).not.toBeInTheDocument();
     expect(screen.queryByTestId('alt-levels-table')).not.toBeInTheDocument();
     expect(screen.queryByTestId('alt-structural-stop')).not.toBeInTheDocument();
-    const planCard = screen.getByTestId('alt-plan');
-    expect(within(planCard).getByTestId('alt-no-plan')).toBeInTheDocument();
-    // The empty plan card carries no exclamation mark: its notes describe
-    // a plan the card is not showing.
-    expect(within(planCard).queryByTestId('alt-notes-button')).not.toBeInTheDocument();
+  });
+
+  it('an unknown outlook (failed run) shows no trade-plan section either', () => {
+    renderResult(makeOutlookResult({ outlook: 'unknown', action: 'unknown' }));
+    expect(screen.queryByTestId('alt-plan')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('alt-levels-table')).not.toBeInTheDocument();
   });
 
   it('sell_all hides the plan and prints the exit size from the sizing block', () => {
@@ -317,7 +321,7 @@ describe('AltResult outlook conclusion', () => {
         },
       }),
     );
-    expect(screen.getByTestId('alt-no-plan')).toBeInTheDocument();
+    expect(screen.queryByTestId('alt-plan')).not.toBeInTheDocument();
     // The shares-computation card is retired (2026-07-22) — the action
     // line already says the whole holding goes.
     expect(screen.queryByTestId('alt-sell-formula')).not.toBeInTheDocument();

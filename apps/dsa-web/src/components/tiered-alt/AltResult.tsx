@@ -239,8 +239,9 @@ const PlanBody = ({ result, citations, action, taskId }: AltTierOneProps) => {
       </p>
     );
   }
-  // no_trade / sell_all: no plan levels at all — the action line
-  // already said what to do (sell counts live in the shares block).
+  // Unreachable for current runs (only bullish outlooks render a plan
+  // section, and their actions are enter/keep_holding) — kept as a
+  // crash-guard for unexpected stored actions.
   return (
     <p className="text-sm text-gray-500" data-testid="alt-no-plan">
       {t('tiered.alt.noPlan')}
@@ -305,16 +306,14 @@ const planCardNotes = (result: TieredResult): string[] => {
 
 // The trade plan in its own card, under the analysis (owner order,
 // 2026-07-22). The data-notes mark floats in the card's top-right corner
-// so it never occupies a line of its own. An empty plan (no_trade /
-// sell_all shows no levels) gets no mark either — its notes describe a
-// plan the card is not showing (owner request 2026-08-05).
+// so it never occupies a line of its own. Only bullish-outlook runs
+// render this card at all (owner decision 2026-08-05), so the plan
+// inside is never empty.
 const AltPlanCard = ({ result, citations, action, taskId }: AltTierOneProps) => (
   <AltCard testId="alt-plan" className="relative">
-    {action === 'no_trade' || action === 'sell_all' ? null : (
-      <span className="absolute right-5 top-5">
-        <AltNotesButton notes={planCardNotes(result)} coverage={result.coverage} />
-      </span>
-    )}
+    <span className="absolute right-5 top-5">
+      <AltNotesButton notes={planCardNotes(result)} coverage={result.coverage} />
+    </span>
     <PlanBody result={result} citations={citations} action={action} taskId={taskId} />
   </AltCard>
 );
@@ -692,8 +691,12 @@ export const AltResult = ({ result, taskId, runDate }: AltResultProps) => {
           <AltDebate section={result.tier2} citations={citations} />
         </AltBlock>
       ) : null}
-      {result.outlook ? (
-        // The trade plan sits under the analysis that judged it.
+      {result.outlook === 'bullish' ? (
+        // The trade plan sits under the analysis that judged it — and
+        // only under a bullish one (owner decision 2026-08-05): a
+        // neutral/bearish/unknown outlook shows no plan section at all;
+        // the action line already says what to do. Legacy runs (no
+        // outlook) keep their combined card above.
         <AltBlock title={t('tiered.alt.planTitle')} helpKey="tiered.help.plan">
           <AltPlanCard
             result={result}
