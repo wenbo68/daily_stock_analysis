@@ -8,7 +8,10 @@ of the two blind ANALYSTS must return exactly one grade per field —
 bullish, bearish or neutral. The one-grade-per-field rule is enforced
 structurally (``check_grade_sheet`` rejects a reply that skips, invents
 or double-grades a field; JSON object keys make a double grade
-impossible to express), not by prompt wording. Code converts the
+impossible to express), not by prompt wording. One tolerance (owner
+decision 2026-08-05): a grade on a field that exists in the report but
+is blank is silently dropped, never a sheet failure — the report text
+shows blank fields and the AIs kept grading them, voiding whole runs. Code converts the
 non-neutral grades into evidence bullets — ids assigned by code in
 field order, the graded field's citation injected by code with the
 exact display value — and MATCHES the two sheets by field in pure code
@@ -200,6 +203,23 @@ class DebateResult:
 # ---------------------------------------------------------------------------
 
 
+def _leaf_refs(dim: DimensionResult) -> List[str]:
+    """Every payload leaf ref of one dimension, in report order — an
+    envelope {name, explanation[, interpretation], value} is one leaf."""
+    rows: List[str] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict) and not is_envelope(node):
+            for key, value in node.items():
+                walk(value, f"{path}.{key}")
+            return
+        rows.append(path)
+
+    for key, value in (dim.payload or {}).items():
+        walk(value, f"{dim.dimension}.{key}")
+    return rows
+
+
 def gradable_field_refs(
     dimensions: Sequence[DimensionResult],
 ) -> Dict[str, List[str]]:
@@ -212,20 +232,30 @@ def gradable_field_refs(
     for dim in dimensions:
         if dim.dimension not in DIMENSIONS or not dim.payload:
             continue
-        rows: List[str] = []
-
-        def walk(node: Any, path: str) -> None:
-            if isinstance(node, dict) and not is_envelope(node):
-                for key, value in node.items():
-                    walk(value, f"{path}.{key}")
-                return
-            if _payload_value(path, [dim])[0]:
-                rows.append(path)
-
-        for key, value in dim.payload.items():
-            walk(value, f"{dim.dimension}.{key}")
+        rows = [
+            path for path in _leaf_refs(dim) if _payload_value(path, [dim])[0]
+        ]
         if rows:
             refs[dim.dimension] = rows
+    return refs
+
+
+def blank_field_refs(dimensions: Sequence[DimensionResult]) -> set:
+    """Payload leaves that exist but are blank (value null). They get no
+    grade-sheet row, but the report text the analysts read still shows
+    them, and the AIs keep grading them anyway — so a grade landing on
+    one is DROPPED (it would have been an invisible neutral at best),
+    never a reason to fail the whole sheet (owner decision 2026-08-05:
+    a voided verdict over meaningless grades is the worse outcome)."""
+    refs: set = set()
+    for dim in dimensions:
+        if dim.dimension not in DIMENSIONS or not dim.payload:
+            continue
+        refs.update(
+            path
+            for path in _leaf_refs(dim)
+            if not _payload_value(path, [dim])[0]
+        )
     return refs
 
 
@@ -365,6 +395,8 @@ _GRADE_RULES = """Grade-sheet rules (all checked mechanically by code):
 - Reply with EXACTLY one grade per field key listed above — code
   rejects a reply that skips a field, invents a field key, or grades a
   field twice.
+- Fields shown blank/null in the report are NOT on the sheet — do not
+  grade them (code ignores any grade on a blank field).
 - Each grade: "direction" is "bullish", "bearish" or "neutral" for
   this swing trade. Neutral = the field carries no lean either way
   (metadata like dates and bar counts, or a genuinely mixed reading);
@@ -815,6 +847,7 @@ class DebateEngine:
         bullet id → graded field ref), or None when the sheet never
         validated."""
         all_refs = [ref for dimension in refs for ref in refs[dimension]]
+        blank_refs = blank_field_refs(dimensions)
         field_rows = "\n".join(f"- {ref}" for ref in all_refs)
         prompts = [
             template.format(
@@ -829,8 +862,16 @@ class DebateEngine:
 
         def parse(parsed: dict) -> GradeSheetModel:
             model = GradeSheetModel.model_validate(parsed)
-            check_grade_sheet(model.grades, all_refs)
-            return model
+            # Grades on blank-but-real report fields are dropped, not
+            # failed (see blank_field_refs); truly invented keys still
+            # fail the exact-coverage check below.
+            grades = {
+                ref: grade
+                for ref, grade in model.grades.items()
+                if ref not in blank_refs
+            }
+            check_grade_sheet(grades, all_refs)
+            return model.model_copy(update={"grades": grades})
 
         # The usage tracker is thread-local; hand it to the workers so
         # their calls still count toward the run's AI-calls number.

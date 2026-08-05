@@ -63,9 +63,12 @@ def _technicals():
         coverage=Coverage.FULL,
         # "macd" is a grouping on purpose: the leaf-only ref rule must
         # reject "technicals.macd" but accept "technicals.macd.signal".
+        # "sma_200" is blank on purpose: no grade-sheet row, and a grade
+        # landing on it is dropped, not a sheet failure.
         # Gradable rows = 4 (rsi_14, close, score, macd.signal). Display
         # strings: rsi_14 "71.20", close "100", score "68", signal "1.20".
-        payload={"rsi_14": 71.2, "close": 100.0, "score": 68, "macd": {"signal": 1.2}},
+        payload={"rsi_14": 71.2, "close": 100.0, "score": 68,
+                 "macd": {"signal": 1.2}, "sma_200": None},
     )
 
 
@@ -528,6 +531,22 @@ class GradeSheetContractTest(unittest.TestCase):
             if RETRY_MARKER in p and "You are the FIRST analyst" in p
         )
         self.assertIn("unknown grade keys: technicals.bogus", retry_prompt)
+
+    def test_a_grade_on_a_blank_field_is_dropped_not_failed(self):
+        # The report text still shows blank fields (value null) and the
+        # AIs keep grading them — such grades are dropped silently
+        # instead of failing the sheet (owner decision 2026-08-05: this
+        # was voiding whole runs).
+        with_blank = {
+            **SHEET_1,
+            "technicals.sma_200": _grade("bullish", "Graded a blank field."),
+        }
+        result, fake = _run(_replies(lister1=_sheet_reply(with_blank)))
+        self.assertIsNotNone(result.verdict)
+        self.assertFalse(any(RETRY_MARKER in p for p in fake.prompts))
+        self.assertFalse(
+            any(i.get("field") == "technicals.sma_200" for i in result.items)
+        )
 
     def test_a_directional_grade_without_a_claim_is_rejected(self):
         claimless = {**SHEET_1, "technicals.score": {"direction": "bullish"}}
