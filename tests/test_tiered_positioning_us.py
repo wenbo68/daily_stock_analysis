@@ -306,11 +306,18 @@ class ProviderTest(unittest.TestCase):
         self.assertEqual(node["name"], "shorted shares to float")
         self.assertAlmostEqual(node["value"], 3.1)
         self.assertIn("interpretation", node)
-        # Meta dates from all three blocks.
+        # Meta dates from all three blocks. Every one is a date its own
+        # SOURCE publishes — the retired options_fetched_at recorded the
+        # run's own clock instead, which the run gate made redundant
+        # (owner decision 2026-08-08). Exact set, so it cannot creep back.
         meta = result.payload["meta"]
         self.assertEqual(metric_value(meta["ownership_as_of"]), "2026-03-31")
         self.assertEqual(metric_value(meta["short_interest_as_of"]), "2026-07-01")
         self.assertEqual(metric_value(meta["options_bets_through"]), "2026-09-18")
+        self.assertEqual(
+            sorted(meta),
+            ["options_bets_through", "ownership_as_of", "short_interest_as_of"],
+        )
         # The implied report-day move landed with its receipt.
         options = result.payload["options"]
         self.assertAlmostEqual(metric_value(options["implied_report_move_pct"]), 6.2)

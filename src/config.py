@@ -860,6 +860,8 @@ class Config:
     agent_context_protected_turns: int = 4
     agent_event_monitor_enabled: bool = False  # Enable periodic event-driven alert checks in schedule mode
     agent_event_monitor_interval_minutes: int = 5  # Polling interval for event monitor background checks
+    decision_signal_outcome_job_enabled: bool = True  # Periodically grade recorded decision signals (forward testing)
+    decision_signal_outcome_job_interval_minutes: int = 720  # Outcome grading interval (idempotent; grades what has enough bars)
     agent_event_alert_rules_json: str = ""  # JSON array of serialized EventMonitor rules
 
     # === 通知配置（可同时配置多个，全部推送）===
@@ -1791,6 +1793,15 @@ class Config:
                 minimum=1,
             ),
             agent_event_alert_rules_json=os.getenv('AGENT_EVENT_ALERT_RULES_JSON', ''),
+            decision_signal_outcome_job_enabled=os.getenv(
+                'DECISION_SIGNAL_OUTCOME_JOB_ENABLED', 'true'
+            ).lower() == 'true',
+            decision_signal_outcome_job_interval_minutes=parse_env_int(
+                os.getenv('DECISION_SIGNAL_OUTCOME_JOB_INTERVAL_MINUTES'),
+                720,
+                field_name='DECISION_SIGNAL_OUTCOME_JOB_INTERVAL_MINUTES',
+                minimum=1,
+            ),
             wechat_webhook_url=os.getenv('WECHAT_WEBHOOK_URL'),
             feishu_webhook_url=os.getenv('FEISHU_WEBHOOK_URL'),
             feishu_webhook_secret=os.getenv('FEISHU_WEBHOOK_SECRET'),

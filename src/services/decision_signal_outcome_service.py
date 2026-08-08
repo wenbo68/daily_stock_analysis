@@ -38,6 +38,10 @@ SUPPORTED_OUTCOME_HORIZONS = {
     "3d": 3,
     "5d": 5,
     "10d": 10,
+    # Max-hold-time windows (2026-08-08): 3 and 4 trading weeks, so a
+    # signal whose picked horizon is 15d/20d grades at its own window.
+    "15d": 15,
+    "20d": 20,
 }
 DEFAULT_STATS_STATUSES = ("active", "expired", "invalidated", "closed")
 OUTCOME_VALUES = frozenset({"hit", "miss", "neutral"})
@@ -329,6 +333,7 @@ class DecisionSignalOutcomeService:
             dimension: self._breakdown(rows, dimension)
             for dimension in dimensions
         }
+        breakdowns["score_band"] = self._score_band_breakdown(rows)
         return {
             **self._aggregate(rows),
             "engine_version": engine_version_norm,
@@ -336,6 +341,37 @@ class DecisionSignalOutcomeService:
             "statuses": statuses_norm,
             "breakdowns": breakdowns,
         }
+
+    def _score_band_breakdown(
+        self, rows: List[DecisionSignalOutcomeRecord]
+    ) -> List[Dict[str, Any]]:
+        """Score calibration (2026-08-08): outcomes grouped by the deep
+        analysis's score band (signal metadata ``score_band``, written by
+        the tiered signal logger). Signals without one — old runs, other
+        generators — land in "unknown". This is the table that answers
+        "does an 8-10 outlook actually beat a 6-8?"."""
+        signal_ids = sorted({int(row.signal_id) for row in rows})
+        band_by_signal: Dict[int, str] = {}
+        for signal in self.signal_repo.list_by_ids(signal_ids):
+            metadata = self._json_loads(signal.metadata_json)
+            band = None
+            if isinstance(metadata, dict):
+                band = metadata.get("score_band")
+            if band not in (None, ""):
+                band_by_signal[int(signal.id)] = str(band)
+
+        grouped: Dict[str, List[DecisionSignalOutcomeRecord]] = defaultdict(list)
+        for row in rows:
+            grouped[band_by_signal.get(int(row.signal_id), "unknown")].append(row)
+        buckets = [
+            {
+                "dimension": "score_band",
+                "value": value,
+                **self._aggregate(bucket_rows),
+            }
+            for value, bucket_rows in grouped.items()
+        ]
+        return sorted(buckets, key=lambda item: (-int(item["total"]), str(item["value"])))
 
     def get_feedback(self, signal_id: int) -> Dict[str, Any]:
         signal = self._require_existing_signal(signal_id)

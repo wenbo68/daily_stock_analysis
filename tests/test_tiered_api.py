@@ -59,6 +59,23 @@ def isolated_db(tmp_path):
             os.environ["DATABASE_PATH"] = old_database_path
 
 
+@pytest.fixture(autouse=True)
+def open_clock_gate(monkeypatch):
+    """Neutralize the market-hours clock gate (2026-08-08) for the legacy
+    endpoint tests — otherwise they pass or fail with the wall clock. The
+    gate's own behavior is covered by TestClockGateEndpoint below and
+    tests/test_tiered_run_gate.py."""
+    from src.tiered_analysis import run_gate
+
+    monkeypatch.setattr(
+        run_gate,
+        "clock_gate",
+        lambda symbol, now=None, override=False: run_gate.ClockGateResult(
+            False, "us", "test: gate open"
+        ),
+    )
+
+
 @pytest.fixture()
 def client(isolated_db):
     app = FastAPI()
@@ -250,7 +267,7 @@ class TestTieredDepthAndSizingApi:
     def test_ownership_reaches_the_runner(self, client):
         captured = {}
 
-        def fake_run(code, depth=1, sizing_overrides=None):
+        def fake_run(code, depth=1, sizing_overrides=None, hold_weeks=2):
             captured["sizing_overrides"] = sizing_overrides
             return _deep_outcome(code)
 
@@ -268,7 +285,7 @@ class TestTieredDepthAndSizingApi:
     def test_depth_and_sizing_reach_the_runner(self, client):
         captured = {}
 
-        def fake_run(code, depth=1, sizing_overrides=None):
+        def fake_run(code, depth=1, sizing_overrides=None, hold_weeks=2):
             captured["code"] = code
             captured["depth"] = depth
             captured["sizing_overrides"] = sizing_overrides
@@ -334,3 +351,62 @@ class TestTieredDepthAndSizingApi:
         assert result["action"] == "unknown"
         assert result["earnings"] is None
         assert result["risk_card"] is None
+
+
+class TestClockGateEndpoint:
+    """The market-hours clock gate (owner decisions 2026-08-08)."""
+
+    def _gate(self, blocked):
+        from src.tiered_analysis import run_gate
+
+        def fake(symbol, now=None, override=False):
+            return run_gate.ClockGateResult(
+                blocked and not override, "us", "test"
+            )
+
+        return fake
+
+    def test_blocked_market_returns_409_with_code(self, client, monkeypatch):
+        from src.tiered_analysis import run_gate
+
+        monkeypatch.setattr(run_gate, "clock_gate", self._gate(blocked=True))
+        response = client.post("/tiered/analyze", json={"stock_code": "AAPL"})
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["code"] == "market_open"
+        assert detail["market"] == "us"
+
+    def test_run_anyway_overrides_the_gate(self, client, monkeypatch):
+        from src.tiered_analysis import run_gate
+
+        monkeypatch.setattr(run_gate, "clock_gate", self._gate(blocked=True))
+        with patch.object(tiered, "_run_analysis",
+                          lambda code, **kwargs: _outcome(code)):
+            response = client.post(
+                "/tiered/analyze",
+                json={"stock_code": "AAPL", "run_anyway": True},
+            )
+            assert response.status_code == 202
+            _poll_until_done(client, response.json()["task_id"])
+
+    def test_hold_weeks_reaches_the_runner_and_inputs(self, client):
+        seen = {}
+
+        def runner(code, **kwargs):
+            seen.update(kwargs)
+            return _outcome(code)
+
+        with patch.object(tiered, "_run_analysis", runner):
+            accepted = client.post(
+                "/tiered/analyze",
+                json={"stock_code": "AAPL", "hold_weeks": 3},
+            )
+            assert accepted.status_code == 202
+            _poll_until_done(client, accepted.json()["task_id"])
+        assert seen["hold_weeks"] == 3
+
+    def test_hold_weeks_out_of_range_is_rejected(self, client):
+        response = client.post(
+            "/tiered/analyze", json={"stock_code": "AAPL", "hold_weeks": 5}
+        )
+        assert response.status_code == 422

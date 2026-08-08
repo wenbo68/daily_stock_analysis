@@ -42,7 +42,14 @@ def _add_signal(
     horizon: str = "3d",
     session_date: str = "2024-01-02",
     status: str = "active",
+    score_band: str | None = None,
 ) -> int:
+    metadata = {
+        "market_phase_summary": {"session_date": session_date},
+        "holding_state": "holding",
+    }
+    if score_band is not None:
+        metadata["score_band"] = score_band
     with db.session_scope() as session:
         row = DecisionSignalRecord(
             stock_code=code,
@@ -50,7 +57,7 @@ def _add_signal(
             market=market,
             source_type="analysis",
             source_report_id=1001,
-            trace_id=f"trace-{market}-{code}-{action}-{horizon}-{session_date}",
+            trace_id=f"trace-{market}-{code}-{action}-{horizon}-{session_date}-{score_band}",
             market_phase="postmarket",
             trigger_source="api",
             action=action,
@@ -58,10 +65,7 @@ def _add_signal(
             horizon=horizon,
             reason="unit test",
             data_quality_summary_json=json.dumps({"level": "good"}),
-            metadata_json=json.dumps({
-                "market_phase_summary": {"session_date": session_date},
-                "holding_state": "holding",
-            }),
+            metadata_json=json.dumps(metadata),
             plan_quality="complete",
             status=status,
         )
@@ -412,3 +416,40 @@ def test_batch_uses_oldest_retryable_horizon_timestamp_for_signal_order(isolated
 
     assert result["updated"] == 2
     assert {item["signal_id"] for item in result["items"]} == {multi_horizon_id}
+
+
+def test_hold_time_horizons_grade_at_15_and_20_days(isolated_db) -> None:
+    """Max-hold-time windows (2026-08-08): a signal whose horizon column
+    says 15d/20d grades at exactly that window by default."""
+    signal_id = _add_signal(isolated_db, horizon="20d")
+    _seed_bars(isolated_db, closes=[100 + i for i in range(1, 25)])
+    service = DecisionSignalOutcomeService(db_manager=isolated_db)
+
+    result = service.run_outcomes(signal_id=signal_id)
+
+    horizons = {item["horizon"] for item in result["items"]}
+    assert horizons == {"20d"}
+    (item,) = result["items"]
+    assert item["eval_window_days"] == 20
+    assert item["eval_status"] == "completed"
+
+
+def test_stats_break_down_by_score_band(isolated_db) -> None:
+    """Score calibration (2026-08-08): outcomes grouped by the signal's
+    stored score band; signals without one land in "unknown"."""
+    banded = _add_signal(isolated_db, horizon="3d", score_band="8-10")
+    plain = _add_signal(
+        isolated_db, horizon="3d", session_date="2024-01-03"
+    )
+    _seed_bars(isolated_db, closes=[103, 104, 105, 106, 107])
+    service = DecisionSignalOutcomeService(db_manager=isolated_db)
+    service.run_outcomes(signal_id=banded)
+    service.run_outcomes(signal_id=plain)
+
+    stats = service.get_stats(horizons=["3d"])
+    bands = {
+        bucket["value"]: bucket for bucket in stats["breakdowns"]["score_band"]
+    }
+    assert bands["8-10"]["total"] == 1
+    assert bands["unknown"]["total"] == 1
+    assert bands["8-10"]["hit"] == 1

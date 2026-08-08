@@ -63,7 +63,13 @@ from .llm_support import (
 )
 from .providers.base import DimensionResult, Market
 from .providers.technicals import read_label, read_metric
-from .schema import Direction, SizingSlots, SniperLevels
+from .schema import (
+    DEFAULT_HOLD_WEEKS,
+    Direction,
+    SizingSlots,
+    SniperLevels,
+    hold_weeks_text,
+)
 from .settings import SizingSettings
 from .sizing import SizingInputs, SizingResult, size_position
 
@@ -395,6 +401,8 @@ def build_plan_warnings(
 # ---------------------------------------------------------------------------
 
 _PROMPT_TEMPLATE = """You are the risk reviewer of a swing-trade BUY plan for {symbol}.
+The position will be held for up to {hold_text} (the user's chosen max
+hold time) — judge every risk against that horizon.
 
 Collected evidence (the ONLY facts you may use — no outside knowledge):
 {evidence}
@@ -615,6 +623,7 @@ def _request_adjustments(
     summarizer: Callable[[str], str],
     round_note: str = "",
     extra_allowed: Sequence[str] = (),
+    hold_weeks: int = DEFAULT_HOLD_WEEKS,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """One call + one fix round; returns (adjustments, warnings).
 
@@ -636,6 +645,7 @@ def _request_adjustments(
     target_v, target_f = basis("take_profit")
     prompt = _PROMPT_TEMPLATE.format(
         symbol=symbol,
+        hold_text=hold_weeks_text(hold_weeks),
         evidence=evidence_block(dimensions, display=True),
         entry=entry_v, entry_formula=entry_f,
         stop_loss=stop_v, stop_formula=stop_f,
@@ -820,6 +830,7 @@ def review_plan(
     settings: SizingSettings,
     ownership: int = 0,
     summarizer: Optional[Callable[[str], str]] = None,
+    hold_weeks: int = DEFAULT_HOLD_WEEKS,
 ) -> PlanReview:
     """Run the check-adjust cycle and produce the final plan block.
 
@@ -949,6 +960,7 @@ def review_plan(
                     prompt_checks, atr,
                     summarizer or default_summarizer,
                     round_note=round_note, extra_allowed=extra_allowed,
+                    hold_weeks=hold_weeks,
                 )
             except LlmConfigError as exc:
                 warnings.append(f"plan review skipped: {exc}")

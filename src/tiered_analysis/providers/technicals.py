@@ -1066,7 +1066,7 @@ class TechnicalsProvider(DimensionProvider):
                     ),
                 ),
                 "atr_pct": make_metric(
-                    "14d ATR (% of price)",
+                    "14d ATR (% of closing price)",
                     "The typical daily move as a percent of price, "
                     "comparable across stocks.",
                     atr_pct,

@@ -12,16 +12,19 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import timedelta
 from unittest.mock import patch
 
 import pandas as pd
 
 from src.tiered_analysis.earnings import EarningsInfo
 from src.tiered_analysis.integration import (
+    _technicals_as_of,
     dsa_bars_loader,
     dsa_analysis_runner,
     run_tiered_analysis,
 )
+from src.tiered_analysis.run_gate import expected_bar_date
 from src.tiered_analysis.schema import Action, Outlook
 from src.tiered_analysis.providers.base import (
     Coverage,
@@ -259,7 +262,7 @@ class _FakeDebateEngine:
         self._warnings = list(warnings)
         self.calls = []
 
-    def run(self, symbol, tier1, dimensions):
+    def run(self, symbol, tier1, dimensions, hold_weeks=2):
         from src.tiered_analysis.debate import DebateResult
 
         self.calls.append(symbol)
@@ -858,3 +861,159 @@ class TestMacroEventGateWarning(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStalenessGate(unittest.TestCase):
+    """The staleness gate (owner decisions 2026-08-08): stop before any
+    LLM stage when the bars predate the newest completed session."""
+
+    def _run(self, stop_reason, staleness_gate=True, depth=1):
+        calls = {"runner": 0, "logger": 0}
+
+        def runner(symbol):
+            calls["runner"] += 1
+            return _fake_analysis_result()
+
+        def logger(report, trace_id=None):
+            calls["logger"] += 1
+            return "log-result"
+
+        with patch(
+            "src.tiered_analysis.integration.staleness_stop_reason",
+            lambda bars_up_to, market, now=None: stop_reason,
+        ):
+            outcome = run_tiered_analysis(
+                "AAPL",
+                market=Market.US,
+                providers=[_StubProvider("technicals", _dim("technicals"))],
+                analysis_runner=runner,
+                signal_logger=logger,
+                earnings_lookup=_no_earnings,
+                staleness_gate=staleness_gate,
+                depth=depth,
+            )
+        return outcome, calls
+
+    def test_stale_bars_stop_before_any_llm(self):
+        outcome, calls = self._run("stale bars: 2026-08-04 < 2026-08-05")
+        self.assertEqual(outcome.outlook, Outlook.STOPPED)
+        self.assertEqual(outcome.action, Action.UNKNOWN)
+        self.assertIsNone(outcome.signal)
+        self.assertEqual(calls, {"runner": 0, "logger": 0})
+        # The data cards survive; no verdict, no tier-2 section.
+        self.assertTrue(outcome.report.dimensions)
+        self.assertEqual(outcome.report.direction, Direction.UNKNOWN)
+        self.assertNotIn(2, outcome.state.reports)
+
+    def test_stopped_run_reports_no_stop_text_in_warnings(self):
+        # The outlook says everything (owner decision): the reason lives
+        # in logs only, never in the user-facing report warnings.
+        outcome, _ = self._run("stale bars: vendor lagging")
+        self.assertEqual(outcome.report.warnings, [])
+
+    def test_fresh_bars_run_normally(self):
+        outcome, calls = self._run(None)
+        self.assertEqual(outcome.outlook, Outlook.BULLISH)
+        self.assertEqual(calls["runner"], 1)
+        self.assertEqual(calls["logger"], 1)
+
+    def test_gate_defaults_off_for_injected_providers(self):
+        # Same convention as cross-field enrichment: canned payloads mean
+        # a test harness — the gate must not judge their as-of dates.
+        outcome, calls = self._run("stale", staleness_gate=None)
+        self.assertEqual(outcome.outlook, Outlook.BULLISH)
+        self.assertEqual(calls["runner"], 1)
+
+
+class TestStalenessGateReadsTheBarDate(unittest.TestCase):
+    """The payload -> gate handoff, with NOTHING mocked out.
+
+    The tests above patch ``staleness_stop_reason``, so they never
+    exercise the step that pulls the bar date out of the technicals
+    payload. That gap hid a real bug (2026-08-08): ``_technicals_as_of``
+    read the date STRING with the numeric reader, always got None, and
+    the gate stopped every run for "bars carry no usable date" — with
+    perfectly fresh data. These tests run the real gate.
+    """
+
+    def _dim_dated(self, as_of):
+        payload = _tech_payload()
+        payload["meta"] = {"as_of": _env(as_of)}
+        return DimensionResult(
+            dimension="technicals",
+            kind=SourceKind.NUMERIC,
+            coverage=Coverage.FULL,
+            payload=payload,
+        )
+
+    def _run(self, as_of):
+        calls = {"runner": 0}
+
+        def runner(symbol):
+            calls["runner"] += 1
+            return _fake_analysis_result()
+
+        outcome = run_tiered_analysis(
+            "AAPL",
+            market=Market.US,
+            providers=[_StubProvider("technicals", self._dim_dated(as_of))],
+            analysis_runner=runner,
+            signal_logger=lambda report, trace_id=None: "log-result",
+            earnings_lookup=_no_earnings,
+            staleness_gate=True,
+        )
+        return outcome, calls
+
+    def test_reads_the_date_string_out_of_the_payload(self):
+        self.assertEqual(
+            _technicals_as_of([self._dim_dated("2026-08-07")]), "2026-08-07"
+        )
+
+    def test_fresh_bars_reach_the_llm_stages(self):
+        # The date the gate itself considers current, so this stays true
+        # on any day the suite runs.
+        fresh = expected_bar_date("us")
+        outcome, calls = self._run(fresh.isoformat())
+        self.assertEqual(outcome.outlook, Outlook.BULLISH)
+        self.assertEqual(calls["runner"], 1)
+
+    def test_genuinely_stale_bars_still_stop(self):
+        stale = expected_bar_date("us") - timedelta(days=30)
+        outcome, calls = self._run(stale.isoformat())
+        self.assertEqual(outcome.outlook, Outlook.STOPPED)
+        self.assertEqual(calls["runner"], 0)
+
+    def test_missing_date_stops(self):
+        outcome, calls = self._run(None)
+        self.assertEqual(outcome.outlook, Outlook.STOPPED)
+        self.assertEqual(calls["runner"], 0)
+
+
+class TestHoldWeeks(unittest.TestCase):
+    """The max hold time (owner decisions 2026-08-08) threads through."""
+
+    def _run(self, **kwargs):
+        return run_tiered_analysis(
+            "AAPL",
+            market=Market.US,
+            providers=[_StubProvider("technicals", _dim("technicals"))],
+            analysis_runner=lambda symbol: _fake_analysis_result(),
+            signal_logger=lambda report, trace_id=None: None,
+            log_signal=False,
+            earnings_lookup=_no_earnings,
+            **kwargs,
+        )
+
+    def test_default_is_two_weeks(self):
+        outcome = self._run()
+        self.assertEqual(outcome.hold_weeks, 2)
+        self.assertEqual(outcome.final_report.hold_weeks, 2)
+
+    def test_chosen_hold_weeks_lands_on_outcome_and_report(self):
+        outcome = self._run(hold_weeks=4)
+        self.assertEqual(outcome.hold_weeks, 4)
+        self.assertEqual(outcome.final_report.hold_weeks, 4)
+
+    def test_invalid_hold_weeks_rejected(self):
+        with self.assertRaises(ValueError):
+            self._run(hold_weeks=5)

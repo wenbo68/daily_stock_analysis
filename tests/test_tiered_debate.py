@@ -1382,7 +1382,7 @@ class _FakeEngine:
         self._result = result
         self.calls = []
 
-    def run(self, symbol, tier1, dimensions):
+    def run(self, symbol, tier1, dimensions, hold_weeks=2):
         self.calls.append((symbol, len(list(dimensions))))
         return self._result
 

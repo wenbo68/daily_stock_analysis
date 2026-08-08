@@ -122,6 +122,11 @@ class MarketPhaseContext:
         }
 
 
+def calendar_available() -> bool:
+    """Public probe: is the exchange-calendars library importable?"""
+    return _XCALS_AVAILABLE
+
+
 def get_market_for_stock(code: str) -> Optional[str]:
     """
     Infer market region for a stock code.
@@ -398,6 +403,25 @@ def _session_open_close_for_today(
         _as_market_datetime(cal.session_open(session), tz_name),
         _as_market_datetime(cal.session_close(session), tz_name),
     )
+
+
+def get_session_window(
+    market: Optional[str], current_time: Optional[datetime] = None
+) -> Tuple[Optional[datetime], Optional[datetime]]:
+    """
+    Public wrapper: today's regular-session open/close in market-local time.
+
+    Returns (None, None) when today is not a trading session, the market is
+    unknown, or exchange-calendars is unavailable/errors (fail-open, logged).
+    """
+    if market not in MARKET_EXCHANGE:
+        return None, None
+    market_now = get_market_now(market, current_time=current_time)
+    try:
+        return _session_open_close_for_today(market, market_now)
+    except Exception as e:
+        logger.warning("trading_calendar.get_session_window fail-open: %s", e)
+        return None, None
 
 
 def _phase_minutes(

@@ -318,3 +318,62 @@ class TestEndToEndWithRealService:
         assert first.logged is True and first.created is True
         assert second.logged is True
         assert second.created is False  # existing signal reused, no dup row
+
+
+class TestScoreBand:
+    """The five score groups (owner decision 2026-08-08), aligned with
+    the debate's sell (<4) and buy (>6) verdict cutoffs."""
+
+    @pytest.mark.parametrize(
+        "score,band",
+        [
+            (0, "0-2"), (1.99, "0-2"),
+            (2, "2-4"), (3.99, "2-4"),
+            (4, "4-6"), (6, "4-6"),
+            (6.01, "6-8"), (8, "6-8"),
+            (8.01, "8-10"), (10, "8-10"),
+        ],
+    )
+    def test_band_edges(self, score, band):
+        from src.tiered_analysis.signal_log import score_band
+
+        assert score_band(score) == band
+
+    def test_out_of_range_and_missing_are_none(self):
+        from src.tiered_analysis.signal_log import score_band
+
+        assert score_band(None) is None
+        assert score_band(-1) is None
+        assert score_band(11) is None
+        assert score_band("garbage") is None
+
+
+class TestForwardTestMetadata:
+    """hold_weeks / horizon / final_score land on the payload (2026-08-08)."""
+
+    def test_hold_weeks_sets_horizon_and_metadata(self):
+        report = _report(hold_weeks=3)
+        payload, skip = build_signal_payload(report)
+        assert skip is None
+        assert payload["horizon"] == "15d"
+        assert payload["metadata"]["hold_weeks"] == 3
+        assert payload["metadata"]["horizon_days"] == 15
+
+    def test_no_hold_weeks_means_no_horizon(self):
+        payload, _ = build_signal_payload(_report())
+        assert "horizon" not in payload
+        assert "hold_weeks" not in payload["metadata"]
+
+    def test_debate_final_score_and_band_recorded(self):
+        report = _report(
+            tier=2,
+            debate_detail={"verdict": {"final_score": 7.37}},
+        )
+        payload, _ = build_signal_payload(report)
+        assert payload["metadata"]["final_score"] == pytest.approx(7.37)
+        assert payload["metadata"]["score_band"] == "6-8"
+
+    def test_no_debate_verdict_means_no_final_score(self):
+        payload, _ = build_signal_payload(_report())
+        assert "final_score" not in payload["metadata"]
+        assert "score_band" not in payload["metadata"]

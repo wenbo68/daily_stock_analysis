@@ -36,7 +36,9 @@ from src.utils.sanitize import sanitize_decision_signal_payload, sanitize_decisi
 SOURCE_TYPES = frozenset({"analysis", "agent", "alert", "market_review", "manual"})
 SIGNAL_STATUSES = frozenset({"active", "expired", "invalidated", "closed", "archived"})
 PLAN_QUALITIES = frozenset({"complete", "partial", "minimal", "unknown"})
-HORIZONS = frozenset({"intraday", "1d", "3d", "5d", "10d", "swing", "long"})
+HORIZONS = frozenset(
+    {"intraday", "1d", "3d", "5d", "10d", "15d", "20d", "swing", "long"}
+)
 MARKET_PHASES = frozenset(phase.value for phase in MarketPhase)
 DECISION_ACTIONS = frozenset(get_args(DecisionAction))
 REDACTION_MARKERS = ("[REDACTED]", "[REDACTED_URL]")

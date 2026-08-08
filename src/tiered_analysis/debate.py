@@ -98,7 +98,12 @@ from .llm_support import (
 )
 from .providers.base import DimensionResult
 from .providers.technicals import is_envelope
-from .schema import Direction, TierReport
+from .schema import (
+    DEFAULT_HOLD_WEEKS,
+    Direction,
+    TierReport,
+    hold_weeks_text,
+)
 
 #: Verdict bands on the 2-decimal final score (owner spec).
 SELL_BELOW = 4.0
@@ -345,10 +350,10 @@ def _value_in_text(value_text: str, sentence: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _CONTEXT_TEMPLATE = """Stock under debate: {symbol}
-This is a SWING TRADE: the position is held for days to weeks. Judge
-every piece of evidence against that horizon — use your own judgment
-about what matters at this timescale (owner decision 2026-07-29: the
-horizon is stated in words, not a numeric constant).
+This is a SWING TRADE held for up to {hold_text} (the user's chosen max
+hold time). Judge every piece of evidence against that horizon — use
+your own judgment about what matters at this timescale (owner decision
+2026-08-08: the same number drives the report and the forward test).
 Formula-computed plan levels: entry={entry}, backup={secondary_entry}, stop={stop_loss}, target={take_profit}
 
 Collected evidence (the ONLY facts you may use — no outside knowledge):
@@ -654,9 +659,11 @@ class DebateEngine:
         symbol: str,
         tier1: TierReport,
         dimensions: Sequence[DimensionResult],
+        hold_weeks: int = DEFAULT_HOLD_WEEKS,
     ) -> DebateResult:
         context = _CONTEXT_TEMPLATE.format(
             symbol=symbol,
+            hold_text=hold_weeks_text(hold_weeks),
             entry=tier1.levels.entry,
             secondary_entry=tier1.levels.secondary_entry,
             stop_loss=tier1.levels.stop_loss,

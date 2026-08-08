@@ -151,6 +151,18 @@ class DecisionSignalRepository:
                 select(DecisionSignalRecord).where(DecisionSignalRecord.id == signal_id).limit(1)
             ).scalar_one_or_none()
 
+    def list_by_ids(self, signal_ids: List[int]) -> List[DecisionSignalRecord]:
+        """Batch fetch by id (no status side effects) — stats joins only."""
+        if not signal_ids:
+            return []
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(DecisionSignalRecord).where(
+                    DecisionSignalRecord.id.in_(list(signal_ids))
+                )
+            ).scalars().all()
+            return list(rows)
+
     def list(
         self,
         *,

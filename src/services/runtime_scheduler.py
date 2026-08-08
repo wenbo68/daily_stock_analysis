@@ -96,6 +96,57 @@ def build_agent_event_monitor_background_tasks(
     }]
 
 
+def _decision_signal_outcome_interval_seconds(config: Config) -> int:
+    """Validated outcome-grading interval in seconds."""
+    interval_minutes = getattr(
+        config, "decision_signal_outcome_job_interval_minutes", 720
+    )
+    try:
+        interval_minutes = max(1, int(interval_minutes))
+    except (TypeError, ValueError):  # pragma: no cover - defensive branch
+        logger.warning(
+            "Invalid DECISION_SIGNAL_OUTCOME_JOB_INTERVAL_MINUTES=%r; use fallback 720",
+            interval_minutes,
+        )
+        interval_minutes = 720
+    return interval_minutes * 60
+
+
+def build_decision_signal_outcome_background_tasks(
+    config: Config,
+) -> List[Dict[str, Any]]:
+    """The forward-test grading job (2026-08-08): periodically grade
+    recorded decision signals against subsequent daily bars.
+
+    Idempotent — already-graded (signal, horizon) pairs are skipped and
+    not-yet-gradeable ones come back as retryable — so interval timing is
+    safe: a run before enough bars exist self-corrects on the next run.
+    """
+    if not getattr(config, "decision_signal_outcome_job_enabled", True):
+        return []
+
+    interval_seconds = _decision_signal_outcome_interval_seconds(config)
+
+    def outcome_job_task() -> None:
+        from src.services.decision_signal_outcome_service import (
+            DecisionSignalOutcomeService,
+        )
+
+        stats = DecisionSignalOutcomeService().run_outcomes(limit=200)
+        logger.info(
+            "[SignalOutcomes] evaluated=%s created=%s updated=%s skipped=%s",
+            stats.get("evaluated"), stats.get("created"),
+            stats.get("updated"), stats.get("skipped"),
+        )
+
+    return [{
+        "task": outcome_job_task,
+        "interval_seconds": interval_seconds,
+        "run_immediately": False,
+        "name": "decision_signal_outcomes",
+    }]
+
+
 class RuntimeSchedulerService:
     """Manage scheduled analysis inside the current API/Web/Desktop process."""
 
@@ -211,7 +262,41 @@ class RuntimeSchedulerService:
     def _current_background_tasks(self, config: Config) -> List[Dict[str, Any]]:
         if self._background_tasks_provider is not None:
             return self._background_tasks_provider(config)
-        return self._current_agent_event_monitor_background_tasks(config)
+        return (
+            self._current_agent_event_monitor_background_tasks(config)
+            + self._current_decision_signal_outcome_background_tasks(config)
+        )
+
+    def _current_decision_signal_outcome_background_tasks(
+        self, config: Config
+    ) -> List[Dict[str, Any]]:
+        name = "decision_signal_outcomes"
+        if not getattr(config, "decision_signal_outcome_job_enabled", True):
+            self._background_task_cache.pop(name, None)
+            self._background_task_registered_names.discard(name)
+            return []
+
+        cached = self._background_task_cache.get(name)
+        if cached is None:
+            entries = build_decision_signal_outcome_background_tasks(config)
+            if not entries:
+                self._background_task_cache.pop(name, None)
+                self._background_task_registered_names.discard(name)
+                return []
+            cached = dict(entries[0])
+            cached["name"] = name
+            self._background_task_cache[name] = cached
+            interval_seconds = int(cached["interval_seconds"])
+        else:
+            interval_seconds = _decision_signal_outcome_interval_seconds(config)
+
+        self._background_task_registered_names.add(name)
+        return [{
+            "task": cached["task"],
+            "interval_seconds": interval_seconds,
+            "run_immediately": False,
+            "name": name,
+        }]
 
     def _current_agent_event_monitor_background_tasks(self, config: Config) -> List[Dict[str, Any]]:
         name = "agent_event_monitor"

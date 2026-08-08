@@ -25,12 +25,14 @@ router = APIRouter()
 
 
 def _run_analysis(stock_code: str, depth: int = 1,
-                  sizing_overrides: Optional[Dict[str, float]] = None):
+                  sizing_overrides: Optional[Dict[str, float]] = None,
+                  hold_weeks: int = 2):
     """Indirection so tests can patch the multi-minute production run."""
     from src.tiered_analysis.integration import run_tiered_analysis
 
     return run_tiered_analysis(
-        stock_code, depth=depth, sizing_overrides=sizing_overrides
+        stock_code, depth=depth, sizing_overrides=sizing_overrides,
+        hold_weeks=hold_weeks,
     )
 
 
@@ -53,6 +55,12 @@ class TieredAnalyzeRequest(BaseModel):
     #: (outlook redesign) — depth 3 is a validation error, not a clamp.
     depth: int = Field(default=1, ge=1, le=2)
     sizing: Optional[SizingOverride] = None
+    #: Max hold time in weeks (2026-08-08): the horizon the AI judges
+    #: against, shown on the report and used as the grading window.
+    hold_weeks: int = Field(default=2, ge=1, le=4)
+    #: Clock-gate override ("run anyway"): start during the trading day,
+    #: analyzing the PREVIOUS completed session's close.
+    run_anyway: bool = False
 
     @field_validator("stock_code")
     @classmethod
@@ -173,14 +181,19 @@ def _serialize_outcome(outcome: Any) -> Dict[str, Any]:
         # Plan review (additive): structured per-column trade-plan
         # warnings — numbers only, the frontend words them.
         "plan_warnings": outcome.plan_warnings,
+        # Max hold time (additive, 2026-08-08): the horizon in weeks the
+        # AI was judged against; absent on old stored runs.
+        "hold_weeks": getattr(outcome, "hold_weeks", None),
     }
 
 
 def _run_task(task_id: str, stock_code: str, depth: int = 1,
-              sizing_overrides: Optional[Dict[str, float]] = None) -> None:
+              sizing_overrides: Optional[Dict[str, float]] = None,
+              hold_weeks: int = 2) -> None:
     try:
         outcome = _run_analysis(stock_code, depth=depth,
-                                sizing_overrides=sizing_overrides)
+                                sizing_overrides=sizing_overrides,
+                                hold_weeks=hold_weeks)
         history.mark_done(task_id, _serialize_outcome(outcome))
     except Exception as exc:
         logger.error("tiered analysis task failed for %s: %s",
@@ -212,12 +225,32 @@ def _effective_run_inputs(request: TieredAnalyzeRequest) -> Dict[str, Any]:
         "capital": settings.capital,
         "risk_fraction": settings.risk_fraction,
         "reward_risk": settings.reward_risk,
+        "hold_weeks": request.hold_weeks,
     }
 
 
 @router.post("/analyze", status_code=202)
 def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
-    """Kick off a tiered run in the background; returns a pollable task."""
+    """Kick off a tiered run in the background; returns a pollable task.
+
+    CLOCK GATE (2026-08-08): runs are rejected (409) from market open
+    until 30 minutes past the close in the exchange's own timezone — the
+    app analyzes completed trading days only. ``run_anyway: true``
+    overrides and analyzes the previous completed session instead.
+    """
+    from src.tiered_analysis.run_gate import clock_gate
+
+    gate = clock_gate(request.stock_code, override=request.run_anyway)
+    if gate.blocked:
+        logger.info(
+            "tiered run blocked by clock gate for %s (%s)",
+            request.stock_code, gate.detail,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "market_open", "market": gate.market},
+        )
+
     task_id = uuid.uuid4().hex
     history.create_run(task_id, request.stock_code,
                        inputs=_effective_run_inputs(request))
@@ -226,7 +259,8 @@ def start_tiered_analysis(request: TieredAnalyzeRequest) -> Dict[str, Any]:
         sizing_overrides = request.sizing.model_dump(exclude_none=True) or None
     worker = threading.Thread(
         target=_run_task,
-        args=(task_id, request.stock_code, request.depth, sizing_overrides),
+        args=(task_id, request.stock_code, request.depth, sizing_overrides,
+              request.hold_weeks),
         name=f"tiered-analysis-{request.stock_code}",
         daemon=True,
     )

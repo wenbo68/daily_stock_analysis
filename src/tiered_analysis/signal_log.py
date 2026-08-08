@@ -25,7 +25,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from .providers.base import Coverage, Market
-from .schema import Direction, TierReport, coerce_price
+from .schema import (
+    TRADING_DAYS_PER_WEEK,
+    Direction,
+    TierReport,
+    coerce_price,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,33 @@ _COVERAGE_TO_QUALITY = {
     Coverage.PARTIAL: "low",
     Coverage.UNAVAILABLE: "poor",
 }
+
+
+def score_band(final_score: Any) -> Optional[str]:
+    """Score group for the forward-test breakdown (owner decision
+    2026-08-08): the debate's sell (<4) and buy (>6) verdict regions are
+    each split in half so "does an 8-10 beat a 6-8?" is answerable; the
+    4-6 hold region stays whole as the control group. Keep the 4/6 edges
+    aligned with debate.SELL_BELOW / debate.HOLD_MAX."""
+    number = coerce_price(final_score)
+    if number is None or not 0.0 <= number <= 10.0:
+        return None
+    if number < 2.0:
+        return "0-2"
+    if number < 4.0:
+        return "2-4"
+    if number <= 6.0:
+        return "4-6"
+    if number <= 8.0:
+        return "6-8"
+    return "8-10"
+
+
+def debate_final_score(report: TierReport) -> Optional[float]:
+    """The deep analysis's 0-10 weighted vote score, when the run has one."""
+    detail = report.debate_detail or {}
+    verdict = detail.get("verdict") or {}
+    return coerce_price(verdict.get("final_score"))
 
 
 @dataclass(frozen=True)
@@ -121,6 +153,24 @@ def build_signal_payload(
             "sizing_empty": report.sizing.is_empty,
         },
     }
+    # Max hold time (2026-08-08): the grading window travels WITH the
+    # signal so the forward test scores each call at the horizon the AI
+    # was actually judged against.
+    if report.hold_weeks is not None:
+        horizon_days = report.hold_weeks * TRADING_DAYS_PER_WEEK
+        payload["metadata"]["hold_weeks"] = report.hold_weeks
+        payload["metadata"]["horizon_days"] = horizon_days
+        # The signal's own horizon column: the outcome job grades a
+        # signal at exactly this window when set, so the forward test
+        # scores the call at the hold time the AI was judged against.
+        payload["horizon"] = f"{horizon_days}d"
+    # Score calibration (2026-08-08): the debate's weighted vote score —
+    # the number the score-band stats group by. The top-level "score"
+    # column keeps its historical tier-1 meaning untouched.
+    final_score = debate_final_score(report)
+    if final_score is not None:
+        payload["metadata"]["final_score"] = final_score
+        payload["metadata"]["score_band"] = score_band(final_score)
     if not report.sizing.is_empty:
         # Slice 6: the ledger records the position the user actually saw,
         # so v3's backtest can grade it. shares == 0 is meaningful ("the

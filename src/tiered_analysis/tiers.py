@@ -47,6 +47,9 @@ class TierState:
     #: Shares of this stock the user already holds (per-run input, 0 =
     #: none) — drives the action table and the sell share count.
     ownership: int = 0
+    #: Max hold time in weeks (per-run input, 2026-08-08): the debate
+    #: judges evidence against this horizon and the grader scores at it.
+    hold_weeks: int = 2
 
 
 class TierStage(ABC):
@@ -190,7 +193,9 @@ class Tier2Stage(TierStage):
             from .debate import DebateEngine
 
             engine = DebateEngine()
-        result = engine.run(state.symbol, foundation, dimensions)
+        result = engine.run(
+            state.symbol, foundation, dimensions, hold_weeks=state.hold_weeks
+        )
 
         if result.verdict is None:
             return self._failed(

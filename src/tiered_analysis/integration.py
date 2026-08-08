@@ -45,8 +45,16 @@ from .providers.base import (
     Market,
 )
 from .providers.registry import detect_market, get_providers
-from .providers.technicals import Bar, read_metric
+from .providers.technicals import Bar, read_label, read_metric
+from .run_gate import (
+    expected_bar_date,
+    market_for_symbol,
+    staleness_stop_reason,
+    trim_incomplete_bars,
+)
 from .schema import (
+    DEFAULT_HOLD_WEEKS,
+    HOLD_WEEKS_CHOICES,
     Action,
     Direction,
     Outlook,
@@ -84,7 +92,7 @@ def dsa_bars_loader(symbol: str, manager: Any = None) -> List[Bar]:
 
     frame = df.dropna(subset=["open", "high", "low", "close"])
     frame = frame.sort_values("date")
-    return [
+    bars = [
         Bar(
             high=float(row["high"]),
             low=float(row["low"]),
@@ -95,6 +103,11 @@ def dsa_bars_loader(symbol: str, manager: Any = None) -> List[Bar]:
         )
         for row in frame.to_dict("records")
     ]
+    # Some vendors include today's half-finished bar during the trading
+    # day; the analysis must only ever see completed sessions (run-gate
+    # design, 2026-08-08). Unknown markets are left untrimmed.
+    expected = expected_bar_date(market_for_symbol(symbol))
+    return trim_incomplete_bars(bars, expected)
 
 
 def dsa_analysis_runner(symbol: str) -> Any:
@@ -158,6 +171,9 @@ class TieredRunOutcome:
     #: trade-plan card — {"entry"|"stop_loss"|"take_profit"|"shares":
     #: [{"id", "values"}]}. None when the run produced no buy plan.
     plan_warnings: Optional[Dict[str, Any]] = None
+    #: Max hold time in weeks (per-run input, 2026-08-08) — echoed back so
+    #: the report can display the horizon the AI was judged against.
+    hold_weeks: int = DEFAULT_HOLD_WEEKS
 
     def __post_init__(self) -> None:
         if self.final_report is None:
@@ -198,6 +214,60 @@ def _technicals_atr(dimensions: Sequence[DimensionResult]) -> Optional[float]:
         if dim.dimension == "technicals" and dim.payload:
             return read_metric(dim.payload, "volatility", "atr_14")
     return None
+
+
+def _technicals_as_of(dimensions: Sequence[DimensionResult]) -> Optional[str]:
+    """The "bars up to" date the technicals provider computed from.
+
+    ``meta.as_of`` is a date STRING ("YYYY-MM-DD"), so it needs the label
+    reader — ``read_metric`` drops anything non-numeric and would hand the
+    staleness gate a permanent None (every run stopped, 2026-08-08).
+    """
+    for dim in dimensions:
+        if dim.dimension == "technicals" and dim.payload:
+            return read_label(dim.payload, "meta", "as_of")
+    return None
+
+
+def _stopped_outcome(
+    symbol: str,
+    market: Market,
+    dimensions: List[DimensionResult],
+    depth: int,
+    hold_weeks: int,
+    tracker: LlmUsageTracker,
+) -> TieredRunOutcome:
+    """A run halted by the staleness gate: data cards only, no verdict.
+
+    The outlook IS the whole user-facing story (owner decision
+    2026-08-08): no analysis or plan sections exist, no message is shown,
+    no signal is logged (direction stays UNKNOWN), and the stop reason
+    lives in the server log only.
+    """
+    report = TierReport(
+        tier=1,
+        symbol=symbol,
+        market=market,
+        coverage=_merge_coverage(Coverage.FULL, dimensions),
+        direction=Direction.UNKNOWN,
+        dimensions=dimensions,
+        hold_weeks=hold_weeks,
+    )
+    state = TierState(symbol=symbol, market=market, hold_weeks=hold_weeks)
+    state.reports[1] = report
+    state.dimensions = list(dimensions)
+    return TieredRunOutcome(
+        report=report,
+        state=state,
+        signal=None,
+        depth=depth,
+        final_report=report,
+        sizing=None,
+        llm_usage=tracker.to_detail(),
+        outlook=Outlook.STOPPED,
+        action=Action.UNKNOWN,
+        hold_weeks=hold_weeks,
+    )
 
 
 #: The run-detail earnings block reads the same shared helper the plan
@@ -264,6 +334,8 @@ def run_tiered_analysis(
     earnings_lookup: Optional[Callable[[str, Market], EarningsInfo]] = None,
     plan_summarizer: Optional[Callable[[str], str]] = None,
     cross_bars_loader: Optional[Callable[[str], List[Bar]]] = None,
+    hold_weeks: int = DEFAULT_HOLD_WEEKS,
+    staleness_gate: Optional[bool] = None,
 ) -> TieredRunOutcome:
     """Run one symbol at ``depth`` with full production wiring.
 
@@ -286,8 +358,18 @@ def run_tiered_analysis(
     """
     if depth not in SUPPORTED_DEPTHS:
         raise ValueError(f"depth must be one of {SUPPORTED_DEPTHS}, got {depth}")
+    if hold_weeks not in HOLD_WEEKS_CHOICES:
+        raise ValueError(
+            f"hold_weeks must be one of {HOLD_WEEKS_CHOICES}, got {hold_weeks}"
+        )
     if market is None:
         market = detect_market(symbol)
+    # The staleness gate runs with production wiring only (injected
+    # providers mean a test harness with canned as-of dates), unless the
+    # caller opts in/out explicitly — same convention as cross-field
+    # enrichment below.
+    if staleness_gate is None:
+        staleness_gate = providers is None
     # Cross-provider enrichment (sector comparison, implied/realized
     # ratio) runs only with production wiring: injected providers mean
     # a test harness whose canned payloads must pass through untouched
@@ -316,6 +398,26 @@ def run_tiered_analysis(
         dimensions = _collect_dimensions(providers, symbol)
         dimensions = enrich_cross_fields(dimensions, cross_bars_loader)
 
+        # STALENESS GATE (2026-08-08): stop BEFORE any LLM stage when the
+        # newest completed bar predates the most recent completed trading
+        # session — no analysis money is spent on yesterday's leftovers.
+        # A clock-gate "run anyway" during the trading day expects the
+        # PREVIOUS session's bar and passes here; only a lagging vendor
+        # stops a run, and there is deliberately no override for that.
+        if staleness_gate:
+            stop_reason = staleness_stop_reason(
+                _technicals_as_of(dimensions), market_for_symbol(symbol)
+            )
+            if stop_reason is not None:
+                logger.warning(
+                    "tiered run stopped for %s before LLM stages: %s",
+                    symbol,
+                    stop_reason,
+                )
+                return _stopped_outcome(
+                    symbol, market, dimensions, depth, hold_weeks, tracker
+                )
+
         # Formula-only levels: deterministic bases from the technicals
         # payload; the adjustment machinery runs with zero proposals so
         # the audit-trail shape (base/formula/inputs per level) stays.
@@ -338,7 +440,7 @@ def run_tiered_analysis(
         )
         extra_warnings = level_warnings
 
-        state = TierState(symbol=symbol, market=market)
+        state = TierState(symbol=symbol, market=market, hold_weeks=hold_weeks)
         if depth == 1:
             tier1 = Tier1Stage(analysis_runner=analysis_runner).run(state)
             report = replace(
@@ -384,7 +486,7 @@ def run_tiered_analysis(
                 review = review_plan(
                     symbol, dimensions, bases, final.direction, market,
                     sizing_settings, ownership=sizing_settings.ownership,
-                    summarizer=plan_summarizer,
+                    summarizer=plan_summarizer, hold_weeks=hold_weeks,
                 )
 
     plan_warnings: Optional[Dict[str, Any]] = None
@@ -406,7 +508,7 @@ def run_tiered_analysis(
         plan_warnings = review.plan_warnings
     else:
         sizing_detail, sizing_slots = _sizing_block(final, market, sizing_settings)
-    final = replace(final, sizing=sizing_slots)
+    final = replace(final, sizing=sizing_slots, hold_weeks=hold_weeks)
     if not final.dimensions:
         # Tier-2 reports are built lean; the deepest report carries the
         # evidence so the signal ledger and consumers see it.
@@ -434,4 +536,5 @@ def run_tiered_analysis(
         action=action,
         earnings=earnings,
         plan_warnings=plan_warnings,
+        hold_weeks=hold_weeks,
     )

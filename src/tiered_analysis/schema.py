@@ -16,6 +16,20 @@ from typing import Any, Dict, List, Optional
 from .providers.base import Coverage, DimensionResult, Market
 
 
+#: Max hold time (owner decision 2026-08-08, supersedes the 2026-07-29
+#: words-only rule): the user picks how long they plan to hold at most,
+#: in weeks; the SAME number feeds the AI prompts, the report, the saved
+#: signal and the forward-test grading window so they stay on one page.
+HOLD_WEEKS_CHOICES = (1, 2, 3, 4)
+DEFAULT_HOLD_WEEKS = 2
+TRADING_DAYS_PER_WEEK = 5
+
+
+def hold_weeks_text(hold_weeks: int) -> str:
+    """Human wording for the max hold time ("1 week", "3 weeks")."""
+    return f"{hold_weeks} week" + ("" if hold_weeks == 1 else "s")
+
+
 class Direction(str, Enum):
     """Normalized trade direction, mapped from DSA's decision_type."""
 
@@ -43,6 +57,11 @@ class Outlook(str, Enum):
     NEUTRAL = "neutral"
     BEARISH = "bearish"
     UNKNOWN = "unknown"
+    #: Staleness gate (2026-08-08): the run stopped BEFORE any LLM stage
+    #: because the newest daily bar predates the most recent completed
+    #: trading session. No analysis or plan exists; the outlook itself is
+    #: the whole user-facing story (the reason lives in logs only).
+    STOPPED = "stopped"
 
     @classmethod
     def from_direction(cls, direction: Direction) -> "Outlook":
@@ -179,3 +198,6 @@ class TierReport:
     #: v2 slice 5 audit trail (tier-3 reports only): persona takes + risk
     #: judge verdict (size multiplier, stop advice). JSON-ready dict.
     risk_detail: Optional[Dict[str, Any]] = None
+    #: Max hold time in weeks the run was judged against (2026-08-08);
+    #: None on reports stored before the hold-time picker existed.
+    hold_weeks: Optional[int] = None

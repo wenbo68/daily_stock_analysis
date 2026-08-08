@@ -905,7 +905,7 @@ class FundamentalsUSProvider(DimensionProvider):
 
         return {
             "revenue_yoy_q": make_metric(
-                "quarterly sales (yoy)",
+                "quarterly sales (YoY)",
                 "Latest reported quarter's sales versus the same "
                 "quarter last year, in %.",
                 _round(revenue.get("yoy")),
@@ -927,7 +927,7 @@ class FundamentalsUSProvider(DimensionProvider):
                 ),
             ),
             "eps_yoy_q": make_metric(
-                "quarterly EPS (yoy)",
+                "quarterly EPS (YoY)",
                 "Latest reported quarter's earnings per share (EPS) "
                 "versus the same quarter last year, in %.",
                 _round(eps.get("yoy")),

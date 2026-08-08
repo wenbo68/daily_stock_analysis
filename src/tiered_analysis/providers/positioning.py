@@ -45,6 +45,15 @@ render theirs from their saved payloads):
 - ``implied_vol_rank_1y`` — needs a year of implied-volatility history;
   no free source publishes it and the system stores none.
 
+``options_fetched_at`` was dropped the same way (owner decision
+2026-08-08). It recorded the clock moment the board was pulled, on the
+theory that options are the one near-live block while everything else
+is dated by its own source. The run gate landed that day and blocks
+every run until 30 minutes past the close, so the board is now always
+the frozen close — the same session ``meta.as_of`` already names on the
+technicals report. The field could only ever repeat the run's own date
+or, worse, contradict it (a Saturday 04:31 ET stamp on Friday's close).
+
 Each block failing degrades coverage explicitly (partial/unavailable
 with warnings) — an ok-but-empty response is treated as missing, never
 as a silent blank. Zero counts are real only when computed from actual
@@ -654,7 +663,6 @@ class PositioningUSProvider(DimensionProvider):
         options, report_move = self._options_blocks(
             symbol, board, warnings, field_notes
         )
-
         # Group order = display order (TODO.md final-truth list).
         payload: Dict[str, Any] = {
             "meta": self._meta_group(ownership, short, options, formulas),
@@ -1168,6 +1176,21 @@ class PositioningUSProvider(DimensionProvider):
                 },
             }
         return {
+            # Field order = TODO.md truth-spec order: the trust meter
+            # leads, then the two ratios it qualifies.
+            "total_open_interest": make_metric(
+                "total held options",
+                "Total option contracts currently held open (puts plus "
+                "calls) over the covered expirations — not the number "
+                "of listed option products, and not trading volume.",
+                options.get("total_open_interest"),
+                interpretation=(
+                    "A trust meter for the two ratios below: big = a "
+                    "liquid, well-watched options market whose ratios "
+                    "mean something; tiny = the ratios are noise — "
+                    "ignore the group."
+                ),
+            ),
             "put_call_oi_ratio": make_metric(
                 "puts to calls (held)",
                 "All outstanding put contracts (bets on a fall / "
@@ -1191,19 +1214,6 @@ class PositioningUSProvider(DimensionProvider):
                     "When today's flow diverges from the held ratio "
                     "above, sentiment is turning right now — the held "
                     "ratio is the climate, this is the weather."
-                ),
-            ),
-            "total_open_interest": make_metric(
-                "total held options",
-                "Total option contracts currently held open (puts plus "
-                "calls) over the covered expirations — not the number "
-                "of listed option products, and not trading volume.",
-                options.get("total_open_interest"),
-                interpretation=(
-                    "A trust meter for the two ratios above: big = a "
-                    "liquid, well-watched options market whose ratios "
-                    "mean something; tiny = the ratios are noise — "
-                    "ignore the group."
                 ),
             ),
             "implied_vol_pct": make_metric(

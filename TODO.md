@@ -3,6 +3,7 @@
     - if good enough, we can connect our system to real trading platforms to automate transactions
   - allow users to enter their entire portfolio for portfolio level decisions
   - agent that has access to all system apis so that it can read from and write to the system
+  - allow scheduled (daily) tiered runs
   - currently the system only really support swing (and maybe position) trading
     - holding times for different trades
       - scalping: seconds to minutes
@@ -11,8 +12,6 @@
       - position: weeks to months
       - investing: years
     - scalping/day trading needs real time data pipelines; investing needs valuation info & judgement
-  - hold window: RESOLVED (owner decision 2026-07-29) — no numeric constant and no new user input
-    - the app is swing trading only, so the AI prompts state the horizon in words ("swing trade, held days to weeks") and the AI uses its own judgement; the only place a number is needed is the deterministic event warnings (earnings_soon uses the 7-day EARNINGS_WARNING_DAYS; a future macro_event_soon should reuse the same constant)
 
 ---
 use this as the final truth:
@@ -106,7 +105,6 @@ use this as the final truth:
     - options betting up to
   - ownership structure
     - institutional ownership
-    - institutional ownership diff (current vs prev quarter)
     - top-10 institutional ownership
     - insider ownership: explain who counts as insider in tooltip
     - float
@@ -123,7 +121,6 @@ use this as the final truth:
     - puts to calls (held)
     - puts to calls (traded today)
     - implied stock volatility: say at the money in tooltip and explain what it doesn't count
-    - implied stock volatility ranking (1y range)
     - implied quarterly report day price change magnitude
     - quarterly report day price change magnitude ratio (implied vs 4q avg)
 - macro econ

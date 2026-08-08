@@ -1492,6 +1492,15 @@ def main() -> int:
                     "name": "agent_event_monitor",
                 })
 
+            if getattr(config, 'decision_signal_outcome_job_enabled', True):
+                from src.services.runtime_scheduler import (
+                    build_decision_signal_outcome_background_tasks,
+                )
+
+                background_tasks.extend(
+                    build_decision_signal_outcome_background_tasks(config)
+                )
+
             schedule_kwargs = {
                 "task": scheduled_task,
                 "schedule_time": config.schedule_time,
