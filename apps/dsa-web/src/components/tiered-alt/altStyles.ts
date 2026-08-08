@@ -19,6 +19,9 @@ export const OUTLOOK_TEXT: Record<string, string> = {
   neutral: 'text-amber-300',
   bearish: 'text-red-300',
   unknown: 'text-gray-400',
+  // Staleness gate (2026-08-08): the run halted before any analysis —
+  // deliberately plain, neither a verdict color nor the failure red.
+  stopped: 'text-gray-300',
 };
 
 // -300 shades on purpose: the app-wide index.css redefines

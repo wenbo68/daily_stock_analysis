@@ -39,7 +39,7 @@ function makeFundamentals(): TieredDimension {
         fcf_to_earnings_pct: env('free cash flow to earnings', 123.75),
       },
       growth: {
-        revenue_yoy_q: env('quarterly sales (yoy)', 20),
+        revenue_yoy_q: env('quarterly sales (YoY)', 20),
         revenue_growth_trend: env('growth trend (sales)', 'accelerating'),
       },
       valuation: {
@@ -150,7 +150,10 @@ describe('AltDimensions — fundamentals v3', () => {
     const modal = screen.getByTestId('alt-metric-blank-modal');
     // The per-field reason from metricLabels, not the generic fallback.
     expect(modal.textContent).toMatch(/No analyst estimates were available/);
-    expect(screen.getByText('90d EPS estimate change: why blank')).toBeInTheDocument();
+    // Title is two styled parts now (subject + kind), not one string.
+    expect(within(screen.getByRole('dialog')).getByRole('heading')).toHaveTextContent(
+      /90d EPS estimate change\s*why blank/,
+    );
   });
 
   it('opens the quarterly-growth receipt with named statement ingredients', () => {
@@ -178,11 +181,11 @@ describe('AltDimensions — fundamentals v3', () => {
     fireEvent.click(screen.getByTestId('alt-metric-formula-revenue_growth_trend'));
     const modal = screen.getByTestId('alt-metric-formula-modal');
     // The ingredient carries the field's display name, not a helper name…
-    expect(within(modal).getAllByText('Quarterly sales (yoy)').length).toBeGreaterThan(0);
+    expect(within(modal).getAllByText('Quarterly sales (YoY)').length).toBeGreaterThan(0);
     expect(within(modal).queryByText(/latest quarter YoY/)).toBeNull();
     // …and its plugged number is a jump button back to the row.
     expect(
-      within(modal).getAllByRole('button', { name: 'Quarterly sales (yoy)' }).length,
+      within(modal).getAllByRole('button', { name: 'Quarterly sales (YoY)' }).length,
     ).toBeGreaterThan(0);
     expect(
       within(modal).getAllByText("prior quarter's yoy growth").length,
@@ -210,7 +213,7 @@ describe('AltDimensions — fundamentals v3', () => {
 
   it('shows Meaning + Interpretation blocks in the label tooltip', () => {
     renderFundamentals();
-    const label = screen.getAllByText('Quarterly sales (yoy)')[0];
+    const label = screen.getAllByText('Quarterly sales (YoY)')[0];
     fireEvent.mouseEnter(label.closest('span[class*="inline-flex"]') ?? label);
     const tooltip = screen.getByRole('tooltip');
     expect(within(tooltip).getByText('Meaning:')).toBeInTheDocument();

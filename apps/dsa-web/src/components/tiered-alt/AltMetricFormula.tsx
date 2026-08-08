@@ -9,7 +9,7 @@ import { formatValue, jumpToMetric } from '../tiered/termHelpers';
 import { formatMetricValue } from './altFormat';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import { friendlyWarning } from './altWarningText';
-import { AltModal, FVar, MODAL_STRONG } from './AltUi';
+import { AltModal, AltModalTitle, FVar, MODAL_STRONG } from './AltUi';
 
 // A technicals metric value with its computation receipt: clicking the
 // value (a number OR a rule-derived label like "bullish") opens the
@@ -260,6 +260,12 @@ interface AltFieldNotesProps {
 // altWarningText; a blank field without run notes falls back to the
 // static "why this can be blank" text from metricLabels. A published
 // value with no notes gets no mark at all.
+//
+// The TITLE follows the value, not the body (owner request 2026-08-08):
+// a blank field always reads "why blank" — whether the explanation is
+// this run's own note or the static fallback — and a field that kept its
+// value reads "warnings", because there the note is a caveat about a
+// number that IS there (short history behind a one-year field, say).
 export const AltFieldNotes = ({ term, notes, isBlank }: AltFieldNotesProps) => {
   const { t, language } = useUiLanguage();
   const [isOpen, setIsOpen] = useState(false);
@@ -274,7 +280,7 @@ export const AltFieldNotes = ({ term, notes, isBlank }: AltFieldNotesProps) => {
       <button
         type="button"
         data-testid={`alt-field-notes-${term}`}
-        aria-label={t('tiered.dataNotes')}
+        aria-label={t('tiered.warnings')}
         onClick={() => setIsOpen(true)}
         className={cn(
           'ml-1 inline-flex cursor-pointer items-center rounded align-middle',
@@ -285,10 +291,12 @@ export const AltFieldNotes = ({ term, notes, isBlank }: AltFieldNotesProps) => {
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t(
-          hasNotes ? 'tiered.alt.fieldNotesTitle' : 'tiered.alt.blankTitle',
-          { label },
-        )}
+        title={
+          <AltModalTitle
+            subject={label}
+            kind={t(isBlank ? 'tiered.alt.kind.whyBlank' : 'tiered.alt.kind.warnings')}
+          />
+        }
         onClose={() => setIsOpen(false)}
         panelClassName="w-fit min-w-72 max-w-md"
       >
@@ -415,7 +423,7 @@ export const AltMetricValue = ({ term, value, formula }: AltMetricValueProps) =>
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.levelModal.formulaTitle', { level: label })}
+        title={<AltModalTitle subject={label} kind={t('tiered.alt.kind.formula')} />}
         onClose={close}
         // Fit the widest receipt line; each line stays a single line.
         panelClassName="w-fit min-w-72 max-w-[95vw]"

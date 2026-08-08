@@ -47,6 +47,25 @@ export const AltSectionLabel = ({ children }: { children: ReactNode }) => (
   <div className="mb-1 text-xs font-semibold text-gray-500">{children}</div>
 );
 
+// Every popup title on the alt page names two things: WHAT the popup is
+// about (a metric, a plan level, a check) and WHICH KIND of popup it is
+// (formula / adjustment / warnings / why blank / a verdict). They used to
+// run together as one "subject: kind" sentence, which read as a single
+// long label. Owner request 2026-08-08: split them, and always onto TWO
+// LINES — subject first, kind under it — so the shape of the header is
+// identical in every popup no matter how long either part is. The subject
+// keeps the panel's largest, brightest type; the kind sits below as a
+// small tracked uppercase tag in the muted body gray. Hierarchy by scale
+// and weight, no new accent color competing with the amber note mark.
+export const AltModalTitle = ({ subject, kind }: { subject: ReactNode; kind: ReactNode }) => (
+  <span className="flex flex-col gap-0.5">
+    <span className="text-base font-semibold leading-tight text-gray-100">{subject}</span>
+    <span className="text-[11px] font-semibold uppercase leading-tight tracking-[0.14em] text-gray-500">
+      {kind}
+    </span>
+  </span>
+);
+
 // A quiet inline fold (debate transcript, scoring breakdown).
 export const AltFold = ({ title, children }: { title: string; children: ReactNode }) => (
   <details className="mt-4 rounded bg-gray-900/60 px-4 py-3">
@@ -128,7 +147,7 @@ export const AltNotesButton = ({ notes, coverage = 'full' }: AltNotesButtonProps
       <button
         type="button"
         data-testid="alt-notes-button"
-        aria-label={t('tiered.dataNotes')}
+        aria-label={t('tiered.warnings')}
         onClick={() => setIsOpen(true)}
         className={cn(
           'inline-flex cursor-pointer items-center rounded',

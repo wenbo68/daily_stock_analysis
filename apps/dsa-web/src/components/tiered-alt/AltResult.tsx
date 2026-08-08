@@ -148,6 +148,9 @@ const AltConclusion = ({ result, runDate }: AltConclusionProps) => {
   const outlook = result.outlook ?? 'unknown';
   const action = result.action ?? 'unknown';
   const stale = runDate ? isFromPreviousDay(runDate) : false;
+  // A stopped run (staleness gate) has no analysis behind it: the
+  // outlook word IS the whole story — no action, no hold time, no note.
+  const stopped = outlook === 'stopped';
   return (
     <AltCard testId="alt-conclusion">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
@@ -156,11 +159,20 @@ const AltConclusion = ({ result, runDate }: AltConclusionProps) => {
             {t(`tiered.outlook.${outlook}` as UiTextKey)}
           </span>
         </AltFact>
-        <AltFact label={t('tiered.alt.action')} helpKey="tiered.help.action">
-          {t(`tiered.action.${action}` as UiTextKey)}
-        </AltFact>
+        {!stopped ? (
+          <AltFact label={t('tiered.alt.action')} helpKey="tiered.help.action">
+            {t(`tiered.action.${action}` as UiTextKey)}
+          </AltFact>
+        ) : null}
+        {!stopped && result.hold_weeks != null ? (
+          <AltFact label={t('tiered.alt.holdTime')} helpKey="tiered.help.hold">
+            {t(
+              `tiered.altForm.holdOption${result.hold_weeks}` as UiTextKey,
+            )}
+          </AltFact>
+        ) : null}
       </div>
-      {stale ? (
+      {stale && !stopped ? (
         <p className="mt-2 text-xs text-amber-300" data-testid="alt-stale-note">
           {t('tiered.alt.staleNote')}
         </p>
@@ -674,8 +686,9 @@ export const AltResult = ({ result, taskId, runDate }: AltResultProps) => {
       <AltBlock title={t('tiered.alt.dimensionsTitle')}>
         <AltDimensions dimensions={result.dimensions} />
       </AltBlock>
-      {result.outlook && !result.tier2 ? (
+      {result.outlook && result.outlook !== 'stopped' && !result.tier2 ? (
         // Depth-1 outlook runs: the verdict card first, the plan below.
+        // Stopped runs (staleness gate) show no analysis card at all.
         <AltBlock title={t('tiered.alt.tier1Title')} helpKey="tiered.help.tier1">
           <AltTierOneVerdict result={result} />
         </AltBlock>

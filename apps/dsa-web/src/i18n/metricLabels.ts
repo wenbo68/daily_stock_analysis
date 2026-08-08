@@ -302,7 +302,7 @@ const en: Record<string, MetricEntry> = {
     blank: 'The RSI or MACD gauge behind it is unavailable because the history is too short.',
   },
   atr_pct: {
-    short: '14d ATR (% of price)',
+    short: '14d ATR (% of closing price)',
     full: 'The normal daily move as a percent of the price — lets you compare a $10 stock with a $500 stock.\nUnit: percent; typically 1 to 6.',
     interp: 'Above ~6 = a wild stock; consider a smaller position.',
     blank: 'Fewer than about 15 days of price history were loaded, so the normal daily move cannot be measured.',
@@ -446,7 +446,7 @@ const en: Record<string, MetricEntry> = {
     full: 'Quarterly growth from the latest official SEC filings — the freshest read on whether the business is expanding.',
   },
   revenue_yoy_q: {
-    short: 'Quarterly sales (yoy)',
+    short: 'Quarterly sales (YoY)',
     full: "The latest quarter's sales compared with the same quarter last year.\nUnit: percent.",
     interp: 'Positive and rising = an expanding business; the direction of change matters more than the level.',
     blank: "The SEC filings were unavailable, or there is no same-quarter-last-year sales figure to compare against.",
@@ -458,7 +458,7 @@ const en: Record<string, MetricEntry> = {
     blank: "Needs the previous quarter's growth rate too — blank when either quarter's year-over-year sales comparison is unavailable.",
   },
   eps_yoy_q: {
-    short: 'Quarterly EPS (yoy)',
+    short: 'Quarterly EPS (YoY)',
     full: "The latest quarter's earnings per share (EPS — the quarter's earnings divided by the share count) compared with the same quarter last year.\nUnit: percent.",
     interp: 'Can differ from sales growth when margins or the share count change — share buybacks boost it, issuing new shares drags it.',
     blank: "The SEC filings were unavailable, there is no same-quarter-last-year EPS, or last year's EPS was so close to zero (under $0.05) that a percent change would be meaningless.",
@@ -626,6 +626,7 @@ const en: Record<string, MetricEntry> = {
     short: 'As of',
     full: 'The date this block of data describes — lagged sources (macro series, short-interest reports) carry it so stale numbers are never mistaken for today\'s.',
     interp: 'Data older than a couple of sessions should not anchor a plan.',
+    blank: 'The price data came back without a date attached, so there is no way to say how fresh it is. Treat the numbers in this section as unverified for freshness.',
   },
   rates: {
     short: 'Rates',
@@ -1481,6 +1482,7 @@ const zh: Record<string, MetricEntry> = {
     short: '数据日期',
     full: '本组数据对应的日期——宏观序列、空头持仓报告等滞后数据都带上它，避免把旧数据当成今天的。',
     interp: '超过两三个交易日的数据不应作为计划的主要依据。',
+    blank: '行情数据没有带日期，无法判断新旧程度。本节数字的时效性未经核实，请谨慎对待。',
   },
   rates: { short: '利率', full: '由央行和债券市场决定的利率水平。' },
   fed_funds_rate_pct: {

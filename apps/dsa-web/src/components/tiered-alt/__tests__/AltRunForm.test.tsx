@@ -13,14 +13,19 @@ function renderForm(overrides: Partial<AltRunFormProps> = {}) {
     capital: null,
     riskPct: null,
     reward: null,
+    hold: null,
     submitting: false,
     error: null,
+    gateOpen: false,
     onTicker: vi.fn(),
     onTier: vi.fn(),
     onCapital: vi.fn(),
     onRiskPct: vi.fn(),
     onReward: vi.fn(),
+    onHold: vi.fn(),
     onStart: vi.fn(),
+    onRunAnyway: vi.fn(),
+    onGateClose: vi.fn(),
     ...overrides,
   };
   render(
@@ -58,12 +63,12 @@ describe('AltRunForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
 
     expect(props.onStart).not.toHaveBeenCalled();
-    expect(screen.getByText(/五项都需要填写|All five fields are required/)).toBeInTheDocument();
+    expect(screen.getByText(/六项都需要填写|All six fields are required/)).toBeInTheDocument();
   });
 
   it('shows selections as Label: value pills; clicking a pill removes it', () => {
     const props = renderForm({
-      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '2',
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '2', hold: '2',
     });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
@@ -105,18 +110,46 @@ describe('AltRunForm', () => {
 
   it('requires the reward ratio like every other field', () => {
     const props = renderForm({
-      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: null,
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: null, hold: '2',
     });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
 
     expect(props.onStart).not.toHaveBeenCalled();
-    expect(screen.getByText(/五项都需要填写|All five fields are required/)).toBeInTheDocument();
+    expect(screen.getByText(/六项都需要填写|All six fields are required/)).toBeInTheDocument();
+  });
+
+  it('requires the max hold time like every other field', () => {
+    const props = renderForm({
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '2', hold: null,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));
+
+    expect(props.onStart).not.toHaveBeenCalled();
+    expect(screen.getByText(/六项都需要填写|All six fields are required/)).toBeInTheDocument();
+  });
+
+  it('shows the max-hold pill and clicking it removes it', () => {
+    const props = renderForm({
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '2', hold: '3',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /(Max hold|最长持有): 3/ }));
+    expect(props.onHold).toHaveBeenCalledWith(null);
+  });
+
+  it('shows the market-open popup with a run-anyway choice when gated', () => {
+    const props = renderForm({ gateOpen: true });
+
+    expect(screen.getByText(/Market is open|市场交易中/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Run anyway|仍要运行/ }));
+    expect(props.onRunAnyway).toHaveBeenCalled();
   });
 
   it('shows the reward pill and clicking it removes it', () => {
     const props = renderForm({
-      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '3',
+      ticker: 'AAPL', tier: 1, capital: '100000', riskPct: '1', reward: '3', hold: '2',
     });
 
     fireEvent.click(screen.getByRole('button', { name: /开始|Start/ }));

@@ -39,6 +39,7 @@ const SNIPER_SOURCE_LABEL_KEYS: Record<string, UiTextKey> = {
 // Level keys as they appear in adjustment warnings ("adjustment for entry …").
 const LEVEL_LABEL_KEYS: Record<string, UiTextKey> = {
   entry: 'tiered.levels.entry',
+  shares: 'tiered.levels.shares',
   secondary_entry: 'tiered.levels.secondaryEntry',
   stop_loss: 'tiered.levels.stopLoss',
   take_profit: 'tiered.levels.takeProfit',
@@ -66,6 +67,9 @@ const STAGE_ROLES: Record<string, (t: Translate) => string> = {
   'report outline': (t) => t('tiered.role.reportOutline'),
 };
 
+const levelLabel = (key: string, t: Translate): string =>
+  LEVEL_LABEL_KEYS[key] ? t(LEVEL_LABEL_KEYS[key]) : key;
+
 const stageRole = (stage: string, t: Translate): string =>
   STAGE_ROLES[stage] ? STAGE_ROLES[stage](t) : stage;
 
@@ -83,12 +87,12 @@ const NOTE_RULES: NoteRule[] = [
       t('tiered.alt.rewardBelowGoal', { ratio: m[1], goal: m[2] }),
   },
   {
-    pattern: /^trend warning: close .* is at or below the 60-day average/,
+    pattern: /^trend warning: close .* is at or below the (?:50|60)-day average/,
     keywordKey: KEY.downtrend,
     toText: (_m, t) => t('tiered.note.downtrend'),
   },
   {
-    pattern: /^sma_60 unavailable — trend check skipped$/,
+    pattern: /^sma_(?:50|60) unavailable — trend check skipped$/,
     keywordKey: KEY.missingData,
     toText: (_m, t) => t('tiered.note.trendCheckSkipped'),
   },
@@ -183,11 +187,16 @@ const NOTE_RULES: NoteRule[] = [
     toText: (_m, t) => t('tiered.note.adjustmentMalformed'),
   },
   {
+    pattern: /^adjustment for unknown level\b/,
+    keywordKey: KEY.levels,
+    toText: (_m, t) => t('tiered.note.adjustUnknownLevel'),
+  },
+  {
     pattern: /^adjustment for '?(\w+)'?\b/,
     keywordKey: KEY.levels,
     toText: (m, t) =>
       t('tiered.note.adjustmentRejected', {
-        level: LEVEL_LABEL_KEYS[m[1]] ? t(LEVEL_LABEL_KEYS[m[1]]) : m[1],
+        level: levelLabel(m[1], t),
       }),
   },
   {
@@ -470,6 +479,293 @@ const NOTE_RULES: NoteRule[] = [
     keywordKey: KEY.settings,
     toText: (_m, t) => t('tiered.note.badSetting'),
   },
+
+  // ---- Audit 2026-08-08 -------------------------------------------------
+  // Everything below used to fall through and render as the backend's own
+  // engineer text — Python exception reprs ("HTTPError(...)"), variable
+  // names ("bars_loader", "sma_50 / sma_200 / support_1") and even a note
+  // addressed to a developer ("extend FOMC_DECISION_DATES"). Appended in a
+  // block so the older, more specific rules above always win first.
+
+  // Fetch failures: each names the source in words and says what went blank.
+  {
+    pattern: /^bars_loader failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.barsLoadFailed'),
+  },
+  {
+    pattern: /^Yahoo summary failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.yahooSummaryFailed'),
+  },
+  {
+    pattern: /^institutional holders failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.holdersFailed'),
+  },
+  {
+    pattern: /^insider transactions failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.insiderFetchFailed'),
+  },
+  {
+    pattern: /^options chain failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.optionsFetchFailed'),
+  },
+  {
+    pattern: /^earnings date lookup failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.earningsDateFailed'),
+  },
+  {
+    pattern: /^earnings history failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.earningsHistoryFailed'),
+  },
+  {
+    pattern: /^bars for earnings reaction failed/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.reactionBarsFailed'),
+  },
+  {
+    pattern: /^EPS estimate trend failed for/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.epsTrendFailed'),
+  },
+  {
+    pattern: /^FRED release calendar for (.+) failed:/,
+    keywordKey: KEY.fetchFailed,
+    toText: (m, t) => t('tiered.note.releaseCalendarFailed', { label: m[1] }),
+  },
+  {
+    pattern: /^benchmark index bars unavailable/,
+    keywordKey: KEY.fetchFailed,
+    toText: (_m, t) => t('tiered.note.benchmarkBarsFailed'),
+  },
+  {
+    pattern: /^sector ETF (\S+) bars unavailable/,
+    keywordKey: KEY.fetchFailed,
+    toText: (m, t) => t('tiered.note.sectorBarsFailed', { ticker: m[1] }),
+  },
+  {
+    pattern: /^(\w+) provider crashed/,
+    keywordKey: KEY.fetchFailed,
+    toText: (m, t) => t('tiered.note.providerCrashed', { dimension: m[1] }),
+  },
+  {
+    pattern: /^tier-1 analysis failed for/,
+    keywordKey: KEY.verdict,
+    toText: (_m, t) => t('tiered.note.tier1Failed'),
+  },
+  {
+    pattern: /^debate LLM call failed/,
+    keywordKey: KEY.aiReply,
+    toText: (_m, t) => t('tiered.note.debateCallFailed'),
+  },
+  {
+    pattern: /^plan review LLM call failed/,
+    keywordKey: KEY.aiReply,
+    toText: (_m, t) => t('tiered.note.planReviewCallFailed'),
+  },
+  {
+    pattern: /^plan review skipped:/,
+    keywordKey: KEY.settings,
+    toText: (_m, t) => t('tiered.note.planReviewSkipped'),
+  },
+
+  // Thin or absent history.
+  {
+    pattern: /^insufficient history for \S+: (\d+) bars < (\d+) required/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.insufficientHistory', { bars: m[1], min: m[2] }),
+  },
+  {
+    pattern: /^only (\d+) daily bars \(<(\d+)\)/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.shortDailyHistory', { bars: m[1], year: m[2] }),
+  },
+  {
+    pattern: /^only (\d+) weekly bars \(<(\d+)\)/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.shortWeeklyHistory', { bars: m[1], target: m[2] }),
+  },
+  {
+    pattern: /^benchmark index not configured/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.benchmarkNotConfigured'),
+  },
+  {
+    pattern: /^benchmark index history too short \((\d+) bars\)/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.benchmarkShort', { bars: m[1] }),
+  },
+  {
+    pattern: /^benchmark index history too short for the regime read/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.benchmarkShortRegime'),
+  },
+
+  // Options board shortfalls.
+  {
+    pattern: /^CBOE published no 30-day implied volatility/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noImpliedVol'),
+  },
+  {
+    pattern: /^CBOE published no stock price/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noOptionsStockPrice'),
+  },
+  {
+    pattern: /^next report date unknown/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.reportDateUnknown'),
+  },
+  {
+    pattern: /^next report date unparseable/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.reportDateUnreadable'),
+  },
+  {
+    pattern: /^next report is more than (\d+) days away/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.reportTooFar', { days: m[1] }),
+  },
+  {
+    pattern: /^no usable at-the-money quotes/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noAtmQuotes'),
+  },
+  {
+    pattern: /^no fetched option expiration falls after/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noPostReportExpiry'),
+  },
+  {
+    pattern: /^no listed options found for/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noListedOptions'),
+  },
+
+  // Disclosure and fundamentals shortfalls.
+  {
+    pattern: /^Yahoo returned no short-interest fields/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noShortInterest'),
+  },
+  {
+    pattern: /^Yahoo returned no ownership fields/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noOwnership'),
+  },
+  {
+    pattern: /^no earnings history rows for/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.noEarningsHistory'),
+  },
+  {
+    pattern: /^too few earnings reports inside the bar history \((\d+)\)/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.tooFewReports', { count: m[1] }),
+  },
+
+  // Economy data.
+  {
+    pattern: /^FRED_API_KEY is not set/,
+    keywordKey: KEY.settings,
+    toText: (_m, t) => t('tiered.note.fredKeyMissing'),
+  },
+  {
+    pattern: /^no upcoming (.+) release date found/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.noReleaseDate', { label: m[1] }),
+  },
+  {
+    pattern: /^FOMC decision-date table exhausted/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.fomcTableExhausted'),
+  },
+
+  // Sector comparison.
+  {
+    pattern: /^sector unknown \(/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.sectorUnknown'),
+  },
+  {
+    pattern: /^sector '(.+)' has no sector-ETF mapping/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.sectorNoEtf'),
+  },
+  {
+    pattern: /^sector comparison needs the market benchmark returns/,
+    keywordKey: KEY.missingData,
+    toText: (_m, t) => t('tiered.note.sectorNeedsBenchmark'),
+  },
+  {
+    pattern: /^sector ETF (\S+) history too short \((\d+) bars\)/,
+    keywordKey: KEY.missingData,
+    toText: (m, t) => t('tiered.note.sectorShort', { ticker: m[1], bars: m[2] }),
+  },
+
+  // Trade plan.
+  {
+    pattern: /^no close price —/,
+    keywordKey: KEY.levels,
+    toText: (_m, t) => t('tiered.note.noClosePrice'),
+  },
+  {
+    pattern: /^no structural support anchors/,
+    keywordKey: KEY.levels,
+    toText: (_m, t) => t('tiered.note.noEntryAnchor'),
+  },
+  {
+    pattern: /^technicals unavailable — deterministic levels/,
+    keywordKey: KEY.levels,
+    toText: (_m, t) => t('tiered.note.noTechnicalsForLevels'),
+  },
+  {
+    pattern: /^duplicate adjustment for '?(\w+)'?/,
+    keywordKey: KEY.levels,
+    toText: (m, t) =>
+      t('tiered.note.duplicateAdjust', { level: levelLabel(m[1], t) }),
+  },
+  {
+    pattern: /^plan-review adjustment for '?(\w+)'? dropped/,
+    keywordKey: KEY.citations,
+    toText: (m, t) =>
+      t('tiered.note.planAdjustDropped', { level: levelLabel(m[1], t) }),
+  },
+  {
+    pattern: /^plan-review reply problem/,
+    keywordKey: KEY.aiReply,
+    toText: (_m, t) => t('tiered.note.planReplyProblem'),
+  },
+  {
+    pattern: /^plan review did not converge/,
+    keywordKey: KEY.riskCheck,
+    toText: (_m, t) => t('tiered.note.planNoConverge'),
+  },
+
+  // Verdict.
+  {
+    pattern: /^no gradable report fields collected/,
+    keywordKey: KEY.verdict,
+    toText: (_m, t) => t('tiered.note.noGradableFields'),
+  },
+  {
+    pattern: /^no collected evidence to vote on/,
+    keywordKey: KEY.verdict,
+    toText: (_m, t) => t('tiered.note.noEvidenceToVote'),
+  },
+
+  // Settings.
+  {
+    pattern: /must be above 1 — using the default/,
+    keywordKey: KEY.settings,
+    toText: (_m, t) => t('tiered.note.rewardRiskDefaulted'),
+  },
 ];
 
 export interface FriendlyNote {
@@ -482,8 +778,9 @@ export interface FriendlyNote {
 // Keyword + plain-English rewrite of one backend data note, or null when
 // the shape is unknown (caller shows the raw text as-is, no keyword).
 export function friendlyWarning(raw: string, t: Translate): FriendlyNote | null {
+  const text = raw.replace(/^round \d+: /, '');
   for (const rule of NOTE_RULES) {
-    const match = raw.match(rule.pattern);
+    const match = text.match(rule.pattern);
     if (match) {
       return { keyword: t(rule.keywordKey), text: rule.toText(match, t) };
     }

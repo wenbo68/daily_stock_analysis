@@ -242,3 +242,74 @@ describe('AltMetricFormula', () => {
     ).toBeInTheDocument();
   });
 });
+
+// The exclamation mark's TITLE follows the value, its BODY follows the
+// notes (owner request 2026-08-08). The two vary independently, so all
+// four combinations are pinned here — the case that used to be wrong is
+// "blank field that also carries a run note", which read "data notes".
+describe('AltFieldNotes — title says why blank vs warnings', () => {
+  const env = (value: unknown) => ({ name: 'closing price', explanation: 'e', value });
+
+  const renderField = (value: unknown, notes: string[] | null) =>
+    render(
+      <UiLanguageProvider>
+        <AltDimensions
+          dimensions={[
+            {
+              dimension: 'technicals',
+              kind: 'numeric',
+              coverage: 'full',
+              is_actionable: true,
+              narrative: null,
+              warnings: [],
+              citations: [],
+              payload: { price: { close: env(value) } },
+              field_notes: notes ? { 'price.close': notes } : null,
+            } as unknown as TieredDimension,
+          ]}
+        />
+      </UiLanguageProvider>,
+    );
+
+  const openMark = () => {
+    fireEvent.click(screen.getByTestId('alt-field-notes-close'));
+    return within(screen.getByRole('dialog')).getByRole('heading');
+  };
+
+  it('a blank field with no note reads "why blank"', () => {
+    renderField(null, null);
+    expect(openMark()).toHaveTextContent(/why blank/);
+  });
+
+  it('a blank field that DOES carry a run note still reads "why blank"', () => {
+    renderField(null, ['vendor returned nothing']);
+    const heading = openMark();
+    expect(heading).toHaveTextContent(/why blank/);
+    expect(heading).not.toHaveTextContent(/warnings/);
+    // The note is still what the body shows — only the title changed.
+    expect(screen.getByTestId('alt-field-notes-modal').textContent).toMatch(
+      /vendor returned nothing/,
+    );
+  });
+
+  it('a field that KEPT its value reads "warnings"', () => {
+    renderField(157.79, ['only 120 daily bars (<253)']);
+    expect(openMark()).toHaveTextContent(/warnings/);
+  });
+
+  it('a published value with no note gets no mark at all', () => {
+    renderField(157.79, null);
+    expect(screen.queryByTestId('alt-field-notes-close')).toBeNull();
+  });
+
+  it('stacks the subject over the kind — always two lines', () => {
+    // Owner request 2026-08-08: the header keeps the same shape in every
+    // popup, so the kind never wraps up beside a short subject.
+    renderField(null, null);
+    const heading = openMark();
+    const stack = heading.firstElementChild as HTMLElement;
+    expect(stack.className).toContain('flex-col');
+    const lines = Array.from(stack.children).map((el) => el.textContent);
+    expect(lines).toEqual(['Closing price', 'why blank']);
+  });
+});

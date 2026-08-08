@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import axios from 'axios';
 import {
   tieredApi,
   type TieredDepth,
@@ -21,11 +22,25 @@ const DEFAULT_RISK_PCT = '1';
 // required like every other field, default 2. The ownership input is
 // gone — deferred to the future portfolio feature.
 const DEFAULT_REWARD = '2';
+// Max hold time in weeks (owner decision 2026-08-08): required, default
+// 2 — feeds the AI prompts, the report and the forward-test window.
+const DEFAULT_HOLD_WEEKS = '2';
 
 // Shared with the main tiered page so the values carry across both skins.
 const SIZING_CAPITAL_STORAGE_KEY = 'tiered.sizing.capital';
 const SIZING_RISK_PCT_STORAGE_KEY = 'tiered.sizing.riskPct';
 const SIZING_REWARD_STORAGE_KEY = 'tiered.sizing.reward';
+const HOLD_WEEKS_STORAGE_KEY = 'tiered.holdWeeks';
+
+// True when the backend rejected the start because the ticker's market
+// is inside the trading day (409 with the market_open code).
+function isMarketOpenRejection(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 409) {
+    return false;
+  }
+  const detail = (error.response.data as { detail?: { code?: string } } | undefined)?.detail;
+  return detail?.code === 'market_open';
+}
 
 function readStoredNumber(key: string): string | null {
   try {
@@ -67,6 +82,11 @@ const TieredAltPage = () => {
   const [reward, setReward] = useState<string | null>(
     () => readStoredNumber(SIZING_REWARD_STORAGE_KEY) ?? DEFAULT_REWARD,
   );
+  const [hold, setHold] = useState<string | null>(
+    () => readStoredNumber(HOLD_WEEKS_STORAGE_KEY) ?? DEFAULT_HOLD_WEEKS,
+  );
+  // Clock-gate popup: set when the backend answered 409 market_open.
+  const [gateOpen, setGateOpen] = useState(false);
   const [runs, setRuns] = useState<TieredRunSummary[]>([]);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [details, setDetails] = useState<Record<string, TieredResult>>({});
@@ -200,51 +220,69 @@ const TieredAltPage = () => {
     [capitalDefault],
   );
 
-  const handleStart = useCallback(async () => {
-    // The form popup enforces every field; this is the last-line guard.
-    if (!ticker || tier === null || !capital || !riskPct || !reward || submitting) {
-      return;
-    }
-    setSubmitError(null);
-    setSubmitting(true);
-    try {
-      const sizing: TieredSizingRequest = {};
-      const capitalValue = Number(capital);
-      if (capital && Number.isFinite(capitalValue) && capitalValue > 0) {
-        sizing.capital = capitalValue;
+  const handleStart = useCallback(
+    async (runAnyway = false) => {
+      // The form popup enforces every field; this is the last-line guard.
+      if (!ticker || tier === null || !capital || !riskPct || !reward || !hold || submitting) {
+        return;
       }
-      const pctValue = Number(riskPct);
-      if (riskPct && Number.isFinite(pctValue) && pctValue > 0 && pctValue < 100) {
-        sizing.risk_fraction = pctValue / 100;
+      setSubmitError(null);
+      setGateOpen(false);
+      setSubmitting(true);
+      try {
+        const sizing: TieredSizingRequest = {};
+        const capitalValue = Number(capital);
+        if (capital && Number.isFinite(capitalValue) && capitalValue > 0) {
+          sizing.capital = capitalValue;
+        }
+        const pctValue = Number(riskPct);
+        if (riskPct && Number.isFinite(pctValue) && pctValue > 0 && pctValue < 100) {
+          sizing.risk_fraction = pctValue / 100;
+        }
+        const rewardValue = Number(reward);
+        if (reward && Number.isFinite(rewardValue) && rewardValue > 1 && rewardValue <= 10) {
+          sizing.reward_risk = rewardValue;
+        }
+        const tierUsed = tier ?? DEFAULT_TIER;
+        const holdValue = Number(hold);
+        const started = await tieredApi.start(
+          ticker,
+          tierUsed,
+          Object.keys(sizing).length > 0 ? sizing : undefined,
+          {
+            ...(Number.isInteger(holdValue) && holdValue >= 1 && holdValue <= 4
+              ? { holdWeeks: holdValue }
+              : {}),
+            ...(runAnyway ? { runAnyway: true } : {}),
+          },
+        );
+        storeNumber(SIZING_CAPITAL_STORAGE_KEY, capital);
+        storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPct);
+        storeNumber(SIZING_REWARD_STORAGE_KEY, reward);
+        storeNumber(HOLD_WEEKS_STORAGE_KEY, hold);
+        setCapitalDefault(capital);
+        setTicker(null);
+        setCapital(null);
+        setPendingTiers((prev) => ({ ...prev, [started.task_id]: tierUsed }));
+        // The new run is already in the backend list as Running; show it at
+        // the top of the history, expanded, until polling flips it to done.
+        await refreshRuns();
+        setDetailError(null);
+        setExpandedTaskId(started.task_id);
+      } catch (error) {
+        if (isMarketOpenRejection(error)) {
+          // Clock gate: not an error — a choice. The popup offers
+          // "run anyway" (analyze the previous completed session).
+          setGateOpen(true);
+        } else {
+          setSubmitError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        setSubmitting(false);
       }
-      const rewardValue = Number(reward);
-      if (reward && Number.isFinite(rewardValue) && rewardValue > 1 && rewardValue <= 10) {
-        sizing.reward_risk = rewardValue;
-      }
-      const tierUsed = tier ?? DEFAULT_TIER;
-      const started = await tieredApi.start(
-        ticker,
-        tierUsed,
-        Object.keys(sizing).length > 0 ? sizing : undefined,
-      );
-      storeNumber(SIZING_CAPITAL_STORAGE_KEY, capital);
-      storeNumber(SIZING_RISK_PCT_STORAGE_KEY, riskPct);
-      storeNumber(SIZING_REWARD_STORAGE_KEY, reward);
-      setCapitalDefault(capital);
-      setTicker(null);
-      setCapital(null);
-      setPendingTiers((prev) => ({ ...prev, [started.task_id]: tierUsed }));
-      // The new run is already in the backend list as Running; show it at
-      // the top of the history, expanded, until polling flips it to done.
-      await refreshRuns();
-      setDetailError(null);
-      setExpandedTaskId(started.task_id);
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setSubmitting(false);
-    }
-  }, [ticker, submitting, tier, capital, riskPct, reward, refreshRuns]);
+    },
+    [ticker, submitting, tier, capital, riskPct, reward, hold, refreshRuns],
+  );
 
   return (
     <main className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-6 px-4 pb-8 pt-4 md:px-6 lg:px-8">
@@ -259,14 +297,19 @@ const TieredAltPage = () => {
             capital={capital}
             riskPct={riskPct}
             reward={reward}
+            hold={hold}
             submitting={submitting}
             error={submitError}
+            gateOpen={gateOpen}
             onTicker={handleTicker}
             onTier={setTier}
             onCapital={setCapital}
             onRiskPct={setRiskPct}
             onReward={setReward}
+            onHold={setHold}
             onStart={() => void handleStart()}
+            onRunAnyway={() => void handleStart(true)}
+            onGateClose={() => setGateOpen(false)}
           />
         </div>
       </section>

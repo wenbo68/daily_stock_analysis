@@ -127,7 +127,7 @@ export const DebateCard = ({ section, citations }: DebateCardProps) => {
 
       {section.warnings.length > 0 ? (
         <div className="mt-3">
-          <div className="label-uppercase mb-1">{t('tiered.dataNotes')}</div>
+          <div className="label-uppercase mb-1">{t('tiered.warnings')}</div>
           <ul className="space-y-1">
             {section.warnings.map((warning, index) => (
               <li key={index} className="text-xs text-warning">

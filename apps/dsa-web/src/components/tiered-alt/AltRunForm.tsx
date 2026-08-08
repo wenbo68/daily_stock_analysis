@@ -19,6 +19,10 @@ const RISK_IDEAS = ['0.5', '1', '2'];
 // Reward-to-risk ratio the plan aims for; '2' is the default.
 const REWARD_IDEAS = ['1.5', '2', '3'];
 
+// Max hold time choices in weeks (owner decision 2026-08-08): the
+// horizon the AI judges against and the forward test grades at.
+const HOLD_WEEKS = ['1', '2', '3', '4'];
+
 // Field colors are positional in the showplayer palette (ALT_COLOR order,
 // starting at red): pill N wears color N, and Start wears the next slot.
 const TONE = {
@@ -26,11 +30,12 @@ const TONE = {
   capital: ALT_COLOR[2],
   risk: ALT_COLOR[3],
   reward: ALT_COLOR[4],
-  tier: ALT_COLOR[5],
+  hold: ALT_COLOR[5],
+  tier: ALT_COLOR[6],
 };
 
 // The Start control is a pill like its neighbors, in the next palette slot.
-const START_PILL = `inline-flex cursor-pointer items-center gap-1.5 rounded px-[9px] py-0.5 text-xs font-semibold ring-1 ring-inset transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 ${ALT_COLOR[6]}`;
+const START_PILL = `inline-flex cursor-pointer items-center gap-1.5 rounded px-[9px] py-0.5 text-xs font-semibold ring-1 ring-inset transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 ${ALT_COLOR[7]}`;
 
 const isPositiveNumber = (raw: string): boolean => {
   const value = Number(raw);
@@ -55,14 +60,21 @@ export interface AltRunFormProps {
   capital: string | null;
   riskPct: string | null;
   reward: string | null;
+  hold: string | null;
   submitting: boolean;
   error: string | null;
+  /** Clock gate: the backend rejected the start because the ticker's
+   *  market is open — show the popup with the "run anyway" choice. */
+  gateOpen: boolean;
   onTicker: (value: string | null) => void;
   onTier: (value: TieredDepth | null) => void;
   onCapital: (value: string | null) => void;
   onRiskPct: (value: string | null) => void;
   onReward: (value: string | null) => void;
+  onHold: (value: string | null) => void;
   onStart: () => void;
+  onRunAnyway: () => void;
+  onGateClose: () => void;
 }
 
 // Section 1: the new-run form. Fields are write-only — every choice lands
@@ -78,14 +90,19 @@ export const AltRunForm = ({
   capital,
   riskPct,
   reward,
+  hold,
   submitting,
   error,
+  gateOpen,
   onTicker,
   onTier,
   onCapital,
   onRiskPct,
   onReward,
+  onHold,
   onStart,
+  onRunAnyway,
+  onGateClose,
 }: AltRunFormProps) => {
   const { t } = useUiLanguage();
   const [notice, setNotice] = useState<string | null>(null);
@@ -101,7 +118,7 @@ export const AltRunForm = ({
   };
 
   const handleStart = () => {
-    if (!ticker || tier === null || !capital || !riskPct || !reward) {
+    if (!ticker || tier === null || !capital || !riskPct || !reward || !hold) {
       setNotice(t('tiered.altForm.allRequired'));
       return;
     }
@@ -110,7 +127,7 @@ export const AltRunForm = ({
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-5 sm:gap-3 md:gap-4">
+      <div className="grid w-full grid-cols-2 gap-2 text-sm sm:grid-cols-6 sm:gap-3 md:gap-4">
         <AltSelect
           label={t('tiered.altForm.ticker')}
           options={TICKER_IDEAS.map((value) => ({ value, label: value }))}
@@ -180,6 +197,22 @@ export const AltRunForm = ({
         />
         <AltSelect
           label={
+            <HelpTerm
+              label={t('tiered.altForm.hold')}
+              helpKey="tiered.help.hold"
+              underline={false}
+            />
+          }
+          options={HOLD_WEEKS.map((value) => ({
+            value,
+            label: t(`tiered.altForm.holdOption${value}` as UiTextKey),
+          }))}
+          selected={hold ? [hold] : undefined}
+          placeholder={t('tiered.altForm.holdPh')}
+          onCommit={(value) => onHold(value === hold ? null : value)}
+        />
+        <AltSelect
+          label={
             <HelpTerm label={t('tiered.altForm.tier')} helpKey="tiered.help.depth" underline={false} />
           }
           options={TIERS.map((value) => ({
@@ -215,6 +248,11 @@ export const AltRunForm = ({
             {t('tiered.pill.reward', { value: reward })}
           </AltPill>
         ) : null}
+        {hold ? (
+          <AltPill tone={TONE.hold} onRemove={() => onHold(null)}>
+            {t('tiered.pill.hold', { value: hold })}
+          </AltPill>
+        ) : null}
         {tier !== null ? (
           <AltPill tone={TONE.tier} onRemove={() => onTier(null)}>
             {t('tiered.pill.tier', { value: tier })}
@@ -234,6 +272,27 @@ export const AltRunForm = ({
         onClose={() => setNotice(null)}
       >
         <p className={MODAL_BODY}>{notice}</p>
+      </AltModal>
+
+      {/* Clock gate (2026-08-08): the market is open, so the app has no
+          completed trading day to analyze yet. "Run anyway" re-submits
+          with the override — the run then reads the PREVIOUS session. */}
+      <AltModal
+        isOpen={gateOpen}
+        title={t('tiered.altForm.marketOpenTitle')}
+        onClose={onGateClose}
+      >
+        <p className={MODAL_BODY}>{t('tiered.altForm.marketOpenBody')}</p>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            className={START_PILL}
+            onClick={onRunAnyway}
+            disabled={submitting}
+          >
+            {t('tiered.altForm.runAnyway')}
+          </button>
+        </div>
       </AltModal>
     </div>
   );

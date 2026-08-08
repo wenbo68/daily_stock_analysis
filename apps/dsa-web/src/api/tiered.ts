@@ -409,8 +409,10 @@ export type TieredRiskDetail = {
 
 export type TieredCoverage = 'full' | 'partial' | 'unavailable';
 
-// Outlook redesign (2026-07): the impersonal judgment on the stock…
-export type TieredOutlook = 'bullish' | 'neutral' | 'bearish' | 'unknown';
+// Outlook redesign (2026-07): the impersonal judgment on the stock.
+// 'stopped' (2026-08-08): the staleness gate halted the run before any
+// LLM stage — the data cards exist, but no analysis or plan does.
+export type TieredOutlook = 'bullish' | 'neutral' | 'bearish' | 'unknown' | 'stopped';
 // …and the personal instruction code derives from outlook × ownership.
 export type TieredAction = 'enter' | 'keep_holding' | 'no_trade' | 'sell_all' | 'unknown';
 
@@ -526,6 +528,9 @@ export type TieredResult = {
   risk_card?: TieredRiskCardEntry[] | null;
   // Plan review (2026-07-22): per-column trade-plan warnings.
   plan_warnings?: TieredPlanWarnings | null;
+  // Max hold time in weeks the run was judged against (2026-08-08);
+  // absent on old stored runs.
+  hold_weeks?: number | null;
 };
 
 export type TieredRunStatus = 'running' | 'done' | 'failed';
@@ -575,16 +580,26 @@ export type TieredSizingRequest = {
   reward_risk?: number;
 };
 
+// Extra run inputs (2026-08-08): the max hold time and the clock-gate
+// override ("run anyway" after a 409 market-open rejection).
+export type TieredStartOptions = {
+  holdWeeks?: number;
+  runAnyway?: boolean;
+};
+
 export const tieredApi = {
   start: async (
     stockCode: string,
     depth: TieredDepth = 1,
     sizing?: TieredSizingRequest,
+    options?: TieredStartOptions,
   ): Promise<{ task_id: string }> => {
     const response = await apiClient.post<{ task_id: string }>('/api/v1/tiered/analyze', {
       stock_code: stockCode,
       depth,
       ...(sizing && Object.keys(sizing).length > 0 ? { sizing } : {}),
+      ...(options?.holdWeeks != null ? { hold_weeks: options.holdWeeks } : {}),
+      ...(options?.runAnyway ? { run_anyway: true } : {}),
     });
     return response.data;
   },

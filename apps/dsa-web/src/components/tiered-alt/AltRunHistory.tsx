@@ -11,7 +11,7 @@ import { AltResult } from './AltResult';
 const PAGE_SIZE = 10;
 // Outlook redesign: the verdict filter became the outlook filter. Old
 // stored runs are mapped by the backend digest (buy→bullish, …).
-const FILTER_OUTLOOKS = ['bullish', 'neutral', 'bearish'] as const;
+const FILTER_OUTLOOKS = ['bullish', 'neutral', 'bearish', 'stopped'] as const;
 // Old stored runs went to tier 3, so the history filter keeps offering it.
 const FILTER_TIERS = ['1', '2', '3'] as const;
 

@@ -827,7 +827,6 @@ const zh = {
   'tiered.dimension.plan': '交易计划',
   'tiered.citations': '参考来源（编号对应正文中的 [n] 标注）',
   'tiered.warnings': '警告',
-  'tiered.dataNotes': '数据说明',
   // 仅旧版 /tiered 页仍内联展示；alt 页弹窗不再显示这行说明。
   'tiered.dataNotesHint': '记录数据受限之处，以及系统的替代做法。\n保留展示，让你判断这份报告有多扎实。',
   'tiered.note.none': '这一部分没有可用数据，但没有记录更具体的原因。',
@@ -845,8 +844,61 @@ const zh = {
   'tiered.note.key.riskCheck': '风险压测',
   'tiered.note.key.settings': '设置',
   'tiered.alt.summaryGroup': '总结',
-  'tiered.note.downtrend': '收盘价已到 60 日均线或以下——逆势低吸的下行风险更高。',
-  'tiered.note.trendCheckSkipped': '缺少 60 日均线数据，趋势检查已跳过。',
+  'tiered.note.barsLoadFailed': '日线行情加载失败，因此所有技术面数字都无法计算。',
+  'tiered.note.yahooSummaryFailed': 'Yahoo Finance 摘要页加载失败，相关字段为空。',
+  'tiered.note.holdersFailed': '大型基金持仓名单加载失败，前十大集中度及其数据日期为空。',
+  'tiered.note.insiderFetchFailed': '内部人买卖申报加载失败，内部人交易各行为空。',
+  'tiered.note.optionsFetchFailed': '期权数据加载失败，期权各行为空。',
+  'tiered.note.earningsDateFailed': '下一次季度财报日期查询失败，依赖该日期的字段为空。',
+  'tiered.note.earningsHistoryFailed': '历史季度财报记录加载失败，超预期次数与历史财报日涨跌为空。',
+  'tiered.note.reactionBarsFailed': '用于测算历史财报日股价反应的行情加载失败，相关行为空。',
+  'tiered.note.epsTrendFailed': '分析师盈利预期历史加载失败，90 天预期变化一行为空。',
+  'tiered.note.releaseCalendarFailed': '{label} 的发布日历加载失败，其下次发布日期为空。',
+  'tiered.note.benchmarkBarsFailed': '大盘指数行情加载失败，无法将本股与大盘比较。',
+  'tiered.note.sectorBarsFailed': '行业基金（{ticker}）行情加载失败，行业对比各行为空。',
+  'tiered.note.providerCrashed': '{dimension} 数据采集出现异常，本次运行缺少整个板块。',
+  'tiered.note.tier1Failed': '第一层分析运行失败，本次运行没有基础报告。',
+  'tiered.note.debateCallFailed': '分析师辩论的 AI 调用失败，本次运行没有展望。',
+  'tiered.note.planReviewCallFailed': '交易计划复核的 AI 调用失败，沿用计算出的原始计划。',
+  'tiered.note.planReviewSkipped': '交易计划复核需要的 AI 密钥未配置，沿用计算出的原始计划。',
+  'tiered.note.insufficientHistory': '该股票只有 {bars} 天行情，少于指标所需的 {min} 天，技术面分析已跳过。',
+  'tiered.note.shortDailyHistory': '只取到 {bars} 天行情（整年约 {year} 个交易日），因此一年高点、低点和区间反映的是现有历史，而非完整一年。',
+  'tiered.note.shortWeeklyHistory': '只取到 {bars} 周行情（周线分析需要 {target} 周），周线趋势不可靠。',
+  'tiered.note.benchmarkNotConfigured': '该市场未配置大盘指数，无法将本股与大盘比较。',
+  'tiered.note.benchmarkShort': '大盘指数只有 {bars} 天历史，不足以判断大盘趋势或比较涨跌幅。',
+  'tiered.note.benchmarkShortRegime': '大盘指数没有大盘趋势判断所需的 200 天历史。',
+  'tiered.note.noImpliedVol': '期权交易所未公布 30 天预期波动数据，隐含波动率一行为空。',
+  'tiered.note.noOptionsStockPrice': '期权交易所未公布股价，无法计算预期财报日涨跌幅。',
+  'tiered.note.reportDateUnknown': '下一次季度财报日期未知，无法计算预期财报日涨跌幅。',
+  'tiered.note.reportDateUnreadable': '下一次财报日期返回的格式系统无法识别，无法计算预期财报日涨跌幅。',
+  'tiered.note.reportTooFar': '下一次财报在 {days} 天以后。那么远的期权价格主要反映日常波动而非财报本身，因此不显示财报日涨跌幅。',
+  'tiered.note.noAtmQuotes': '财报后首个到期日的平值期权没有可用报价，无法计算预期财报日涨跌幅。',
+  'tiered.note.noPostReportExpiry': '已取到的期权到期日均早于下一次财报，无法计算预期财报日涨跌幅。',
+  'tiered.note.noListedOptions': '该股票没有挂牌期权，没有期权数据可显示。',
+  'tiered.note.noShortInterest': 'Yahoo Finance 未公布该股票的做空数据，做空各行为空。',
+  'tiered.note.noOwnership': 'Yahoo Finance 未公布该股票的持股数据，持股各行为空。',
+  'tiered.note.noEarningsHistory': '未取到该股票的历史季度财报记录，超预期次数与历史财报日涨跌为空。',
+  'tiered.note.tooFewReports': '已加载的行情区间内只有 {count} 次历史财报，不足以求财报日平均涨跌幅。',
+  'tiered.note.fredKeyMissing': '经济数据服务（FRED）未配置访问密钥，无法加载经济数据。',
+  'tiered.note.noReleaseDate': '{label} 尚未公布下一次发布日期。',
+  'tiered.note.fomcTableExhausted': '内置的美联储议息会议日期表已用尽，下一次利率决议日期为空。',
+  'tiered.note.sectorUnknown': '该公司所属行业未知，行业对比各行为空。',
+  'tiered.note.sectorNoEtf': '该公司所属行业尚未配置对应的行业基金（目前仅支持美股行业），行业对比各行为空。',
+  'tiered.note.sectorNeedsBenchmark': '行业对比以大盘涨跌幅为基准，而该数据缺失，行业对比各行为空。',
+  'tiered.note.sectorShort': '行业基金（{ticker}）只有 {bars} 天历史，不足以比较涨跌幅，行业对比各行为空。',
+  'tiered.note.noClosePrice': '没有收盘价，无法计算交易计划。',
+  'tiered.note.noEntryAnchor': '买入价所依据的价格——50 日均线、200 日均线、最近支撑位——都不可用，无法计算交易计划。',
+  'tiered.note.noTechnicalsForLevels': '缺少技术面数据，无法计算交易计划。',
+  'tiered.note.duplicateAdjust': 'AI 对{level}提出了两次调整，保留第一次，忽略第二次。',
+  'tiered.note.planAdjustDropped': 'AI 对{level}提出的调整无法在报告中找到数据依据，该调整已丢弃。',
+  'tiered.note.planReplyProblem': 'AI 的计划复核回复中有系统无法使用的内容，该部分已忽略。',
+  'tiered.note.planNoConverge': 'AI 提出的每一次调整都未通过风险检查，全部丢弃，沿用计算出的原始计划。',
+  'tiered.note.noGradableFields': '没有可供分析师评分的报告字段，本次运行没有展望。',
+  'tiered.note.noEvidenceToVote': '没有报告数据送达分析师，无内容可判断，请重新运行该股票。',
+  'tiered.note.rewardRiskDefaulted': '盈亏比设置必须大于 1，所填数值已忽略，改用默认值。',
+  'tiered.note.adjustUnknownLevel': 'AI 提出的调整对象不属于交易计划中的任何价位，已忽略。',
+  'tiered.note.downtrend': '收盘价已到 50 日均线或以下——逆势低吸的下行风险更高。',
+  'tiered.note.trendCheckSkipped': '缺少 50 日均线数据，趋势检查已跳过。',
   'tiered.note.summaryLinksDropped':
     '总结中有引用经多次修正仍未通过代码校验——相关数值仍然展示，但没有链接。',
   'tiered.note.optionsOiMissing':
@@ -909,7 +961,7 @@ const zh = {
   'tiered.help.score':
     '层级 1 AI 的信心分，0-100。\n越高越看多。\n这是 AI 的判断，不是公式——技术面卡片里的“技术评分”才是公式算出来的。',
   'tiered.help.coverage':
-    '底层数据的完整程度。完整 = 全部到位；部分 = 有缺口（见数据说明）；不可用 = 没有可用数据。',
+    '底层数据的完整程度。完整 = 全部到位；部分 = 有缺口（见警告）；不可用 = 没有可用数据。',
   'tiered.help.narrative': 'AI 阅读下方四份维度报告后写出的结论。',
   'tiered.help.entry': '理想买入价。\n通常靠近支撑位——此前买盘出现过的价位。',
   'tiered.help.secondaryEntry': '备用买入价。\n更低的进场位，以防价格先继续下探。',
@@ -960,9 +1012,11 @@ const zh = {
   'tiered.help.levelAdjusted':
     'AI 在基准价附近（最多一个 ATR，即平均日波幅）微调后的价位，必须给出有依据的理由；点击查看理由和依据。未通过校验的调整会被拒绝，仍使用基准价。',
   'tiered.levelModal.formulaTitle': '{level}：公式',
-  'tiered.alt.blankTitle': '{label}：为何为空',
+  'tiered.alt.kind.formula': '公式',
+  'tiered.alt.kind.adjustment': '调整',
+  'tiered.alt.kind.whyBlank': '为何为空',
+  'tiered.alt.kind.warnings': '警告',
   'tiered.alt.blankFallback': '本次运行中该字段没有数值——计算它所需的数据不可用。',
-  'tiered.alt.fieldNotesTitle': '{label}：数据说明',
   'tiered.levelModal.formula': '公式',
   'tiered.levelModal.withNumbers': '代入本次数据',
   'tiered.levelModal.inputs': '输入项',
@@ -981,7 +1035,7 @@ const zh = {
   'tiered.help.debateConfidence': '裁判 AI 对自己结论的把握，0 到 1，越高越有把握。',
   'tiered.debate.reasonsFor': '看多理由',
   'tiered.debate.reasonsAgainst': '看空理由',
-  'tiered.debate.noVerdict': '辩论未产生可用结论——本次运行没有展望，请重新运行（详见数据说明）。',
+  'tiered.debate.noVerdict': '辩论未产生可用结论——本次运行没有展望，请重新运行（详见警告）。',
   'tiered.debate.wouldChangeMind': '什么会改变结论',
   'tiered.help.wouldChangeMind': '裁判自述：出现什么新证据会推翻这次结论。',
   'tiered.debate.transcript': '辩论记录',
@@ -1119,7 +1173,7 @@ const zh = {
     '“维持” = 沿用上方算出的止损。\n给出价格 = 裁判把止损收紧到该价位，股数计算采用这个值。',
   'tiered.risk.stopAdvice.keep': '维持',
   'tiered.risk.stopAdvice.tighten': '收紧',
-  'tiered.risk.noVerdict': '压力测试未产生可用结论——沿用第 2 层输出（详见数据说明）。',
+  'tiered.risk.noVerdict': '压力测试未产生可用结论——沿用第 2 层输出（详见警告）。',
   'tiered.risk.keyRisks': '关键风险',
   'tiered.risk.personas': '三方审查意见',
   'tiered.risk.persona.conservative': '保守方',
@@ -1164,7 +1218,7 @@ const zh = {
   'tiered.altForm.start': '开始',
   'tiered.altForm.noticeTitle': '提示',
   'tiered.altForm.needTickerFirst': '请先选择股票代码——本金使用该股票所在市场的货币。',
-  'tiered.altForm.allRequired': '代码、层级、本金、单笔风险、盈亏比五项都需要填写。',
+  'tiered.altForm.allRequired': '代码、层级、本金、单笔风险、盈亏比、最长持有六项都需要填写。',
   'tiered.altForm.tierOption1': '1：初步分析',
   'tiered.altForm.tierOption2': '2：深度分析',
   'tiered.altForm.tickerPh': '输入代码…',
@@ -1177,11 +1231,25 @@ const zh = {
     '盈亏比低于 1.5 意味着交易几乎不足以覆盖风险——常见要求至少 1.5×。本次运行仍会按你的 {value}× 目标进行。',
   'tiered.help.reward':
     '你要求这份计划的盈亏比（潜在盈利是风险的几倍）。必填，默认 2。\n目标价 = 入场价 + 盈亏比 × 风险；若上方阻力把目标压到低于你要求的倍数，计划会附警告（低于 1.5 的硬下限则直接不给计划）。',
+  'tiered.altForm.hold': '最长持有',
+  'tiered.altForm.holdPh': '选择时长…',
+  'tiered.altForm.holdOption1': '1 周',
+  'tiered.altForm.holdOption2': '2 周',
+  'tiered.altForm.holdOption3': '3 周',
+  'tiered.altForm.holdOption4': '4 周',
+  'tiered.help.hold':
+    '你计划最长持有这笔交易多久。必填，默认 2 周。\n同一个数字会同时交给 AI（判断哪些证据在这个时间范围内重要）、显示在报告里、并作为前向测试的评分窗口——AI、你和测试始终对齐同一个时间范围。',
+  'tiered.altForm.marketOpenTitle': '市场交易中',
+  'tiered.altForm.marketOpenBody':
+    '该股票的市场正在交易，本应用只分析已收盘的完整交易日（收盘后 30 分钟内数据源也可能尚未更新）。请收盘 30 分钟后再运行；或选择「仍要运行」，用上一个完整交易日的收盘数据分析。',
+  'tiered.altForm.runAnyway': '仍要运行',
+  'tiered.alt.holdTime': '最长持有',
   'tiered.pill.ticker': '代码: {value}',
   'tiered.pill.tier': '层级: {value}',
   'tiered.pill.capital': '本金: {value} {currency}',
   'tiered.pill.risk': '单笔风险: {value}%',
   'tiered.pill.reward': '盈亏比: {value}×',
+  'tiered.pill.hold': '最长持有: {value} 周',
   'tiered.pill.verdict': '结论: {value}',
   'tiered.pill.capitalMin': '本金下限: {value}',
   'tiered.pill.capitalMax': '本金上限: {value}',
@@ -1254,7 +1322,6 @@ const zh = {
   'tiered.levels.shares': '股数',
   'tiered.alt.levels.warnings': '警告',
   'tiered.alt.warn.none': '无',
-  'tiered.alt.warnTitle': '{level}：警告',
   'tiered.alt.warn.downtrend':
     '收盘价（{close}）不高于 60 日均线（{sma60}）——股票处于中期下行趋势，此时入场是逆势买入，进一步下跌的风险更高。',
   'tiered.alt.warn.downtrend_50':
@@ -1307,6 +1374,7 @@ const zh = {
   'tiered.outlook.neutral': '中性',
   'tiered.outlook.bearish': '看空',
   'tiered.outlook.unknown': '失败',
+  'tiered.outlook.stopped': '已停止',
   'tiered.action.enter': '买入（见「交易计划」部分）',
   'tiered.action.keep_holding': '继续持有',
   'tiered.action.no_trade': '不交易',
@@ -2295,7 +2363,6 @@ const en: Record<UiTextKey, string> = {
   'tiered.dimension.plan': 'Trade plan',
   'tiered.citations': 'Sources (numbers match the [n] marks in the text)',
   'tiered.warnings': 'Warnings',
-  'tiered.dataNotes': 'Data notes',
   // Only the legacy /tiered page still shows this inline; the alt-page
   // modal dropped it.
   'tiered.dataNotesHint':
@@ -2317,9 +2384,117 @@ const en: Record<UiTextKey, string> = {
   'tiered.note.key.riskCheck': 'Risk check',
   'tiered.note.key.settings': 'Settings',
   'tiered.alt.summaryGroup': 'Summary',
+  // Audit 2026-08-08: plain-English wording for notes that used to reach
+  // the screen as raw backend text (exception reprs, variable names).
+  'tiered.note.barsLoadFailed':
+    'The daily price history could not be loaded, so none of the technical numbers could be worked out.',
+  'tiered.note.yahooSummaryFailed':
+    'The Yahoo Finance summary page failed to load, so the fields it feeds are blank.',
+  'tiered.note.holdersFailed':
+    'The list of large fund holders failed to load, so the top-10 concentration figure and its as-of date are blank.',
+  'tiered.note.insiderFetchFailed':
+    'The insider buy-and-sell filings failed to load, so the insider-trading rows are blank.',
+  'tiered.note.optionsFetchFailed':
+    'The options data failed to load, so the options rows are blank.',
+  'tiered.note.earningsDateFailed':
+    'The lookup for the next quarterly-report date failed, so anything depending on that date is blank.',
+  'tiered.note.earningsHistoryFailed':
+    'The record of past quarterly reports failed to load, so the beat count and past report-day moves are blank.',
+  'tiered.note.reactionBarsFailed':
+    'The price history needed to measure how the stock moved on past report days failed to load, so those rows are blank.',
+  'tiered.note.epsTrendFailed':
+    'The history of analyst earnings estimates failed to load, so the 90-day estimate-change row is blank.',
+  'tiered.note.releaseCalendarFailed':
+    'The publication calendar for {label} failed to load, so its next release date is blank.',
+  'tiered.note.benchmarkBarsFailed':
+    'The market index’s price history failed to load, so this stock could not be compared against the market.',
+  'tiered.note.sectorBarsFailed':
+    'The price history for the sector fund ({ticker}) failed to load, so the sector-comparison rows are blank.',
+  'tiered.note.providerCrashed':
+    'The {dimension} data collector hit an unexpected error, so that whole section is missing from this run.',
+  'tiered.note.tier1Failed':
+    'The first-stage analysis failed to run, so this run has no foundation report.',
+  'tiered.note.debateCallFailed':
+    'The AI call for the analyst debate failed, so this run has no outlook.',
+  'tiered.note.planReviewCallFailed':
+    'The AI call for the plan review failed, so the computed plan stands as it is.',
+  'tiered.note.planReviewSkipped':
+    'The plan review needs an AI key that is not configured, so the computed plan stands as it is.',
+  'tiered.note.insufficientHistory':
+    'This stock has only {bars} days of price history — fewer than the {min} days the indicators need — so the technical read was skipped.',
+  'tiered.note.shortDailyHistory':
+    'Only {bars} days of price history were available (a full year is about {year} trading days), so the one-year high, low and range describe the history that exists, not a full year.',
+  'tiered.note.shortWeeklyHistory':
+    'Only {bars} weeks of price history were available (the weekly read wants {target}), so the weekly trend is not reliable.',
+  'tiered.note.benchmarkNotConfigured':
+    'No market index is set up for this market, so the stock could not be compared against the market.',
+  'tiered.note.benchmarkShort':
+    'The market index has only {bars} days of history — too little to judge the market trend or compare returns.',
+  'tiered.note.benchmarkShortRegime':
+    'The market index does not have the 200 days of history the market-trend read needs.',
+  'tiered.note.noImpliedVol':
+    'The options exchange published no 30-day expected-swing figure, so the implied-volatility row is blank.',
+  'tiered.note.noOptionsStockPrice':
+    'The options exchange published no stock price, so the expected report-day move could not be worked out.',
+  'tiered.note.reportDateUnknown':
+    'The date of the next quarterly report is unknown, so the expected report-day move could not be worked out.',
+  'tiered.note.reportDateUnreadable':
+    'The next report date came back in a form the system could not read, so the expected report-day move could not be worked out.',
+  'tiered.note.reportTooFar':
+    'The next report is more than {days} days away. Option prices that far out mostly price ordinary day-to-day movement rather than the report, so no report-day move is shown.',
+  'tiered.note.noAtmQuotes':
+    'There were no usable buy/sell quotes on the first options contract expiring after the report, so the expected report-day move could not be worked out.',
+  'tiered.note.noPostReportExpiry':
+    'None of the options expiry dates that were loaded falls after the next report, so the expected report-day move could not be worked out.',
+  'tiered.note.noListedOptions':
+    'This stock has no listed options, so there are no options rows to show.',
+  'tiered.note.noShortInterest':
+    'Yahoo Finance published no short-selling figures for this stock, so the short-interest rows are blank.',
+  'tiered.note.noOwnership':
+    'Yahoo Finance published no ownership figures for this stock, so the ownership rows are blank.',
+  'tiered.note.noEarningsHistory':
+    'No records of past quarterly reports came back for this stock, so the beat count and past report-day move rows are blank.',
+  'tiered.note.tooFewReports':
+    'Only {count} past reports fall inside the loaded price history — too few to average how the stock moves on report day.',
+  'tiered.note.fredKeyMissing':
+    'The economy-data service (FRED) has no access key configured, so no economy numbers could be loaded.',
+  'tiered.note.noReleaseDate':
+    'No future release date for {label} has been published yet.',
+  'tiered.note.fomcTableExhausted':
+    'The built-in list of Federal Reserve interest-rate meeting dates has run past its last entry, so the next rate-decision date is blank.',
+  'tiered.note.sectorUnknown':
+    'This company’s sector (its industry family) is unknown, so the sector-comparison rows are blank.',
+  'tiered.note.sectorNoEtf':
+    'This company’s sector has no matching sector fund set up yet (US sectors only for now), so the sector-comparison rows are blank.',
+  'tiered.note.sectorNeedsBenchmark':
+    'The sector comparison is measured against the market’s return, and that is missing, so the sector rows are blank.',
+  'tiered.note.sectorShort':
+    'The sector fund ({ticker}) has only {bars} days of history — too little to compare returns — so the sector rows are blank.',
+  'tiered.note.noClosePrice':
+    'No closing price was available, so no trade plan could be worked out.',
+  'tiered.note.noEntryAnchor':
+    'None of the prices the entry anchors to — the 50-day average, the 200-day average, or the nearest support level — were available, so no trade plan could be worked out.',
+  'tiered.note.noTechnicalsForLevels':
+    'The technical data is missing, so no trade plan could be worked out.',
+  'tiered.note.duplicateAdjust':
+    'The AI proposed two changes to the {level}; the first was kept and the second ignored.',
+  'tiered.note.planAdjustDropped':
+    'The AI’s proposed change to the {level} could not back its numbers with anything in the report, so the change was dropped.',
+  'tiered.note.planReplyProblem':
+    'The AI’s plan-review reply contained something the system could not use, so that part was ignored.',
+  'tiered.note.planNoConverge':
+    'Every change the AI proposed still tripped a risk check, so all of them were discarded and the plain computed plan stands.',
+  'tiered.note.noGradableFields':
+    'No report fields were available for the analysts to grade, so this run has no outlook.',
+  'tiered.note.noEvidenceToVote':
+    'No report data reached the analysts, so there was nothing to judge. Re-run this stock.',
+  'tiered.note.rewardRiskDefaulted':
+    'The reward-to-risk setting must be above 1. The value given was ignored and the default was used instead.',
+  'tiered.note.adjustUnknownLevel':
+    'The AI proposed a change to something that is not one of the plan’s levels, so it was ignored.',
   'tiered.note.downtrend':
-    'The close is at or below its 60-day average — a pullback buy against the trend carries extra downside risk.',
-  'tiered.note.trendCheckSkipped': 'The 60-day average was unavailable, so the trend check was skipped.',
+    'The close is at or below its 50-day average — a pullback buy against the trend carries extra downside risk.',
+  'tiered.note.trendCheckSkipped': 'The 50-day average was unavailable, so the trend check was skipped.',
   'tiered.note.summaryLinksDropped':
     'Some summary citations failed the code checks even after fixes — those values still show, but without links.',
   'tiered.note.optionsOiMissing':
@@ -2410,7 +2585,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.help.score':
     'The tier-1 AI’s conviction, 0–100.\nHigher = more bullish.\nJudgment, not a formula — the Tech score on the technicals card is the computed one.',
   'tiered.help.coverage':
-    'How complete the underlying data was. Full = everything arrived; Partial = some gaps (see Data notes); Unavailable = nothing usable came back.',
+    'How complete the underlying data was. Full = everything arrived; Partial = some gaps (see Warnings); Unavailable = nothing usable came back.',
   'tiered.help.narrative': 'The AI’s written conclusion after reading the four dimension reports below.',
   'tiered.help.entry':
     'Ideal buy price.\nUsually near a support level — a price where buyers stepped in before.',
@@ -2465,11 +2640,18 @@ const en: Record<UiTextKey, string> = {
     'Computed by a fixed formula from the technical indicators. Click to see the formula and the numbers plugged into it.',
   'tiered.help.levelAdjusted':
     'The AI may nudge the base within a bounded band (at most one ATR — the stock’s average daily swing) and must give an evidence-backed reason; click to read it. Adjustments that fail the safety checks are rejected and the base is used.',
+  // Popup title parts. The subject (a metric or level name) and the kind
+  // are rendered separately by AltModalTitle, so the kind is a bare noun
+  // here — no colon, no "{label}" slot.
+  // Still used by the legacy /tiered page's LevelTiles, which has its own
+  // modal component and composes the title as a single string.
   'tiered.levelModal.formulaTitle': '{level}: formula',
-  'tiered.alt.blankTitle': '{label}: why blank',
+  'tiered.alt.kind.formula': 'formula',
+  'tiered.alt.kind.adjustment': 'adjustment',
+  'tiered.alt.kind.whyBlank': 'why blank',
+  'tiered.alt.kind.warnings': 'warnings',
   'tiered.alt.blankFallback':
     'This field has no value in this run — the data needed to compute it was unavailable.',
-  'tiered.alt.fieldNotesTitle': '{label}: data notes',
   'tiered.levelModal.formula': 'Formula',
   'tiered.levelModal.withNumbers': 'With this run’s numbers',
   'tiered.levelModal.inputs': 'Inputs',
@@ -2493,7 +2675,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.debate.reasonsFor': 'Reasons for',
   'tiered.debate.reasonsAgainst': 'Reasons against',
   'tiered.debate.noVerdict':
-    'The debate produced no usable verdict — this run has no outlook; re-run the stock (see Data notes).',
+    'The debate produced no usable verdict — this run has no outlook; re-run the stock (see Warnings).',
   'tiered.debate.wouldChangeMind': 'What would change the verdict',
   'tiered.help.wouldChangeMind':
     'The judge’s own answer: what new evidence would overturn this verdict.',
@@ -2661,7 +2843,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.risk.stopAdvice.keep': 'keep',
   'tiered.risk.stopAdvice.tighten': 'tighten',
   'tiered.risk.noVerdict':
-    'The stress test produced no usable verdict — the tier-2 output stands (see Data notes).',
+    'The stress test produced no usable verdict — the tier-2 output stands (see Warnings).',
   'tiered.risk.keyRisks': 'Key risks',
   'tiered.risk.personas': 'The three reviews',
   'tiered.risk.persona.conservative': 'Conservative',
@@ -2724,7 +2906,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.altForm.needTickerFirst':
     'Pick a ticker first — capital is in the currency of the ticker’s market.',
   'tiered.altForm.allRequired':
-    'All five fields are required: ticker, tier, capital, risk and reward.',
+    'All six fields are required: ticker, tier, capital, risk, reward and max hold.',
   'tiered.altForm.tierOption1': '1: preliminary analysis',
   'tiered.altForm.tierOption2': '2: deep analysis',
   'tiered.altForm.tickerPh': 'Enter ticker...',
@@ -2737,11 +2919,25 @@ const en: Record<UiTextKey, string> = {
     'A reward-to-risk ratio below 1.5 means the trade barely pays for its risk — 1.5× is the common minimum. The run will still use your {value}× target.',
   'tiered.help.reward':
     'The reward-to-risk ratio you ask the plan for (how many times the accepted risk the potential profit should be). Required; the default is 2.\nTarget = entry + ratio × risk. If overhead resistance caps the target below your ratio, the plan carries a warning (below the 1.5 hard floor, no plan is issued at all).',
+  'tiered.altForm.hold': 'Max hold',
+  'tiered.altForm.holdPh': 'Pick duration...',
+  'tiered.altForm.holdOption1': '1 week',
+  'tiered.altForm.holdOption2': '2 weeks',
+  'tiered.altForm.holdOption3': '3 weeks',
+  'tiered.altForm.holdOption4': '4 weeks',
+  'tiered.help.hold':
+    'The longest you plan to hold the trade. Required; the default is 2 weeks.\nThe same number goes to the AI (to judge which evidence matters at this timescale), onto the report, and into the forward test as the grading window — the AI, you and the testing stay on one page.',
+  'tiered.altForm.marketOpenTitle': 'Market is open',
+  'tiered.altForm.marketOpenBody':
+    'This ticker’s market is trading right now, and this app only analyzes completed trading days (data vendors may also lag up to 30 minutes after the close). Try again 30 minutes after the close — or choose “Run anyway” to analyze the previous completed trading day’s close.',
+  'tiered.altForm.runAnyway': 'Run anyway',
+  'tiered.alt.holdTime': 'Max hold',
   'tiered.pill.ticker': 'Ticker: {value}',
   'tiered.pill.tier': 'Tier: {value}',
   'tiered.pill.capital': 'Capital: {value} {currency}',
   'tiered.pill.risk': 'Risk: {value}%',
   'tiered.pill.reward': 'Reward: {value}×',
+  'tiered.pill.hold': 'Max hold: {value}w',
   'tiered.pill.verdict': 'Verdict: {value}',
   'tiered.pill.capitalMin': 'Capital Min: {value}',
   'tiered.pill.capitalMax': 'Capital Max: {value}',
@@ -2814,7 +3010,6 @@ const en: Record<UiTextKey, string> = {
   'tiered.levels.shares': 'Shares',
   'tiered.alt.levels.warnings': 'Warnings',
   'tiered.alt.warn.none': 'none',
-  'tiered.alt.warnTitle': '{level}: warnings',
   'tiered.alt.warn.downtrend':
     'The close ({close}) is at or below its 60-day average ({sma60}) — the stock is in a medium-term downtrend, so entering here is buying against the trend and carries extra risk of further downside.',
   'tiered.alt.warn.downtrend_50':
@@ -2871,6 +3066,7 @@ const en: Record<UiTextKey, string> = {
   'tiered.outlook.neutral': 'Neutral',
   'tiered.outlook.bearish': 'Bearish',
   'tiered.outlook.unknown': 'Failed',
+  'tiered.outlook.stopped': 'Stopped',
   'tiered.action.enter': 'Buy (see Trade Plan section)',
   'tiered.action.keep_holding': 'Keep holding',
   'tiered.action.no_trade': 'No trade',

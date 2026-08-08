@@ -821,8 +821,10 @@ describe('AltResult', () => {
     renderResult(makeDeepResult());
     fireEvent.click(screen.getByTestId('alt-level-computed-stop_loss'));
     const dialog = screen.getByRole('dialog');
-    // title in the `<level>: formula` shape
-    expect(within(dialog).getByRole('heading')).toHaveTextContent(/(止损：公式|Stop loss: formula)/);
+    // Title is two styled parts now: the subject, then the kind tag.
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(
+      /(止损\s*公式|Stop loss\s*formula)/,
+    );
     // the formula in words — report-exact variable names, never raw tokens
     expect(within(dialog).getByTestId('alt-formula-words').textContent).toBe(
       'entry − 2 × 14d ATR',
@@ -1419,7 +1421,7 @@ describe('AltResult v9 evidence vote', () => {
       within(screen.getByTestId('alt-tree-item-T2')).getAllByRole('button', { name: '✗' })[0],
     );
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent(/1st check result: invalid|第一次检查结果：|第一次检查结果:/);
+    expect(dialog).toHaveTextContent(/1st check result\s*invalid|第一次检查结果\s*/);
     expect(dialog).toHaveTextContent('A single close below one level is not a trend.');
   });
 
@@ -1627,7 +1629,7 @@ describe('AltResult format-2 risk vote', () => {
       within(screen.getByTestId('alt-risk-item-P1')).getByRole('button', { name: '✓' }),
     );
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveTextContent(/1st check result: valid|第一次检查结果[:：]\s*有效/);
+    expect(dialog).toHaveTextContent(/1st check result\s*valid|第一次检查结果\s*有效/);
     expect(dialog).toHaveTextContent('The gap really is tight.');
   });
 

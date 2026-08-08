@@ -6,7 +6,7 @@ import type { UiLanguage, UiTextKey } from '../../i18n/uiText';
 import { cn } from '../../utils/cn';
 import { flashElement, formatPrice, jumpToMetric, jumpToMetricFirst } from '../tiered/termHelpers';
 import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
-import { AltModal, FVar, MODAL_BODY, MODAL_STRONG } from './AltUi';
+import { AltModal, AltModalTitle, FVar, MODAL_BODY, MODAL_STRONG } from './AltUi';
 
 // The trade-plan warnings row (plan-review redesign, 2026-07-22): the
 // backend ships ids and numbers only; every sentence here is worded by
@@ -110,7 +110,7 @@ const ComputedValue = ({
   body,
 }: {
   text: string;
-  title: string;
+  title: ReactNode;
   body: (closeSelf: () => void) => ReactNode;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -168,8 +168,9 @@ const warningNodes = (
   env: WarnEnv,
 ): { templateKey: UiTextKey; nodes: Record<string, ReactNode> } | null => {
   const { values: v, t, language, closeAll } = env;
-  const title = (nameKey: UiTextKey) =>
-    t('tiered.levelModal.formulaTitle', { level: t(nameKey) });
+  const title = (nameKey: UiTextKey) => (
+    <AltModalTitle subject={t(nameKey)} kind={t('tiered.alt.kind.formula')} />
+  );
 
   const planJump = (key: PlanColumn, text: string, innerClose: () => void = closeAll) => (
     <JumpValue text={text} closeAll={innerClose} onJump={() => flashElement(env.cellTarget(key))} />
@@ -534,7 +535,7 @@ export const AltWarningsCell = ({
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.alt.warnTitle', { level: label })}
+        title={<AltModalTitle subject={label} kind={t('tiered.alt.kind.warnings')} />}
         onClose={() => setIsOpen(false)}
       >
         <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>

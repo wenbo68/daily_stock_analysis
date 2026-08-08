@@ -209,7 +209,7 @@ const DimensionCard = ({ dimension }: DimensionCardProps) => {
 
       {dimension.warnings.length > 0 ? (
         <div className="mt-3">
-          <div className="label-uppercase mb-1">{t('tiered.dataNotes')}</div>
+          <div className="label-uppercase mb-1">{t('tiered.warnings')}</div>
           <p className="mb-1 text-xs text-secondary-text">{t('tiered.dataNotesHint')}</p>
           <ul className="space-y-1">
             {dimension.warnings.map((warning, index) => (
@@ -333,7 +333,7 @@ const ResultView = ({ result }: ResultViewProps) => {
 
         {result.warnings.length > 0 ? (
           <div className="mt-3">
-            <div className="label-uppercase mb-1">{t('tiered.dataNotes')}</div>
+            <div className="label-uppercase mb-1">{t('tiered.warnings')}</div>
             <p className="mb-1 text-xs text-secondary-text">{t('tiered.dataNotesHint')}</p>
             <ul className="space-y-1">
               {result.warnings.map((warning, index) => (

@@ -295,6 +295,26 @@ describe('AltResult outlook conclusion', () => {
     expect(screen.queryByTestId('alt-levels-table')).not.toBeInTheDocument();
   });
 
+  it('a stopped run shows only the outlook and the data cards', () => {
+    // Staleness gate (2026-08-08): the outlook word IS the whole story —
+    // no action fact, no analysis card, no plan, no message text.
+    renderResult(makeOutlookResult({ outlook: 'stopped', action: 'unknown' }));
+    const conclusion = screen.getByTestId('alt-conclusion');
+    expect(conclusion).toHaveTextContent(/(已停止|Stopped)/);
+    expect(conclusion).not.toHaveTextContent(/(操作|Action)/);
+    expect(screen.queryByTestId('alt-plan')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('alt-levels-table')).not.toBeInTheDocument();
+    // No preliminary/deep analysis card renders for a stopped run.
+    expect(screen.queryByText(/(初步分析|Preliminary analysis)/)).not.toBeInTheDocument();
+  });
+
+  it('shows the max hold time on the conclusion when the run carries one', () => {
+    renderResult(makeOutlookResult({ hold_weeks: 3 }));
+    const conclusion = screen.getByTestId('alt-conclusion');
+    expect(conclusion).toHaveTextContent(/(最长持有|Max hold)/);
+    expect(conclusion).toHaveTextContent(/3 (周|weeks)/);
+  });
+
   it('sell_all hides the plan and prints the exit size from the sizing block', () => {
     renderResult(
       makeOutlookResult({

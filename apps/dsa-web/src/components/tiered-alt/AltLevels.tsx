@@ -21,6 +21,7 @@ import { ALT_LINK, FORMULA_LINE, FORMULA_RESULT } from './altStyles';
 import {
   AltEvidenceRefs,
   AltModal,
+  AltModalTitle,
   AltSectionLabel,
   FVar,
   MODAL_BODY,
@@ -342,7 +343,7 @@ const AltComputedCell = ({ levelKey, detail, label }: Omit<AltLevelCellProps, 'c
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.levelModal.formulaTitle', { level: label })}
+        title={<AltModalTitle subject={label} kind={t('tiered.alt.kind.formula')} />}
         onClose={close}
         // Fit the widest formula line; each line stays a single line.
         panelClassName="w-fit min-w-72 max-w-[95vw]"
@@ -397,7 +398,7 @@ const AltAdjustedCell = ({ levelKey, detail, label, citations }: AltLevelCellPro
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.levelModal.adjustTitle', { level: label })}
+        title={<AltModalTitle subject={label} kind={t('tiered.alt.kind.adjustment')} />}
         onClose={close}
       >
         <div className={MODAL_BODY}>
@@ -581,7 +582,12 @@ const AltSharesComputedCell = ({ detail, taskId }: Omit<SharesCellProps, 'levelA
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.levelModal.formulaTitle', { level: t('tiered.levels.shares') })}
+        title={
+          <AltModalTitle
+            subject={t('tiered.levels.shares')}
+            kind={t('tiered.alt.kind.formula')}
+          />
+        }
         onClose={() => setIsOpen(false)}
         panelClassName="w-fit min-w-72 max-w-[95vw]"
       >
@@ -629,7 +635,12 @@ const AltSharesAdjustedCell = ({ detail, taskId, levelAdjusted }: SharesCellProp
       </button>
       <AltModal
         isOpen={isOpen}
-        title={t('tiered.levelModal.adjustTitle', { level: t('tiered.levels.shares') })}
+        title={
+          <AltModalTitle
+            subject={t('tiered.levels.shares')}
+            kind={t('tiered.alt.kind.adjustment')}
+          />
+        }
         onClose={() => setIsOpen(false)}
         panelClassName="w-fit min-w-72 max-w-[95vw]"
       >

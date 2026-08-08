@@ -19,6 +19,7 @@ import {
   AltFold,
   AltModal,
   AltModalDivider,
+  AltModalTitle,
   AltSectionLabel,
   FVar,
   MODAL_BODY,
@@ -545,7 +546,7 @@ export const MarkButton = ({ label, onClick }: { label: string; onClick: () => v
   </button>
 );
 
-export type MarkModal = { title: string; body: ReactNode };
+export type MarkModal = { title: ReactNode; body: ReactNode };
 
 // One v8-v11 bullet, a single line telling its whole history: id, a
 // colored bullish/bearish word, then the marks. v11 (rich): the median
@@ -572,9 +573,12 @@ const VoteItem = ({
   const authorVotes = item.author_votes ?? [];
   const showVote = (vote: TieredDebateVote, index: number) =>
     onShow({
-      title: `${t(index === 0 ? 'tiered.tree.firstCheck' : 'tiered.tree.secondCheck')}: ${t(
-        vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid',
-      )}`,
+      title: (
+        <AltModalTitle
+          subject={t(index === 0 ? 'tiered.tree.firstCheck' : 'tiered.tree.secondCheck')}
+          kind={t(vote.verdict === 'valid' ? 'tiered.tree.valid' : 'tiered.tree.invalid')}
+        />
+      ),
       body: (
         <div className={MODAL_BODY}>
           <p>
@@ -708,7 +712,12 @@ const VoteItem = ({
             label="✗"
             onClick={() =>
               onShow({
-                title: `${t('tiered.tree.codeCheck')}: ${t('tiered.tree.invalid')}`,
+                title: (
+                  <AltModalTitle
+                    subject={t('tiered.tree.codeCheck')}
+                    kind={t('tiered.tree.invalid')}
+                  />
+                ),
                 body: (
                   <ul className={cn(MODAL_BODY, 'list-disc pl-4')}>
                     {(item.problems ?? []).map((problem, index) => (
